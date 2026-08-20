@@ -8,6 +8,22 @@ importers:
 
   .: {}
 
+  packages/runtime:
+    dependencies:
+      '@rt/schema':
+        specifier: workspace:*
+        version: link:../schema
+      '@rt/store':
+        specifier: workspace:*
+        version: link:../store
+    devDependencies:
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7
+
   packages/schema:
     dependencies:
       zod:
