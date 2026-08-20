@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
+import type { TraceEvent } from '@rt/schema';
 import { InMemoryTraceStore } from '../src/in-memory';
 
-function evt(session_id: string, seq: number) {
+function evt(session_id: string, seq: number): TraceEvent {
   return {
     id: `e_${seq}`, tenant_id: 't1', session_id, span_id: 'sp', parent_span_id: null,
     seq, type: 'llm.request', verb: 'request', attempt: 1, duration_ms: 1,
@@ -12,8 +13,8 @@ function evt(session_id: string, seq: number) {
 describe('InMemoryTraceStore', () => {
   it('stores and reads events in seq order', async () => {
     const s = new InMemoryTraceStore();
-    await s.append(evt('s1', 1));
     await s.append(evt('s1', 2));
+    await s.append(evt('s1', 1));
     const all = await s.readBySession('s1');
     expect(all.map(e => e.seq)).toEqual([1, 2]);
   });
