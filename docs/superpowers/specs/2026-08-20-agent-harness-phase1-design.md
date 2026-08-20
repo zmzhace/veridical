@@ -11,13 +11,13 @@
 
 ### 决策依据（已调研）
 
-深度调研了三个开源 harness：DeepSeek Harness（dsh，MIT，全 TS）、anomalyco/opencode（MIT，全 TS）、OpenAI Codex（Apache-2.0，Rust 内核）。结论：
+深度调研了业界主流开源 agent harness 的架构。结论：
 
-- **不选任何一家做底座**，而是**自研一个轻量核心运行时**，把三家最精华的模式逐条落入：
-  - **dsh**：session-log 唯一真相源、"model-visible means logged" 不变式、`deriveMessages()` 派生上下文、五段工具执行管线、事件三域
-  - **opencode**：契约优先 HTTP API + 双 SDK codegen、durable event log + SSE 回放流、上下文源（Context Source）代数、权限规则集
-  - **codex**：JSONL 权威 + SQLite 索引双存储、`ThreadStore` 存储抽象、三层执行安全、配置分层优先级 + 企业强制层、语义记忆两阶段管线
-- **三家共同空白 = 本项目的差异化价值**：评测引擎/评测口径、发布评审 + 数据回读、多租户平台、统一成本/token 分析（三家全无）；语义记忆只有 codex 成熟。
+- **自研一个轻量核心运行时**，把业界成熟且被验证的架构模式逐条落入，不绑定任何现成框架：
+  - **事件日志（session log）作为唯一真相源**、**"模型可见必须可记录"（model-visible means logged）不变式**、从日志派生模型上下文、五段工具执行管线、事件三域
+  - **契约优先 HTTP API + 双 SDK codegen**、可回放的 durable event log + SSE 回放流、类型化上下文源（Context Source）代数、权限规则集
+  - **JSONL 权威存储 + SQLite 可查询索引双轨**、存储抽象（可替换实现）、多层执行安全、配置分层优先级 + 企业强制层、语义记忆两阶段管线
+- **共同空白 = 本项目的差异化价值**：评测引擎/评测口径、发布评审 + 数据回读、多租户平台、统一成本/token 分析（现有开源 harness 基本都没有）；语义记忆少有成熟方案。
 
 ### 关键选型
 
@@ -114,14 +114,14 @@ Session (agent spec vX, tenant, 运行配置)
 
 报案/通话场景是**实时双向并发**，不是串行 turn。补进模型：
 
-- **流式 chunk 级事件**：音频 chunk、partial transcript、TTS chunk 都落事件（借鉴 dsh `assistant/chunk`）。
+- **流式 chunk 级事件**：音频 chunk、partial transcript、TTS chunk 都落事件（`assistant.chunk` 同型事件）。
 - **交错流可回放**：`seq` 全序 + `parent_span` 因果链同时保留，回放忠实重现交错的流，不重放成串行对话。
 - **barge-in（插话打断）**：打断 agent 说话是显式事件类型；打断后 agent 必须停口。
 - 双工会话是运行时的一等公民，不是特例。
 
 ### 3.7 状态快照（场景补丁）
 
-要评测"槽位是否收集完整"，需能在 trace 读到每轮**结构化对话状态**（已填/待确认/缺失槽位）。每轮写 `state/context_snapshot` 事件（借鉴 dsh `request/context`、opencode `context_epoch`），评测和回放都读它。
+要评测"槽位是否收集完整"，需能在 trace 读到每轮**结构化对话状态**（已填/待确认/缺失槽位）。每轮写 `state/context_snapshot` 事件，评测和回放都读它。
 
 ## 4. 运行时执行模型（第二节）
 
@@ -145,7 +145,7 @@ spec 里 `flow` 字段声明模式及组合。span 树天然承载任意控制�
 
 - **工作区（workspace）**：agent 拥有文件系统/工作区，用 agentic 搜索（grep/bash）自主捞上下文。
 - **子 agent**：并行化 + 上下文隔离（子 agent 只回传摘要）。
-- **compaction**：长跑自动摘要历史，防上下文爆炸；压缩动作本身也是 trace 事件（dsh `surfaceOp` 思路：replace + sourceEventSeqs 保持可回放）。
+- **compaction**：长跑自动摘要历史，防上下文爆炸；压缩动作本身也是 trace 事件（replace + sourceEventSeqs 保持可回放）。
 
 ### 4.3 内建验证闭环（verify loop）
 
@@ -156,7 +156,7 @@ spec 里 `flow` 字段声明模式及组合。span 树天然承载任意控制�
 ### 4.4 工具协议
 
 - **MCP 底座**：原生支持 MCP server 接入，企业工具生态直接可用。
-- **五段执行管线**（借鉴 dsh）：
+- **五段执行管线**：
 
 ```
 tools/pre-execute   → 审批（allow/deny/ask）
@@ -204,9 +204,9 @@ tools/result        → 冻结权威结果
 
 ### 5.2 核心决策
 
-1. **`TraceStore` 存储抽象**（借鉴 codex `ThreadStore`）：JSONL 本地实现、Postgres 多租户实现、内存实现（测试）可替换；评测/回放引擎可挂替身实现，不动运行时核心。
-2. **单写入者 + seq 全序**（借鉴 opencode）：每 session 事件写入串行化，seq 单调连续；事件重放=按 seq 顺序读。
-3. **投影从事件派生**（借鉴 dsh `deriveMessages`）：模型上下文、UI、评测输入都从事件流重派生，不另存；**"模型可见必须可重建"** 是运行时不变式，运行时断言强制。
+1. **`TraceStore` 存储抽象**：JSONL 本地实现、Postgres 多租户实现、内存实现（测试）可替换；评测/回放引擎可挂替身实现，不动运行时核心。
+2. **单写入者 + seq 全序**：每 session 事件写入串行化，seq 单调连续；事件重放=按 seq 顺序读。
+3. **投影从事件派生**：模型上下文、UI、评测输入都从事件流重派生，不另存；**"模型可见必须可重建"** 是运行时不变式，运行时断言强制。
 4. **schema 版本化**：事件类型带 schema_version；旧事件可读；未知必需事件拒绝加载（防静默数据损坏）。
 5. **多租户**：生产 Postgres 按 `tenant_id` 分区；dev SQLite 用 `tenant_id` 列；租户数据物理隔离是产品承诺。
 6. **保留策略**：按租户配置 TTL（热事件 / 索引可查询期 / 冷归档 / 可清理）。
@@ -216,7 +216,7 @@ tools/result        → 冻结权威结果
 按验证目标分三层，避免"接口返回能否回测"混为一谈：
 
 1. **确定性回放（复现某次真实返回）**：线上调用把接口返回录进 `tool_result`；回放时 mock 掉接口，喂回录制的 payload。适合复盘线上 bug、验证同一场景行为不变。
-2. **动态回测（同逻辑跑不同输入）**：把外部接口替换成 fixture 驱动的 mock（借鉴 opencode `http-recorder` / codex rollout 规约），喂一批测试 fixture（不同保单、异常返回），验证各分支。适合回归、边界、上线前基准集。
+2. **动态回测（同逻辑跑不同输入）**：把外部接口替换成 fixture 驱动的 mock，喂一批测试 fixture（不同保单、异常返回），验证各分支。适合回归、边界、上线前基准集。
 3. **非确定性接口（只验行为，不断言结果）**：下单/发通知/实时风控等状态会变，标记 `deterministic: false`；评测时要么 mock、要么只验证"调没调、参数对不对"，不做结果断言。
 
 ### 6.1 铁律
