@@ -98,6 +98,28 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@26.2.0)(yaml@2.9.0)
 
+  packages/memory:
+    dependencies:
+      '@veridical/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      '@veridical/schema':
+        specifier: workspace:*
+        version: link:../schema
+      '@veridical/store':
+        specifier: workspace:*
+        version: link:../store
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@26.2.0)(yaml@2.9.0)
+
   packages/replay:
     dependencies:
       '@veridical/llm':
