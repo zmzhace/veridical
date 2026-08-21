@@ -38,7 +38,7 @@
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: workspace with `@rt/schema` package resolvable by other packages.
+- Produces: workspace with `@veridical/schema` package resolvable by other packages.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -57,7 +57,7 @@ describe('schema package', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm install && pnpm -F @rt/schema test`
+Run: `pnpm install && pnpm -F @veridical/schema test`
 Expected: FAIL — module not found / SESSION_EVENT_TYPES not exported.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -97,7 +97,7 @@ packages:
 `packages/schema/package.json`:
 ```json
 {
-  "name": "@rt/schema",
+  "name": "@veridical/schema",
   "version": "0.0.1",
   "type": "module",
   "main": "src/index.ts",
@@ -124,7 +124,7 @@ dist/
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm install && pnpm -F @rt/schema test`
+Run: `pnpm install && pnpm -F @veridical/schema test`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -186,7 +186,7 @@ describe('TraceEvent', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm -F @rt/schema test`
+Run: `pnpm -F @veridical/schema test`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -239,7 +239,7 @@ export const SESSION_EVENT_TYPES = ['llm.request', 'llm.response', 'tool.called'
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm -F @rt/schema test`
+Run: `pnpm -F @veridical/schema test`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -262,11 +262,11 @@ git commit -m "feat: unified TraceEvent schema with zod validation"
 - Create: `packages/store/test/in-memory.test.ts`
 
 **Interfaces:**
-- Consumes: `@rt/schema` (`TraceEvent`).
+- Consumes: `@veridical/schema` (`TraceEvent`).
 - Produces:
   - `interface TraceStore { append(evt: TraceEvent): Promise<void>; readBySession(session_id: string): Promise<TraceEvent[]>; bySeq(session_id: string, seq: number): Promise<TraceEvent | undefined>; }`
   - `class InMemoryTraceStore implements TraceStore`
-  - Re-export `TraceStore`, `InMemoryTraceStore` from `@rt/store`.
+  - Re-export `TraceStore`, `InMemoryTraceStore` from `@veridical/store`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -311,7 +311,7 @@ describe('InMemoryTraceStore', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm install && pnpm -F @rt/store test`
+Run: `pnpm install && pnpm -F @veridical/store test`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -319,11 +319,11 @@ Expected: FAIL — module not found.
 `packages/store/package.json`:
 ```json
 {
-  "name": "@rt/store",
+  "name": "@veridical/store",
   "version": "0.0.1",
   "type": "module",
   "main": "src/index.ts",
-  "dependencies": { "@rt/schema": "workspace:*" },
+  "dependencies": { "@veridical/schema": "workspace:*" },
   "scripts": { "build": "tsc -p tsconfig.json", "test": "vitest run" }
 }
 ```
@@ -335,7 +335,7 @@ Expected: FAIL — module not found.
 
 `packages/store/src/trace-store.ts`:
 ```ts
-import type { TraceEvent } from '@rt/schema';
+import type { TraceEvent } from '@veridical/schema';
 
 export interface TraceStore {
   append(evt: TraceEvent): Promise<void>;
@@ -346,7 +346,7 @@ export interface TraceStore {
 
 `packages/store/src/in-memory.ts`:
 ```ts
-import type { TraceEvent } from '@rt/schema';
+import type { TraceEvent } from '@veridical/schema';
 import type { TraceStore } from './trace-store';
 
 export class InMemoryTraceStore implements TraceStore {
@@ -376,7 +376,7 @@ export * from './in-memory';
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm -F @rt/store test`
+Run: `pnpm -F @veridical/store test`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -398,7 +398,7 @@ git commit -m "feat: TraceStore abstraction with in-memory implementation"
 - Create: `packages/runtime/test/recorder.test.ts`
 
 **Interfaces:**
-- Consumes: `@rt/schema`, `@rt/store`.
+- Consumes: `@veridical/schema`, `@veridical/store`.
 - Produces:
   - `class Session { constructor(opts: { session_id: string; tenant_id: string; spec_version: string }) }`
   - `class Recorder { constructor(store: TraceStore, session: Session); record(partial: Omit<TraceEvent, 'id'|'tenant_id'|'session_id'|'seq'|'spec_version'>): Promise<TraceEvent>; }`
@@ -409,7 +409,7 @@ git commit -m "feat: TraceStore abstraction with in-memory implementation"
 ```ts
 // packages/runtime/test/recorder.test.ts
 import { describe, it, expect } from 'vitest';
-import { InMemoryTraceStore } from '@rt/store';
+import { InMemoryTraceStore } from '@veridical/store';
 import { Session, Recorder } from '../src/index';
 
 describe('Recorder', () => {
@@ -430,7 +430,7 @@ describe('Recorder', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm install && pnpm -F @rt/runtime test`
+Run: `pnpm install && pnpm -F @veridical/runtime test`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -438,11 +438,11 @@ Expected: FAIL — module not found.
 `packages/runtime/package.json`:
 ```json
 {
-  "name": "@rt/runtime",
+  "name": "@veridical/runtime",
   "version": "0.0.1",
   "type": "module",
   "main": "src/index.ts",
-  "dependencies": { "@rt/schema": "workspace:*", "@rt/store": "workspace:*" },
+  "dependencies": { "@veridical/schema": "workspace:*", "@veridical/store": "workspace:*" },
   "scripts": { "build": "tsc -p tsconfig.json", "test": "vitest run" }
 }
 ```
@@ -475,9 +475,9 @@ export class Session {
 
 `packages/runtime/src/recorder.ts`:
 ```ts
-import type { TraceStore } from '@rt/store';
-import type { TraceEvent } from '@rt/schema';
-import { parseEvent } from '@rt/schema';
+import type { TraceStore } from '@veridical/store';
+import type { TraceEvent } from '@veridical/schema';
+import { parseEvent } from '@veridical/schema';
 import type { Session } from './session';
 
 export type RecordInput = Omit<TraceEvent, 'id' | 'tenant_id' | 'session_id' | 'seq' | 'spec_version'>;
@@ -510,7 +510,7 @@ export * from './recorder';
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm -F @rt/runtime test`
+Run: `pnpm -F @veridical/runtime test`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -575,7 +575,7 @@ describe('JsonlTraceStore', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm -F @rt/store test`
+Run: `pnpm -F @veridical/store test`
 Expected: FAIL — JsonlTraceStore not exported.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -584,7 +584,7 @@ Expected: FAIL — JsonlTraceStore not exported.
 ```ts
 import { mkdirSync, readFileSync, appendFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseEvent, type TraceEvent } from '@rt/schema';
+import { parseEvent, type TraceEvent } from '@veridical/schema';
 import type { TraceStore } from './trace-store';
 
 export class JsonlTraceStore implements TraceStore {
@@ -626,7 +626,7 @@ export * from './jsonl';
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm -F @rt/store test`
+Run: `pnpm -F @veridical/store test`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -656,7 +656,7 @@ git commit -m "feat: JSONL TraceStore with corruption guard"
 ```ts
 // packages/runtime/test/projection.test.ts
 import { describe, it, expect } from 'vitest';
-import { InMemoryTraceStore } from '@rt/store';
+import { InMemoryTraceStore } from '@veridical/store';
 import { deriveMessages } from '../src/index';
 
 function evt(session_id: string, seq: number, type: string, verb: string, payload: any) {
@@ -681,15 +681,15 @@ describe('deriveMessages', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm -F @rt/runtime test`
+Run: `pnpm -F @veridical/runtime test`
 Expected: FAIL — deriveMessages not exported.
 
 - [ ] **Step 3: Write minimal implementation**
 
 `packages/runtime/src/projection.ts`:
 ```ts
-import type { TraceStore } from '@rt/store';
-import type { TraceEvent } from '@rt/schema';
+import type { TraceStore } from '@veridical/store';
+import type { TraceEvent } from '@veridical/schema';
 
 export interface ModelMessage {
   role: 'user' | 'assistant';
@@ -721,7 +721,7 @@ export async function deriveMessages(store: TraceStore, session_id: string): Pro
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm -F @rt/runtime test`
+Run: `pnpm -F @veridical/runtime test`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -753,7 +753,7 @@ git commit -m "feat: derived model context projection from event log"
 ```ts
 // packages/runtime/test/flows/single-loop.test.ts
 import { describe, it, expect } from 'vitest';
-import { InMemoryTraceStore } from '@rt/store';
+import { InMemoryTraceStore } from '@veridical/store';
 import { Session, Recorder, runSingleLoop, type FlowContext } from '../src/index';
 
 describe('runSingleLoop', () => {
@@ -788,7 +788,7 @@ describe('runSingleLoop', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm -F @rt/runtime test`
+Run: `pnpm -F @veridical/runtime test`
 Expected: FAIL — runSingleLoop not exported.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -847,7 +847,7 @@ export * from './single-loop';
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm -F @rt/runtime test`
+Run: `pnpm -F @veridical/runtime test`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -870,7 +870,7 @@ git commit -m "feat: single-loop flow engine with verify gate"
 - Create: `packages/tools/test/broker.test.ts`
 
 **Interfaces:**
-- Consumes: `@rt/schema` (TraceEvent).
+- Consumes: `@veridical/schema` (TraceEvent).
 - Produces:
   - `interface ToolDef { id: string; name: string; description: string; deterministic: boolean; execute(args: unknown): Promise<unknown> }`
   - `type ApprovalDecision = 'allow' | 'deny' | 'ask'`
@@ -925,7 +925,7 @@ describe('ToolBroker', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm install && pnpm -F @rt/tools test`
+Run: `pnpm install && pnpm -F @veridical/tools test`
 Expected: FAIL — ToolBroker not exported.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -933,11 +933,11 @@ Expected: FAIL — ToolBroker not exported.
 `packages/tools/package.json`:
 ```json
 {
-  "name": "@rt/tools",
+  "name": "@veridical/tools",
   "version": "0.0.1",
   "type": "module",
   "main": "src/index.ts",
-  "dependencies": { "@rt/schema": "workspace:*" },
+  "dependencies": { "@veridical/schema": "workspace:*" },
   "scripts": { "build": "tsc -p tsconfig.json", "test": "vitest run" }
 }
 ```
@@ -1002,7 +1002,7 @@ export * from './broker';
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm -F @rt/tools test`
+Run: `pnpm -F @veridical/tools test`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1026,7 +1026,7 @@ git commit -m "feat: tool broker with approval pipeline"
 - Create: `packages/llm/test/gateway.test.ts`
 
 **Interfaces:**
-- Consumes: `@rt/schema`.
+- Consumes: `@veridical/schema`.
 - Produces:
   - `interface LLMRequest { messages: unknown[]; model: string; provider: string }`
   - `interface LLMResponse { text: string; usage: { input: number; output: number; cached: number; total: number } }`
@@ -1040,8 +1040,8 @@ git commit -m "feat: tool broker with approval pipeline"
 ```ts
 // packages/llm/test/gateway.test.ts
 import { describe, it, expect } from 'vitest';
-import { InMemoryTraceStore } from '@rt/store';
-import { Session, Recorder } from '@rt/runtime';
+import { InMemoryTraceStore } from '@veridical/store';
+import { Session, Recorder } from '@veridical/runtime';
 import { LLMGateway, fingerprint, MockProvider, type LLMProvider } from '../src/index';
 
 const usage = { input: 1, output: 1, cached: 0, total: 2 };
@@ -1075,7 +1075,7 @@ describe('LLMGateway', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm install && pnpm -F @rt/llm test`
+Run: `pnpm install && pnpm -F @veridical/llm test`
 Expected: FAIL — LLMGateway not exported.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -1083,11 +1083,11 @@ Expected: FAIL — LLMGateway not exported.
 `packages/llm/package.json`:
 ```json
 {
-  "name": "@rt/llm",
+  "name": "@veridical/llm",
   "version": "0.0.1",
   "type": "module",
   "main": "src/index.ts",
-  "dependencies": { "@rt/schema": "workspace:*", "@rt/runtime": "workspace:*" },
+  "dependencies": { "@veridical/schema": "workspace:*", "@veridical/runtime": "workspace:*" },
   "scripts": { "build": "tsc -p tsconfig.json", "test": "vitest run" }
 }
 ```
@@ -1108,7 +1108,7 @@ export interface LLMProvider { complete(req: LLMRequest): Promise<LLMResponse> }
 `packages/llm/src/gateway.ts`:
 ```ts
 import { createHash } from 'node:crypto';
-import type { Recorder } from '@rt/runtime';
+import type { Recorder } from '@veridical/runtime';
 import type { LLMProvider, LLMRequest, LLMResponse } from './types';
 
 export function fingerprint(req: LLMRequest): string {
@@ -1161,7 +1161,7 @@ export * from './mock';
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm -F @rt/llm test`
+Run: `pnpm -F @veridical/llm test`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1182,7 +1182,7 @@ git commit -m "feat: LLM gateway with fingerprint-keyed live/mock modes"
 - Create: `packages/demo/test/smoke.test.ts`
 
 **Interfaces:**
-- Consumes: all `@rt/*` packages.
+- Consumes: all `@veridical/*` packages.
 - Produces: a runnable demo wiring Recorder + single-loop + ToolBroker + LLM mock gateway, and a smoke test asserting the full event log is present and reconstructable.
 
 - [ ] **Step 1: Write the failing test**
@@ -1190,10 +1190,10 @@ git commit -m "feat: LLM gateway with fingerprint-keyed live/mock modes"
 ```ts
 // packages/demo/test/smoke.test.ts
 import { describe, it, expect } from 'vitest';
-import { JsonlTraceStore } from '@rt/store';
-import { Session, Recorder, deriveMessages, runSingleLoop, type FlowContext } from '@rt/runtime';
-import { ToolBroker, type ToolDef, type ApprovalPolicy } from '@rt/tools';
-import { LLMGateway, MockProvider } from '@rt/llm';
+import { JsonlTraceStore } from '@veridical/store';
+import { Session, Recorder, deriveMessages, runSingleLoop, type FlowContext } from '@veridical/runtime';
+import { ToolBroker, type ToolDef, type ApprovalPolicy } from '@veridical/tools';
+import { LLMGateway, MockProvider } from '@veridical/llm';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -1243,7 +1243,7 @@ describe('end-to-end smoke', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm install && pnpm -F @rt/demo test`
+Run: `pnpm install && pnpm -F @veridical/demo test`
 Expected: FAIL — demo package or run fails to build.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -1251,11 +1251,11 @@ Expected: FAIL — demo package or run fails to build.
 `packages/demo/package.json`:
 ```json
 {
-  "name": "@rt/demo",
+  "name": "@veridical/demo",
   "version": "0.0.1",
   "type": "module",
   "main": "src/run.ts",
-  "dependencies": { "@rt/schema": "workspace:*", "@rt/store": "workspace:*", "@rt/runtime": "workspace:*", "@rt/tools": "workspace:*", "@rt/llm": "workspace:*" },
+  "dependencies": { "@veridical/schema": "workspace:*", "@veridical/store": "workspace:*", "@veridical/runtime": "workspace:*", "@veridical/tools": "workspace:*", "@veridical/llm": "workspace:*" },
   "scripts": { "build": "tsc -p tsconfig.json", "test": "vitest run" }
 }
 ```
@@ -1272,10 +1272,10 @@ export { runDemo } from './demo';
 
 `packages/demo/src/demo.ts`:
 ```ts
-import { JsonlTraceStore } from '@rt/store';
-import { Session, Recorder, runSingleLoop, type FlowContext } from '@rt/runtime';
-import { ToolBroker, type ApprovalPolicy } from '@rt/tools';
-import { LLMGateway, MockProvider } from '@rt/llm';
+import { JsonlTraceStore } from '@veridical/store';
+import { Session, Recorder, runSingleLoop, type FlowContext } from '@veridical/runtime';
+import { ToolBroker, type ApprovalPolicy } from '@veridical/tools';
+import { LLMGateway, MockProvider } from '@veridical/llm';
 import { createHash } from 'node:crypto';
 
 export function demoFingerprint(text: string): string {
@@ -1317,7 +1317,7 @@ export async function runDemo(dir: string) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm -F @rt/demo test`
+Run: `pnpm -F @veridical/demo test`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**

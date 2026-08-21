@@ -1,11 +1,11 @@
 {
-  "name": "@rt/llm",
+  "name": "@veridical/llm",
   "version": "0.0.1",
   "type": "module",
   "main": "src/index.ts",
-  "dependencies": { "@rt/schema": "workspace:*", "@rt/runtime": "workspace:*" },
+  "dependencies": { "@veridical/schema": "workspace:*", "@veridical/runtime": "workspace:*" },
   "devDependencies": {
-    "@rt/store": "workspace:*",
+    "@veridical/store": "workspace:*",
     "@types/node": "^26.2.0",
     "typescript": "^5.0.0",
     "vitest": "^3.0.0"

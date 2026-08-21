@@ -1,6 +1,6 @@
-import type { TraceStore } from '@rt/store';
-import type { TraceEvent } from '@rt/schema';
-import { parseEvent } from '@rt/schema';
+import type { TraceStore } from '@veridical/store';
+import type { TraceEvent } from '@veridical/schema';
+import { parseEvent } from '@veridical/schema';
 import type { Session } from './session';
 
 export type RecordInput = Omit<TraceEvent, 'id' | 'tenant_id' | 'session_id' | 'seq' | 'spec_version'>;

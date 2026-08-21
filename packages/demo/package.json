@@ -1,14 +1,14 @@
 {
-  "name": "@rt/demo",
+  "name": "@veridical/demo",
   "version": "0.0.1",
   "type": "module",
   "main": "src/run.ts",
   "dependencies": {
-    "@rt/schema": "workspace:*",
-    "@rt/store": "workspace:*",
-    "@rt/runtime": "workspace:*",
-    "@rt/tools": "workspace:*",
-    "@rt/llm": "workspace:*"
+    "@veridical/schema": "workspace:*",
+    "@veridical/store": "workspace:*",
+    "@veridical/runtime": "workspace:*",
+    "@veridical/tools": "workspace:*",
+    "@veridical/llm": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

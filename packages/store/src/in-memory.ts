@@ -1,4 +1,4 @@
-import type { TraceEvent } from '@rt/schema';
+import type { TraceEvent } from '@veridical/schema';
 import type { TraceStore } from './trace-store';
 
 export class InMemoryTraceStore implements TraceStore {

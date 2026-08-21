@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { InMemoryTraceStore } from '@rt/store';
+import { InMemoryTraceStore } from '@veridical/store';
 import { Session, Recorder, runSingleLoop, type FlowContext } from '../../src/index';
 
 describe('runSingleLoop', () => {

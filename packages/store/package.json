@@ -1,10 +1,10 @@
 {
-  "name": "@rt/store",
+  "name": "@veridical/store",
   "version": "0.0.1",
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
-    "@rt/schema": "workspace:*"
+    "@veridical/schema": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
