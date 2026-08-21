@@ -1,5 +1,5 @@
-import type { TraceStore } from '@rt/store';
-import type { TraceEvent } from '@rt/schema';
+import type { TraceStore } from '@veridical/store';
+import type { TraceEvent } from '@veridical/schema';
 
 export interface ModelMessage {
   role: 'user' | 'assistant';

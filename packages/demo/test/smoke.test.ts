@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { runDemo } from '../src/demo';
-import { deriveMessages } from '@rt/runtime';
+import { deriveMessages } from '@veridical/runtime';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

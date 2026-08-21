@@ -79,10 +79,8 @@ pnpm build       # strict TypeScript build across the monorepo
 Run the end-to-end demo (a full agent loop that persists to a JSONL timeline and rebuilds context from it):
 
 ```bash
-pnpm -F @rt/demo test
+pnpm -F @veridical/demo test
 ```
-
-> Package scope is currently `@rt/*`; it is being renamed to `@veridical/*` in an upcoming pass.
 
 ---
 

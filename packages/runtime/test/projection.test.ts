@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { InMemoryTraceStore } from '@rt/store';
+import { InMemoryTraceStore } from '@veridical/store';
 import { deriveMessages } from '../src/index';
 
 function evt(session_id: string, seq: number, type: string, verb: string, payload: any) {

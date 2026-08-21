@@ -1,9 +1,9 @@
 {
-  "name": "@rt/runtime",
+  "name": "@veridical/runtime",
   "version": "0.0.1",
   "type": "module",
   "main": "src/index.ts",
-  "dependencies": { "@rt/schema": "workspace:*", "@rt/store": "workspace:*" },
+  "dependencies": { "@veridical/schema": "workspace:*", "@veridical/store": "workspace:*" },
   "devDependencies": { "typescript": "^5.0.0", "vitest": "^3.0.0" },
   "scripts": { "build": "tsc -p tsconfig.json", "test": "vitest run" }
 }

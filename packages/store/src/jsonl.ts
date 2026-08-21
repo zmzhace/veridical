@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, appendFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseEvent, type TraceEvent } from '@rt/schema';
+import { parseEvent, type TraceEvent } from '@veridical/schema';
 import type { TraceStore } from './trace-store';
 
 export class JsonlTraceStore implements TraceStore {

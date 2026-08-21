@@ -1,4 +1,4 @@
-import type { TraceEvent } from '@rt/schema';
+import type { TraceEvent } from '@veridical/schema';
 
 export interface TraceStore {
   append(evt: TraceEvent): Promise<void>;

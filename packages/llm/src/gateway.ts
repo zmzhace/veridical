@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { Recorder } from '@rt/runtime';
+import type { Recorder } from '@veridical/runtime';
 import type { LLMProvider, LLMRequest, LLMResponse } from './types';
 
 export function fingerprint(req: LLMRequest): string {

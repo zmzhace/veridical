@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { TraceEvent } from '@rt/schema';
+import type { TraceEvent } from '@veridical/schema';
 import { InMemoryTraceStore } from '../src/in-memory';
 
 function evt(session_id: string, seq: number): TraceEvent {

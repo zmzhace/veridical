@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { InMemoryTraceStore } from '@rt/store';
-import { Session, Recorder } from '@rt/runtime';
+import { InMemoryTraceStore } from '@veridical/store';
+import { Session, Recorder } from '@veridical/runtime';
 import { LLMGateway, fingerprint, MockProvider, type LLMProvider } from '../src/index';
 
 const usage = { input: 1, output: 1, cached: 0, total: 2 };

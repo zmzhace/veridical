@@ -1,7 +1,7 @@
-import { JsonlTraceStore } from '@rt/store';
-import { Session, Recorder, runSingleLoop, type FlowContext } from '@rt/runtime';
-import { ToolBroker, type ApprovalPolicy } from '@rt/tools';
-import { LLMGateway, MockProvider } from '@rt/llm';
+import { JsonlTraceStore } from '@veridical/store';
+import { Session, Recorder, runSingleLoop, type FlowContext } from '@veridical/runtime';
+import { ToolBroker, type ApprovalPolicy } from '@veridical/tools';
+import { LLMGateway, MockProvider } from '@veridical/llm';
 import { createHash } from 'node:crypto';
 
 export function demoFingerprint(text: string): string {

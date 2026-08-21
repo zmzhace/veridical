@@ -10,19 +10,19 @@ importers:
 
   packages/demo:
     dependencies:
-      '@rt/llm':
+      '@veridical/llm':
         specifier: workspace:*
         version: link:../llm
-      '@rt/runtime':
+      '@veridical/runtime':
         specifier: workspace:*
         version: link:../runtime
-      '@rt/schema':
+      '@veridical/schema':
         specifier: workspace:*
         version: link:../schema
-      '@rt/store':
+      '@veridical/store':
         specifier: workspace:*
         version: link:../store
-      '@rt/tools':
+      '@veridical/tools':
         specifier: workspace:*
         version: link:../tools
     devDependencies:
@@ -38,14 +38,14 @@ importers:
 
   packages/llm:
     dependencies:
-      '@rt/runtime':
+      '@veridical/runtime':
         specifier: workspace:*
         version: link:../runtime
-      '@rt/schema':
+      '@veridical/schema':
         specifier: workspace:*
         version: link:../schema
     devDependencies:
-      '@rt/store':
+      '@veridical/store':
         specifier: workspace:*
         version: link:../store
       '@types/node':
@@ -60,10 +60,10 @@ importers:
 
   packages/runtime:
     dependencies:
-      '@rt/schema':
+      '@veridical/schema':
         specifier: workspace:*
         version: link:../schema
-      '@rt/store':
+      '@veridical/store':
         specifier: workspace:*
         version: link:../store
     devDependencies:
@@ -89,7 +89,7 @@ importers:
 
   packages/store:
     dependencies:
-      '@rt/schema':
+      '@veridical/schema':
         specifier: workspace:*
         version: link:../schema
     devDependencies:
@@ -105,7 +105,7 @@ importers:
 
   packages/tools:
     dependencies:
-      '@rt/schema':
+      '@veridical/schema':
         specifier: workspace:*
         version: link:../schema
     devDependencies:
