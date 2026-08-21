@@ -8,7 +8,8 @@
     "@veridical/schema": "workspace:*",
     "@veridical/store": "workspace:*",
     "@veridical/llm": "workspace:*",
-    "@veridical/tools": "workspace:*"
+    "@veridical/tools": "workspace:*",
+    "@veridical/spec": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
