@@ -4,6 +4,11 @@
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
+    "@veridical/schema": "workspace:*",
+    "@veridical/store": "workspace:*",
+    "@veridical/runtime": "workspace:*",
+    "@veridical/tools": "workspace:*",
+    "@veridical/llm": "workspace:*",
     "yaml": "^2.4.2",
     "semver": "^7.6.0",
     "zod": "^3.23.0"

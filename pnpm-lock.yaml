@@ -89,6 +89,21 @@ importers:
 
   packages/spec:
     dependencies:
+      '@veridical/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@veridical/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      '@veridical/schema':
+        specifier: workspace:*
+        version: link:../schema
+      '@veridical/store':
+        specifier: workspace:*
+        version: link:../store
+      '@veridical/tools':
+        specifier: workspace:*
+        version: link:../tools
       semver:
         specifier: ^7.6.0
         version: 7.8.5
