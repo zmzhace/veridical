@@ -10,6 +10,9 @@ importers:
 
   packages/demo:
     dependencies:
+      '@veridical/eval':
+        specifier: workspace:*
+        version: link:../eval
       '@veridical/llm':
         specifier: workspace:*
         version: link:../llm

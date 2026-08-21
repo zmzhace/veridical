@@ -4,6 +4,7 @@
   "type": "module",
   "main": "src/run.ts",
   "dependencies": {
+    "@veridical/eval": "workspace:*",
     "@veridical/schema": "workspace:*",
     "@veridical/spec": "workspace:*",
     "@veridical/store": "workspace:*",
