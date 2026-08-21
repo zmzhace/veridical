@@ -1,20 +1,16 @@
 {
-  "name": "@veridical/demo",
+  "name": "@veridical/memory",
   "version": "0.0.1",
   "type": "module",
-  "main": "src/run.ts",
+  "main": "src/index.ts",
   "dependencies": {
-    "@veridical/eval": "workspace:*",
-    "@veridical/memory": "workspace:*",
     "@veridical/schema": "workspace:*",
-    "@veridical/spec": "workspace:*",
     "@veridical/store": "workspace:*",
-    "@veridical/runtime": "workspace:*",
-    "@veridical/tools": "workspace:*",
-    "@veridical/llm": "workspace:*",
-    "@veridical/replay": "workspace:*"
+    "@veridical/runtime": "workspace:*"
   },
   "devDependencies": {
+    "@veridical/llm": "workspace:*",
+    "@veridical/spec": "workspace:*",
     "@types/node": "^26.2.0",
     "typescript": "^5.0.0",
     "vitest": "^3.0.0"
