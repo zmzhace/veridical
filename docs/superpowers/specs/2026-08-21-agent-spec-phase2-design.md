@@ -53,6 +53,8 @@ tools:
     deterministic: false   # 非确定性接口标记，透传给 ToolDef
 ```
 
+`instruction.system` 是**静态** system prompt，运行时拼进每次 LLM 请求的首条 system message。用户输入（本次任务的 prompt）是 `SpecRunner` 的**运行时参数**，不落在 spec 里。系统提示的 `{variables}` 插值**本期不做**——调用方在传入前自行插值即可（YAGNI）。
+
 ### 2.2 zod 校验（`parseSpecYaml`）
 
 `parseSpecYaml(yaml: string): AgentSpec` — YAML → zod 校验，非法即抛，带字段级错误。
@@ -119,7 +121,7 @@ interface RunResult {
 
 1. `session = new Session({ session_id, tenant_id, spec_version })`
 2. `recorder = new Recorder(store, session)`
-3. `llm = new LLMGateway(providers)`（用 `spec.llm.provider`/`model` 构造请求）
+3. `llm = new LLMGateway(providers)`（用 `spec.llm.provider`/`model` 构造请求；请求的 `messages` = `[{ role: 'system', content: spec.instruction.system }, { role: 'user', content: prompt }]`）
 4. `broker = new ToolBroker(库内工具, policy)`（白名单过滤 + 按 `access` 生成策略）
 5. `ctx: FlowContext` 绑定 recorder/llm/broker，`maxSteps = spec.flow.max_steps`
 6. `await runSingleLoop(ctx, prompt)`
