@@ -1,0 +1,30 @@
+{
+  "name": "@veridical/server",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@veridical/schema": "workspace:*",
+    "@veridical/store": "workspace:*",
+    "@veridical/spec": "workspace:*",
+    "@veridical/replay": "workspace:*",
+    "@veridical/llm": "workspace:*",
+    "@veridical/eval": "workspace:*",
+    "@veridical/runtime": "workspace:*",
+    "@veridical/tools": "workspace:*",
+    "fastify": "^4.28.0",
+    "@fastify/cors": "^9.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "tsx": "^4.0.0",
+    "vitest": "^3.0.0",
+    "@types/node": "^26.2.0"
+  }
+}
