@@ -3,5 +3,11 @@
   "private": true,
   "packageManager": "pnpm@9.0.0",
   "engines": { "node": ">=20.19.0" },
-  "scripts": { "build": "pnpm -r build", "test": "pnpm -r test" }
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "dev": "pnpm -r --parallel -F @veridical/server -F @veridical/web dev",
+    "dev:server": "pnpm -F @veridical/server dev",
+    "dev:web": "pnpm -F @veridical/web dev"
+  }
 }

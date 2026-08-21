@@ -4,7 +4,7 @@ import { parseEvent, type TraceEvent } from '@veridical/schema';
 import type { TraceStore } from './trace-store';
 
 export class JsonlTraceStore implements TraceStore {
-  constructor(private dir: string) {
+  constructor(public dir: string) {
     mkdirSync(dir, { recursive: true });
   }
 
