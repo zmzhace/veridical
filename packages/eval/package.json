@@ -1,0 +1,16 @@
+{
+  "name": "@veridical/eval",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": {
+    "@veridical/schema": "workspace:*",
+    "yaml": "^2.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.0.0"
+  },
+  "scripts": { "build": "tsc -p tsconfig.json", "test": "vitest run" }
+}
