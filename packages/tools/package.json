@@ -1,0 +1,9 @@
+{
+  "name": "@rt/tools",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": { "@rt/schema": "workspace:*" },
+  "devDependencies": { "typescript": "^5.0.0", "vitest": "^3.0.0" },
+  "scripts": { "build": "tsc -p tsconfig.json", "test": "vitest run" }
+}

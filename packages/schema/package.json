@@ -1,0 +1,9 @@
+{
+  "name": "@rt/schema",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": { "build": "tsc -p tsconfig.json", "test": "vitest run" },
+  "dependencies": { "zod": "^3.23.0" },
+  "devDependencies": { "typescript": "^5.0.0", "vitest": "^3.0.0" }
+}
