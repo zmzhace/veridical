@@ -121,16 +121,25 @@ export async function runSpec(deps: SpecRunnerDeps, spec: AgentSpec, prompt: str
     maxSteps: spec.flow.max_steps,
   };
 
-  await runSingleLoop(ctx, prompt);
+  let caught = false;
+  let error: unknown;
+  let outcome: unknown;
+  try {
+    await runSingleLoop(ctx, prompt);
+  } catch (err) {
+    caught = true;
+    error = err;
+    throw err;
+  } finally {
+    const events = await deps.store.readBySession(session_id);
+    const endTurn = [...events].reverse().find(e => e.type === 'turn/end');
+    outcome = (endTurn?.payload as { outcome?: unknown } | undefined)?.outcome;
 
-  const events = await deps.store.readBySession(session_id);
-  const endTurn = [...events].reverse().find(e => e.type === 'turn/end');
-  const outcome = (endTurn?.payload as { outcome?: unknown } | undefined)?.outcome;
-
-  await recorder.record({
-    span_id: 'spec', parent_span_id: null, type: 'spec/run/end', verb: 'response', attempt: 1, duration_ms: 0,
-    payload: { outcome },
-  });
+    await recorder.record({
+      span_id: 'spec', parent_span_id: null, type: 'spec/run/end', verb: caught ? 'error' : 'response', attempt: 1, duration_ms: 0,
+      payload: caught ? { outcome, message: error instanceof Error ? error.message : String(error) } : { outcome },
+    });
+  }
 
   return {
     session_id,

@@ -92,6 +92,23 @@ describe('runSpec', () => {
     ).rejects.toThrow(SpecRunError);
   });
 
+  it('persists an error spec/run/end event when all providers fail', async () => {
+    const store = new InMemoryTraceStore();
+    const spec = parseSpecYaml(SPEC_YAML);
+    const boom: LLMProvider = { complete: async () => { throw new Error('boom'); } };
+    await expect(
+      runSpec({ store, providers: new Map([['main', boom], ['backup', boom]]), tools: [], tenant_id: 't1', session_id: 's1' }, spec, 'hello'),
+    ).rejects.toThrow(SpecRunError);
+
+    const events = await store.readBySession('s1');
+    const start = events.find(e => e.type === 'spec/run/start');
+    const end = events.find(e => e.type === 'spec/run/end');
+    expect(start).toBeDefined();
+    expect(end).toBeDefined();
+    expect(end?.verb).toBe('error');
+    expect((end?.payload as { message?: string } | undefined)?.message).toContain('all LLM providers failed');
+  });
+
   it('throws SpecRunError when the primary provider is not registered', async () => {
     const store = new InMemoryTraceStore();
     const spec = parseSpecYaml(SPEC_YAML);
