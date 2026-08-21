@@ -83,13 +83,14 @@ interface EvalReport {
 
 ```ts
 class LLMJudge {
-  constructor(llm: LLMGateway, provider: string, model: string);
+  constructor(llm: LLMGateway, provider: string, model: string, store: TraceStore);
   judge(run: RunResult, rubric: string): Promise<{ passed: boolean; reasoning: string; tokens: LLMUsage }>;
 }
 ```
 
 - rubric 是调用方提供的判定标准（自然语言）。
 - 输出解析：要求 LLM 返回 JSON `{ passed: boolean, reasoning: string }`；解析失败 → 抛 `JudgeParseError`（显式失败，不静默 pass）。
+- `store`：judge 构造自己的 `Session`/`Recorder` 覆盖该 store，其 LLM 调用落事件（"model-visible means logged" 不变式——judge 的 meta-LLM 调用也可审计）。
 
 ## 4. 运行时 verify 集成（verifyFromRules）
 

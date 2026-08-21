@@ -282,7 +282,7 @@ git commit -m "feat: rule core with built-in rules and engine"
   - `interface EvalReport { rules?: RuleReport; judge?: { passed: boolean; reasoning: string; tokens: LLMUsage }; passed: boolean }`
   - `function evaluateRun(result: RunResult, config: EvalConfig, judge?: LLMJudge): Promise<EvalReport>` — `golden` is sugar for `ruleOutcomeEquals(golden)`; `judge` runs only if both config.judge and an `LLMJudge` instance are provided; overall `passed` = rules AND judge (pass_requirement applies to rule aggregation).
   - `class JudgeParseError extends Error`
-  - `class LLMJudge { constructor(llm: LLMGateway, provider: string, model: string); judge(run: RunResult, rubric: string): Promise<{ passed: boolean; reasoning: string; tokens: LLMUsage }> }` — builds a transcript from `RunResult.events`, asks the LLM for JSON `{ passed, reasoning }`, parses it; parse failure throws `JudgeParseError`.
+  - `class LLMJudge { constructor(llm: LLMGateway, provider: string, model: string, store: TraceStore); judge(run: RunResult, rubric: string): Promise<{ passed: boolean; reasoning: string; tokens: LLMUsage }> }` — builds a transcript from `RunResult.events`, asks the LLM for JSON `{ passed, reasoning }`, parses it; parse failure throws `JudgeParseError`. The judge constructs its own `Session`/`Recorder` over `store` so its LLM calls are evented (trace invariant — "model-visible means logged").
 
 - [ ] **Step 1: Write the failing test**
 
@@ -290,6 +290,7 @@ git commit -m "feat: rule core with built-in rules and engine"
 // packages/eval/test/evaluate.test.ts
 import { describe, it, expect } from 'vitest';
 import { LLMGateway } from '@veridical/llm';
+import { InMemoryTraceStore } from '@veridical/store';
 import type { TraceEvent } from '@veridical/schema';
 import { evaluateRun, ruleOutcomeEquals, ruleNoErrors, type RunResult } from '../src/index';
 
@@ -333,7 +334,7 @@ describe('evaluateRun', () => {
       complete: async () => ({ text: JSON.stringify({ passed: true, reasoning: 'looks good' }), usage: { input: 1, output: 1, cached: 0, total: 2 } }),
     };
     const gw = new LLMGateway(new Map([['j', provider]]));
-    const judge = new (await import('../src/judge')).LLMJudge(gw, 'j', 'j');
+    const judge = new (await import('../src/judge')).LLMJudge(gw, 'j', 'j', new InMemoryTraceStore());
     const report = await evaluateRun(result('done'), { judge: { provider: 'j', model: 'j', rubric: 'r' } }, judge);
     expect(report.passed).toBe(true);
     expect(report.judge?.reasoning).toBe('looks good');
@@ -344,7 +345,7 @@ describe('evaluateRun', () => {
       complete: async () => ({ text: JSON.stringify({ passed: false, reasoning: 'bad' }), usage: { input: 1, output: 1, cached: 0, total: 2 } }),
     };
     const gw = new LLMGateway(new Map([['j', provider]]));
-    const judge = new (await import('../src/judge')).LLMJudge(gw, 'j', 'j');
+    const judge = new (await import('../src/judge')).LLMJudge(gw, 'j', 'j', new InMemoryTraceStore());
     const report = await evaluateRun(result('done'), { judge: { provider: 'j', model: 'j', rubric: 'r' } }, judge);
     expect(report.passed).toBe(false);
   });
@@ -356,6 +357,7 @@ describe('evaluateRun', () => {
 import { describe, it, expect } from 'vitest';
 import { LLMGateway } from '@veridical/llm';
 import type { LLMProvider } from '@veridical/llm';
+import { InMemoryTraceStore } from '@veridical/store';
 import type { TraceEvent } from '@veridical/schema';
 import { LLMJudge, JudgeParseError, type RunResult } from '../src/index';
 
@@ -371,7 +373,7 @@ function evt(seq: number, type: string, verb: string, payload: any): TraceEvent 
 
 function judgeWith(text: string): LLMJudge {
   const provider: LLMProvider = { complete: async () => ({ text, usage }) };
-  return new LLMJudge(new LLMGateway(new Map([['j', provider]])), 'j', 'j');
+  return new LLMJudge(new LLMGateway(new Map([['j', provider]])), 'j', 'j', new InMemoryTraceStore());
 }
 
 describe('LLMJudge', () => {
@@ -416,13 +418,13 @@ Expected: FAIL — `evaluateRun` / `LLMJudge` / `JudgeParseError` not exported.
   "main": "src/index.ts",
   "dependencies": {
     "@veridical/schema": "workspace:*",
+    "@veridical/store": "workspace:*",
     "@veridical/runtime": "workspace:*",
     "@veridical/llm": "workspace:*",
     "@veridical/spec": "workspace:*",
     "yaml": "^2.4.2"
   },
   "devDependencies": {
-    "@veridical/store": "workspace:*",
     "@types/node": "^26.2.0",
     "typescript": "^5.0.0",
     "vitest": "^3.0.0"
@@ -434,6 +436,8 @@ Expected: FAIL — `evaluateRun` / `LLMJudge` / `JudgeParseError` not exported.
 `packages/eval/src/judge.ts`:
 ```ts
 import type { TraceEvent } from '@veridical/schema';
+import type { TraceStore } from '@veridical/store';
+import { Session, Recorder } from '@veridical/runtime';
 import type { LLMGateway, LLMUsage } from '@veridical/llm';
 import type { RunResult } from '@veridical/spec';
 
@@ -460,9 +464,11 @@ function transcriptOf(events: TraceEvent[]): string {
 }
 
 export class LLMJudge {
-  constructor(private llm: LLMGateway, private provider: string, private model: string) {}
+  constructor(private llm: LLMGateway, private provider: string, private model: string, private store: TraceStore) {}
 
   async judge(run: RunResult, rubric: string): Promise<{ passed: boolean; reasoning: string; tokens: LLMUsage }> {
+    const session = new Session({ session_id: `judge_${run.session_id}`, tenant_id: 't1', spec_version: run.spec_version });
+    const recorder = new Recorder(this.store, session);
     const req = {
       provider: this.provider,
       model: this.model,
@@ -471,7 +477,7 @@ export class LLMJudge {
         { role: 'user', content: `Rubric:\n${rubric}\n\nTranscript:\n${transcriptOf(run.events)}` },
       ],
     };
-    const res = await this.llm.complete(req, run as any);
+    const res = await this.llm.complete(req, recorder);
     const parsed = this.parseVerdict(res.text);
     return { ...parsed, tokens: res.usage };
   }
