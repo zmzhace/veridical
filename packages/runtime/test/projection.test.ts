@@ -20,3 +20,24 @@ describe('deriveMessages', () => {
     expect(msgs[3].content).toContain('ok');
   });
 });
+
+describe('deriveMessages upToSeq', () => {
+  it('truncates to seq when upToSeq provided', async () => {
+    const { InMemoryTraceStore } = await import('@veridical/store');
+    const store = new InMemoryTraceStore();
+    await store.append(evt('s1', 1, 'user.message', 'request', { text: 'a' }));
+    await store.append(evt('s1', 2, 'assistant.message', 'response', { text: 'b' }));
+    await store.append(evt('s1', 3, 'user.message', 'request', { text: 'c' }));
+    const msgs = await deriveMessages(store, 's1', 2);
+    expect(msgs.map(m => m.content)).toEqual(['a', 'b']);
+  });
+
+  it('defaults to full when upToSeq omitted', async () => {
+    const { InMemoryTraceStore } = await import('@veridical/store');
+    const store = new InMemoryTraceStore();
+    await store.append(evt('s1', 1, 'user.message', 'request', { text: 'a' }));
+    await store.append(evt('s1', 2, 'assistant.message', 'response', { text: 'b' }));
+    const msgs = await deriveMessages(store, 's1');
+    expect(msgs.map(m => m.content)).toEqual(['a', 'b']);
+  });
+});

@@ -7,8 +7,9 @@ export interface ModelMessage {
   tool_calls?: { name: string; args: unknown }[];
 }
 
-export async function deriveMessages(store: TraceStore, session_id: string): Promise<ModelMessage[]> {
-  const events = await store.readBySession(session_id);
+export async function deriveMessages(store: TraceStore, session_id: string, upToSeq?: number): Promise<ModelMessage[]> {
+  const all = await store.readBySession(session_id);
+  const events = upToSeq === undefined ? all : all.filter(e => e.seq <= upToSeq);
   const out: ModelMessage[] = [];
   for (const evt of events) {
     if (evt.type === 'user.message') {

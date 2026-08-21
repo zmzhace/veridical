@@ -4,6 +4,7 @@
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
+    "@veridical/runtime": "workspace:*",
     "@veridical/schema": "workspace:*",
     "@veridical/store": "workspace:*",
     "@veridical/llm": "workspace:*",
