@@ -1,3 +1,6 @@
 node_modules/
 dist/
 *.tsbuildinfo
+# Superpowers workflow docs (design specs + implementation plans) — local only, not committed
+/superpowers/
+/docs/superpowers/
