@@ -43,9 +43,9 @@
   - `type MemoryScope = 'working' | 'semantic' | 'skill'`
   - `interface MemoryEntry { key: string; value: unknown; scope: MemoryScope; tags?: string[] }`
   - `interface MemorySnapshot { entries: MemoryEntry[] }`
-  - `class MemoryStore { write(recorder: Recorder, entry: MemoryEntry): Promise<void>; read(recorder: Recorder, key: string): Promise<unknown>; snapshot(store: TraceStore, session_id: string): Promise<MemorySnapshot> }`
+  - `class MemoryStore { write(recorder: Recorder, entry: MemoryEntry): Promise<void>; read(recorder: Recorder, store: TraceStore, session_id: string, key: string): Promise<unknown>; snapshot(store: TraceStore, session_id: string): Promise<MemorySnapshot> }`
     - `write` records a `memory.write` event (type `memory.write`, verb `request`, payload `{ action:'write', key, value, scope, tags? }`).
-    - `read` records a `memory.read` event, then returns the snapshot's current value for `key` (undefined if absent).
+    - `read` records a `memory.read` event, then returns the snapshot's current value for `key` (undefined if absent). The `store`/`session_id` are explicit params (Recorder's store/session are private; `Memory` holds the store and threads it).
     - `snapshot` reads `memory.write` events, last-write-wins per key, carrying scope/tags.
   - `const MEMORY_SESSION = '_memory'` — the shared cross-session session id for long-term memory.
 
@@ -106,8 +106,8 @@ describe('MemoryStore', () => {
     const ms = new MemoryStore();
     await ms.write(rec, { key: 'k', value: 'val', scope: 'working' });
     const rec2 = await newRecorder(store);
-    expect(await ms.read(rec2, 'k')).toBe('val');
-    expect(await ms.read(rec2, 'missing')).toBeUndefined();
+    expect(await ms.read(rec2, store, 's1', 'k')).toBe('val');
+    expect(await ms.read(rec2, store, 's1', 'missing')).toBeUndefined();
     const types = (await store.readBySession('s1')).map(e => e.type);
     expect(types.filter(t => t === 'memory.read').length).toBeGreaterThanOrEqual(1);
   });
@@ -202,12 +202,12 @@ export class MemoryStore {
     });
   }
 
-  async read(recorder: Recorder, key: string): Promise<unknown> {
+  async read(recorder: Recorder, store: TraceStore, session_id: string, key: string): Promise<unknown> {
     await recorder.record({
       span_id: 'memory', parent_span_id: null, type: 'memory.read', verb: 'request', attempt: 1, duration_ms: 0,
       payload: { action: 'read', key, scope: 'working' },
     });
-    const snap = await this.snapshot((recorder as any).store as TraceStore, (recorder as any).session.session_id);
+    const snap = await this.snapshot(store, session_id);
     return snap.entries.find(e => e.key === key)?.value;
   }
 
@@ -279,28 +279,40 @@ function session(id: string, spec_version = '0.0.1'): Session {
   return new Session({ session_id: id, tenant_id: 't1', spec_version });
 }
 
+function longRecorder(store: InMemoryTraceStore): Recorder {
+  return new Recorder(store, session(MEMORY_SESSION));
+}
+
+function makeMemory(store: InMemoryTraceStore, sid: string): Memory {
+  return new Memory(new MemoryStore(), store, sid, new Recorder(store, session(sid)), longRecorder(store));
+}
+
+function makeMemory(store: InMemoryTraceStore, sid: string): Memory {
+  return new Memory(new MemoryStore(), store, sid, new Recorder(store, session(sid)), longRecorder(store));
+}
+
 describe('Memory', () => {
   it('working memory is session-scoped', async () => {
     const store = new InMemoryTraceStore();
-    const m = new Memory(new MemoryStore(), 's1', new Recorder(store, session('s1')));
+    const m = makeMemory(store, 's1');
     await m.remember('k', 'v');
     expect(await m.workingGet('k')).toBe('v');
     // A different session sees nothing
-    const m2 = new Memory(new MemoryStore(), 's2', new Recorder(store, session('s2')));
+    const m2 = makeMemory(store, 's2');
     expect(await m2.workingGet('k')).toBeUndefined();
   });
 
   it('semantic memory persists across sessions via _memory', async () => {
     const store = new InMemoryTraceStore();
-    await new Memory(new MemoryStore(), 's1', new Recorder(store, session('s1'))).rememberSemantic('policy', 'P12345', ['claim']);
-    const m2 = new Memory(new MemoryStore(), 's2', new Recorder(store, session('s2')));
+    await makeMemory(store, 's1').rememberSemantic('policy', 'P12345', ['claim']);
+    const m2 = makeMemory(store, 's2');
     const hits = await m2.recall('claim policy');
     expect(hits.map(h => h.key)).toContain('policy');
   });
 
   it('recall matches tags and keywords, sorts by recency, respects limit', async () => {
     const store = new InMemoryTraceStore();
-    const m = new Memory(new MemoryStore(), 's1', new Recorder(store, session('s1')));
+    const m = makeMemory(store, 's1');
     await m.rememberSemantic('a', 'first thing', ['x']);
     await m.rememberSemantic('b', 'second alpha', ['y']);
     await m.rememberSemantic('c', 'third alpha', ['z']);
@@ -314,7 +326,7 @@ describe('Memory', () => {
 
   it('skills are listed and rememberable', async () => {
     const store = new InMemoryTraceStore();
-    const m = new Memory(new MemoryStore(), 's1', new Recorder(store, session('s1')));
+    const m = makeMemory(store, 's1');
     await m.rememberSkill('echo_helper', { name: 'echo_helper', description: 'echo', procedure: 'return args' });
     const skills = await m.listSkills();
     expect(skills.map(s => s.value)).toContainEqual({ name: 'echo_helper', description: 'echo', procedure: 'return args' });
@@ -322,7 +334,7 @@ describe('Memory', () => {
 
   it('forget removes a memory (undefined tombstone)', async () => {
     const store = new InMemoryTraceStore();
-    const m = new Memory(new MemoryStore(), 's1', new Recorder(store, session('s1')));
+    const m = makeMemory(store, 's1');
     await m.remember('k', 'v');
     await m.forget('k', 'working');
     expect(await m.workingGet('k')).toBeUndefined();
@@ -330,7 +342,7 @@ describe('Memory', () => {
 
   it('recall records a memory.recalled event', async () => {
     const store = new InMemoryTraceStore();
-    const m = new Memory(new MemoryStore(), 's2', new Recorder(store, session('s2')));
+    const m = makeMemory(store, 's2');
     await m.recall('nothing');
     const types = (await store.readBySession('s2')).map(e => e.type);
     expect(types).toContain('memory.recalled');
@@ -370,20 +382,7 @@ Expected: FAIL — `Memory` / `memoryToSystemPrompt` not exported.
 `packages/memory/src/memory.ts`:
 ```ts
 import type { Recorder } from '@veridical/runtime';
-import { MemoryStore, MEMORY_SESSION, type MemoryEntry } from './store';
-import type { MemoryScope } from './events';
-
-function stringify(v: unknown): string {
-  return typeof v === 'string' ? v : JSON.stringify(v);
-}
-
-function tokenize(query: string): string[] {
-  return query.split(/\W+/).map(t => t.trim().toLowerCase()).filter(t => t.length >= 2);
-}
-
-`packages/memory/src/memory.ts`:
-```ts
-import type { Recorder } from '@veridical/runtime';
+import type { TraceStore } from '@veridical/store';
 import { MemoryStore, MEMORY_SESSION, type MemoryEntry } from './store';
 import type { MemoryScope } from './events';
 
@@ -398,6 +397,7 @@ function tokenize(query: string): string[] {
 export class Memory {
   constructor(
     private store: MemoryStore,
+    private storeImpl: TraceStore,       // the underlying store (for snapshot/recall reads)
     private session_id: string,
     private recorder: Recorder,          // bound to current session (working memory)
     private longRecorder: Recorder,      // bound to MEMORY_SESSION (long-term memory)
@@ -408,7 +408,7 @@ export class Memory {
   }
 
   async workingGet(key: string): Promise<unknown> {
-    const snap = await this.store.snapshot((this.recorder as any).store, this.session_id);
+    const snap = await this.store.snapshot(this.storeImpl, this.session_id);
     return snap.entries.find(e => e.key === key)?.value;
   }
 
@@ -426,18 +426,17 @@ export class Memory {
   }
 
   async listSkills(): Promise<MemoryEntry[]> {
-    const snap = await this.store.snapshot((this.longRecorder as any).store, MEMORY_SESSION);
+    const snap = await this.store.snapshot(this.storeImpl, MEMORY_SESSION);
     return snap.entries.filter(e => e.scope === 'skill');
   }
 
   async recall(query: string, opts?: { tags?: string[]; limit?: number }): Promise<MemoryEntry[]> {
-    const snap = await this.store.snapshot((this.longRecorder as any).store, MEMORY_SESSION);
     const limit = opts?.limit ?? 5;
     const keywords = tokenize(query);
     const byKey = new Map<string, MemoryEntry>();
     const seqOrder: string[] = [];
     // Rebuild with write order (recency): iterate events in seq order.
-    const events = await (this.longRecorder as any).store.readBySession(MEMORY_SESSION);
+    const events = await this.storeImpl.readBySession(MEMORY_SESSION);
     for (const e of events) {
       if (e.type !== 'memory.write') continue;
       const p = (e.payload as any);
@@ -451,8 +450,7 @@ export class Memory {
       const kwHit = keywords.some(kw => stringify(entry.value).toLowerCase().includes(kw));
       return tagHit || kwHit;
     });
-    // Recency: order by last-write seq descending. We approximate by re-sorting entries
-    // according to the seqOrder (last occurrence per key).
+    // Recency: order by last-write seq descending (last occurrence per key wins).
     const lastSeq = new Map<string, number>();
     seqOrder.forEach((k, i) => lastSeq.set(k, i));
     matches.sort((a, b) => (lastSeq.get(b.key) ?? 0) - (lastSeq.get(a.key) ?? 0));
@@ -574,7 +572,7 @@ describe('runSpec with memory hook', () => {
 
     const session = new Session({ session_id: 's1', tenant_id: 't1', spec_version: '1.0.0' });
     const longSession = new Session({ session_id: '_memory', tenant_id: 't1', spec_version: '1.0.0' });
-    const memory = new Memory(new MemoryStore(), 's1', new Recorder(store, session), new Recorder(store, longSession));
+    const memory = new Memory(new MemoryStore(), store, 's1', new Recorder(store, session), new Recorder(store, longSession));
     await memory.rememberSemantic('policy', 'P12345', ['claim']);
 
     const mock = providerFor('hello claim', true);
@@ -786,7 +784,7 @@ export async function runMemoryDemo(dir: string) {
 
   const session = new Session({ session_id: 's1', tenant_id: 't1', spec_version: '1.0.0' });
   const longSession = new Session({ session_id: '_memory', tenant_id: 't1', spec_version: '1.0.0' });
-  const memory = new Memory(new MemoryStore(), 's1', new Recorder(store, session), new Recorder(store, longSession));
+  const memory = new Memory(new MemoryStore(), store, 's1', new Recorder(store, session), new Recorder(store, longSession));
   await memory.rememberSemantic('policy', 'P12345', ['claim']);
 
   const mock = new MockProvider();
