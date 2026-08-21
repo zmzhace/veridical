@@ -8,6 +8,34 @@ importers:
 
   .: {}
 
+  packages/demo:
+    dependencies:
+      '@rt/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@rt/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      '@rt/schema':
+        specifier: workspace:*
+        version: link:../schema
+      '@rt/store':
+        specifier: workspace:*
+        version: link:../store
+      '@rt/tools':
+        specifier: workspace:*
+        version: link:../tools
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@26.2.0)
+
   packages/llm:
     dependencies:
       '@rt/runtime':
