@@ -35,7 +35,7 @@ export async function runDemo(dir: string) {
     },
     async executeTool(name, args) { return (await tools.call(name, args)).ok ? 'echoed' : 'failed'; },
     shouldStop() { return false; },
-    verifyToolResult() { return true; },
+    verifyToolResult(_name: string, _result: unknown) { return true; },
     maxSteps: 2,
   };
 

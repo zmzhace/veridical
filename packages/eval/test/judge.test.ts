@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { LLMGateway } from '@veridical/llm';
 import type { LLMProvider } from '@veridical/llm';
 import type { TraceEvent } from '@veridical/schema';
+import { InMemoryTraceStore } from '@veridical/store';
 import { LLMJudge, JudgeParseError, type RunResult } from '../src/index';
 
 const usage = { input: 1, output: 1, cached: 0, total: 2 };
@@ -41,5 +42,27 @@ describe('LLMJudge', () => {
   it('throws JudgeParseError on missing passed field', async () => {
     const j = judgeWith(JSON.stringify({ reasoning: 'no passed' }));
     await expect(j.judge(run, 'rubric')).rejects.toThrow(JudgeParseError);
+  });
+
+  it('records judge events under a judge_ prefixed session id, avoiding seq/id collision with the run store', async () => {
+    const store = new InMemoryTraceStore();
+    // simulate the run's own events already present in the same store
+    for (const e of run.events) await store.append(e);
+
+    const j = new LLMJudge(
+      new LLMGateway(new Map([['j', { complete: async () => ({ text: JSON.stringify({ passed: true, reasoning: 'ok' }), usage }) }]])),
+      'j',
+      'j',
+      store,
+    );
+    await j.judge(run, 'rubric');
+
+    // run events are NOT interleaved with judge events
+    const runStore = await store.readBySession('s1');
+    expect(runStore).toHaveLength(run.events.length);
+    // judge events live under their own session id
+    const judgeStore = await store.readBySession('judge_s1');
+    expect(judgeStore.length).toBeGreaterThan(0);
+    expect(judgeStore.every(e => e.session_id === 'judge_s1')).toBe(true);
   });
 });

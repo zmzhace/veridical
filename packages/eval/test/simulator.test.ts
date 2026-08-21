@@ -81,7 +81,11 @@ describe('Simulator', () => {
     const report = await sim.run(scenario, registry);
     expect(report.name).toBe('claim-scenario');
     expect(report.steps).toHaveLength(2);
-    expect(report.steps[0].report.passed).toBe(true);   // echo called, no_errors
+    // step 0 runs BOTH the step's expect_rules (tool_called: echo) AND the global scenario.rules (no_errors)
+    const step0RuleNames = report.steps[0].report.rules?.rules.map(r => r.name) ?? [];
+    expect(step0RuleNames).toContain('tool_called');
+    expect(step0RuleNames).toContain('no_errors');
+    expect(report.steps[0].report.passed).toBe(true);
     expect(report.passed).toBe(true);
     const types = (await store.readBySession('eval_s1')).map(e => e.type);
     expect(types).toContain('eval/run/start');

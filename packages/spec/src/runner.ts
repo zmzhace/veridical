@@ -125,7 +125,7 @@ export async function runSpec(deps: SpecRunnerDeps, spec: AgentSpec, prompt: str
     },
     shouldStop: () => false,
     verifyToolResult: deps.verify
-      ? (result: unknown) => {
+      ? (name: string, result: unknown) => {
           const pendingResult = {
             id: `vr_${session_id}_${stepEvents.length + 1}`,
             tenant_id: deps.tenant_id,
@@ -137,7 +137,7 @@ export async function runSpec(deps: SpecRunnerDeps, spec: AgentSpec, prompt: str
             verb: 'response',
             attempt: 1,
             duration_ms: 0,
-            payload: { result },
+            payload: { name, result },
             spec_version: spec.version,
           } satisfies TraceEvent;
           return deps.verify!([...stepEvents, pendingResult]);

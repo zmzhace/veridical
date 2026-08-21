@@ -16,7 +16,7 @@ describe('runSingleLoop', () => {
       },
       async executeTool() { return 'ok'; },
       shouldStop(outcome) { return outcome !== undefined; },
-      verifyToolResult() { verifyCalled++; return true; },
+      verifyToolResult(_name: string, _result: unknown) { verifyCalled++; return true; },
       maxSteps: 5,
     };
 
@@ -42,7 +42,7 @@ describe('runSingleLoop', () => {
       },
       async executeTool() { return 'ok'; },
       shouldStop(outcome) { return outcome !== undefined; },
-      verifyToolResult() { return true; },
+      verifyToolResult(_name: string, _result: unknown) { return true; },
       maxSteps: 5,
     };
 
@@ -64,7 +64,7 @@ describe('runSingleLoop', () => {
       async runStep() { return { text: 'plain answer' }; },
       async executeTool() { throw new Error('unexpected tool call'); },
       shouldStop(outcome) { return outcome !== undefined; },
-      verifyToolResult() { return true; },
+      verifyToolResult(_name: string, _result: unknown) { return true; },
       maxSteps: 5,
     };
 
@@ -88,7 +88,7 @@ describe('runSingleLoop', () => {
       async runStep() { runCalls++; return { text: 'x', tool: { name: 'do_thing', args: {} } }; },
       async executeTool() { return 'bad'; },
       shouldStop() { return false; },
-      verifyToolResult() { return false; },
+      verifyToolResult(_name: string, _result: unknown) { return false; },
       maxSteps: 2,
     };
 

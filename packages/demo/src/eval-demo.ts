@@ -53,6 +53,13 @@ export async function runEvalDemo(dir: string) {
     providers: new Map([['mock', mock]]),
     tools: [{ id: 'echo', name: 'echo', description: '', deterministic: true, execute: async (a: unknown) => a }],
     tenant_id: 't1',
+    runStep: async ({ llm, spec, recorder, prompt }) => {
+      const res = await llm.complete(
+        { provider: 'mock', model: 'm', messages: [{ role: 'system', content: spec.instruction.system }, { role: 'user', content: prompt }] },
+        recorder,
+      );
+      return prompt === 'hello' ? { text: res.text, tool: { name: 'echo', args: {} } } : { text: res.text };
+    },
   });
 
   const scenario = parseScenarioYaml(SCENARIO);

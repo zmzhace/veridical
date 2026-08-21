@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { InMemoryTraceStore } from '@veridical/store';
 import { MockProvider, fingerprint } from '@veridical/llm';
 import { parseSpecYaml, runSpec } from '@veridical/spec';
-import { verifyFromRules, ruleToolCalled, ruleNoErrors } from '../src/index';
+import { verifyFromRules, ruleToolCalled, ruleNoErrors, ruleToolNotDenied } from '../src/index';
 
 const SPEC = `
 name: verify-test
@@ -19,6 +19,26 @@ llm:
   fallback: []
 tools:
   - name: echo
+    access: allow
+`;
+
+// echo is intentionally NOT whitelisted → SpecApprovalPolicy denies any echo call
+// max_steps: 1 → no retry, so the rule MUST see the current (first) tool step's denial
+const SPEC_DENY = `
+name: verify-test-deny
+version: 1.0.0
+schema_version: 1
+instruction:
+  system: You are a test agent.
+flow:
+  mode: single-loop
+  max_steps: 1
+llm:
+  provider: mock
+  model: m
+  fallback: []
+tools:
+  - name: other
     access: allow
 `;
 
@@ -76,5 +96,26 @@ describe('runSpec with verify hook', () => {
       'hello',
     );
     expect(result.events.some(e => e.type === 'tool.result' && (e.payload as any)?.blocked === true)).toBe(false);
+  });
+
+  it('blocks the step when ruleToolNotDenied sees the CURRENT tool was denied', async () => {
+    const store = new InMemoryTraceStore();
+    const spec = parseSpecYaml(SPEC_DENY);
+    const result = await runSpec(
+      {
+        store,
+        providers: new Map([['mock', provider('hi')]]),
+        tools: [echo],
+        tenant_id: 't1',
+        session_id: 's2',
+        verify: verifyFromRules([ruleToolNotDenied('echo')]),
+        runStep: async () => ({ text: '', tool: { name: 'echo', args: {} } }),
+      },
+      spec,
+      'hello',
+    );
+    const blocked = result.events.filter(e => e.type === 'tool.result' && (e.payload as any)?.blocked === true);
+    expect(blocked.length).toBeGreaterThan(0);
+    expect(blocked[0].payload).toMatchObject({ name: 'echo', result: { ok: false, reason: 'denied' }, blocked: true });
   });
 });

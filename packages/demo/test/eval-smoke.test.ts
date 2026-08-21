@@ -10,6 +10,7 @@ describe('eval-driven demo', () => {
     const { store, report } = await runEvalDemo(dir);
     expect(report.name).toBe('claim-scenario');
     expect(report.steps.length).toBeGreaterThan(0);
+    expect(report.passed).toBe(true);
     const events = await store.readBySession('eval_s1');
     const types = events.map(e => e.type);
     for (const t of ['eval/run/start', 'eval/step/end']) {

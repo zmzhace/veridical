@@ -25,7 +25,7 @@ export class Simulator {
       const step = scenario.steps[i];
       await recorder.record({ span_id: 'eval', parent_span_id: null, type: 'eval/run/start', verb: 'request', attempt: 1, duration_ms: 0, payload: { scenario: scenario.name, index: i, user: step.user } });
       const run = await runSpec(this.deps, spec, step.user);
-      const rules = step.expect_rules ?? scenario.rules ?? [];
+      const rules = [...(step.expect_rules ?? []), ...(scenario.rules ?? [])];
       const report = await evaluateRun(run, { rules });
       await recorder.record({ span_id: 'eval', parent_span_id: null, type: 'eval/step/end', verb: 'response', attempt: 1, duration_ms: 0, payload: { scenario: scenario.name, index: i, passed: report.passed } });
       steps.push({ index: i, user: step.user, run, report });

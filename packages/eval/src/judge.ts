@@ -36,7 +36,7 @@ export class LLMJudge {
 
   async judge(run: RunResult, rubric: string): Promise<{ passed: boolean; reasoning: string; tokens: LLMUsage }> {
     const tenantId = run.events[0]?.tenant_id ?? 'unknown';
-    const session = new Session({ session_id: run.session_id, tenant_id: tenantId, spec_version: run.spec_version });
+    const session = new Session({ session_id: `judge_${run.session_id}`, tenant_id: tenantId, spec_version: run.spec_version });
     const recorder = new Recorder(this.store, session);
     const req = {
       provider: this.provider,
