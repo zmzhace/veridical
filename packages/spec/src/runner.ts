@@ -40,6 +40,7 @@ export interface SpecRunnerDeps {
   policy?: ApprovalPolicy;
   onAsk?: (tool: ToolDef, args: unknown) => Promise<boolean> | boolean;
   runStep?: (ctx: RunnerStepCtx) => Promise<{ text: string; tool?: { name: string; args: unknown } }>;
+  verify?: (events: TraceEvent[]) => boolean;
   session_id?: string;
   tenant_id: string;
 }
@@ -109,15 +110,39 @@ export async function runSpec(deps: SpecRunnerDeps, spec: AgentSpec, prompt: str
   };
   const stepRun = deps.runStep ?? defaultRunStep;
 
+  let stepEvents: TraceEvent[] = [];
   const ctx: FlowContext = {
     recorder,
-    runStep: (p) => stepRun({ llm, spec, recorder, prompt: p }),
+    runStep: async (p) => {
+      if (deps.verify) {
+        stepEvents = await deps.store.readBySession(session_id);
+      }
+      return stepRun({ llm, spec, recorder, prompt: p });
+    },
     executeTool: async (name, args) => {
       const r = await broker.call(name, args);
       return r.ok ? r.result : { ok: false, reason: r.reason };
     },
     shouldStop: () => false,
-    verifyToolResult: () => true,
+    verifyToolResult: deps.verify
+      ? (result: unknown) => {
+          const pendingResult = {
+            id: `vr_${session_id}_${stepEvents.length + 1}`,
+            tenant_id: deps.tenant_id,
+            session_id,
+            span_id: 'loop',
+            parent_span_id: null,
+            seq: stepEvents.length + 1,
+            type: 'tool.result',
+            verb: 'response',
+            attempt: 1,
+            duration_ms: 0,
+            payload: { result },
+            spec_version: spec.version,
+          } satisfies TraceEvent;
+          return deps.verify!([...stepEvents, pendingResult]);
+        }
+      : () => true,
     maxSteps: spec.flow.max_steps,
   };
 
