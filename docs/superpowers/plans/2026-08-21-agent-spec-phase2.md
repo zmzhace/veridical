@@ -127,10 +127,12 @@ Expected: FAIL — `@veridical/spec` package not found / `parseSpecYaml` not exp
   "main": "src/index.ts",
   "dependencies": {
     "yaml": "^2.4.2",
-    "semver": "^7.6.0"
+    "semver": "^7.6.0",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
+    "@types/semver": "^7.5.0",
     "typescript": "^5.0.0",
     "vitest": "^3.0.0"
   },
@@ -714,10 +716,12 @@ Expected: FAIL — `runSpec` / `SpecApprovalPolicy` / `SpecRunError` not exporte
     "@veridical/tools": "workspace:*",
     "@veridical/llm": "workspace:*",
     "yaml": "^2.4.2",
-    "semver": "^7.6.0"
+    "semver": "^7.6.0",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
+    "@types/semver": "^7.5.0",
     "typescript": "^5.0.0",
     "vitest": "^3.0.0"
   },
