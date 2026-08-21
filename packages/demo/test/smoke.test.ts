@@ -18,5 +18,10 @@ describe('end-to-end smoke', () => {
 
     const msgs = await deriveMessages(store, 's1');
     expect(msgs.length).toBeGreaterThan(0);
+
+    const totalTokens = events.reduce((s, e) => s + (e.tokens?.total ?? 0), 0);
+    const totalDuration = events.reduce((s, e) => s + (e.duration_ms ?? 0), 0);
+    expect(totalTokens).toBeGreaterThan(0);
+    expect(totalDuration).toBeGreaterThan(0);
   });
 });
