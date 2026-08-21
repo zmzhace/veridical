@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { InMemoryTraceStore } from '@veridical/store';
-import { InMemorySpecRegistry, parseSpecYaml, runSpec, type ToolDef } from '@veridical/spec';
+import { InMemorySpecRegistry, parseSpecYaml, runSpec } from '@veridical/spec';
 import { MockProvider, fingerprint } from '@veridical/llm';
+import type { ToolDef } from '@veridical/tools';
 import { ReplayEngine, ReplayError, ReplayMissError, TraceDivergenceError } from '../src/index';
 
 const SPEC = `

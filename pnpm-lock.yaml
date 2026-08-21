@@ -16,6 +16,9 @@ importers:
       '@veridical/llm':
         specifier: workspace:*
         version: link:../llm
+      '@veridical/replay':
+        specifier: workspace:*
+        version: link:../replay
       '@veridical/runtime':
         specifier: workspace:*
         version: link:../runtime

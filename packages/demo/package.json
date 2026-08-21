@@ -10,7 +10,8 @@
     "@veridical/store": "workspace:*",
     "@veridical/runtime": "workspace:*",
     "@veridical/tools": "workspace:*",
-    "@veridical/llm": "workspace:*"
+    "@veridical/llm": "workspace:*",
+    "@veridical/replay": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
