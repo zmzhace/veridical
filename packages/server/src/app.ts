@@ -4,6 +4,7 @@ import { JsonlTraceStore } from '@veridical/store';
 import type { TraceStore } from '@veridical/store';
 import { CONFIG } from './config.js';
 import { registerSessionsRoutes } from './routes/sessions.js';
+import { registerRunRoutes } from './routes/run.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -16,6 +17,7 @@ export async function buildApp(tracesDir?: string) {
   await app.register(cors);
   app.decorate('store', new JsonlTraceStore(tracesDir ?? CONFIG.tracesDir));
   await app.register(registerSessionsRoutes);
+  await app.register(registerRunRoutes);
   app.get('/api/health', async () => ({ ok: true }));
   return app;
 }
