@@ -113,6 +113,12 @@ importers:
       '@types/node':
         specifier: ^26.2.0
         version: 26.2.0
+      '@veridical/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@veridical/spec':
+        specifier: workspace:*
+        version: link:../spec
       typescript:
         specifier: ^5.0.0
         version: 5.9.3
