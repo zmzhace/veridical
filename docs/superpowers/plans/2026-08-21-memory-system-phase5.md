@@ -394,21 +394,6 @@ function tokenize(query: string): string[] {
   return query.split(/\W+/).map(t => t.trim().toLowerCase()).filter(t => t.length >= 2);
 }
 
-`packages/memory/src/memory.ts`:
-```ts
-import type { Recorder } from '@veridical/runtime';
-import type { TraceStore } from '@veridical/store';
-import { MemoryStore, MEMORY_SESSION, type MemoryEntry } from './store';
-import type { MemoryScope } from './events';
-
-function stringify(v: unknown): string {
-  return typeof v === 'string' ? v : JSON.stringify(v);
-}
-
-function tokenize(query: string): string[] {
-  return query.split(/\W+/).map(t => t.trim().toLowerCase()).filter(t => t.length >= 2);
-}
-
 export class Memory {
   constructor(
     private store: MemoryStore,
