@@ -5,6 +5,10 @@
   "main": "src/index.ts",
   "dependencies": {
     "@veridical/schema": "workspace:*",
+    "@veridical/store": "workspace:*",
+    "@veridical/runtime": "workspace:*",
+    "@veridical/llm": "workspace:*",
+    "@veridical/spec": "workspace:*",
     "yaml": "^2.4.2"
   },
   "devDependencies": {

@@ -41,9 +41,21 @@ importers:
 
   packages/eval:
     dependencies:
+      '@veridical/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@veridical/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@veridical/schema':
         specifier: workspace:*
         version: link:../schema
+      '@veridical/spec':
+        specifier: workspace:*
+        version: link:../spec
+      '@veridical/store':
+        specifier: workspace:*
+        version: link:../store
       yaml:
         specifier: ^2.4.2
         version: 2.9.0
