@@ -21,7 +21,13 @@ async function listSessions(store: TraceStore): Promise<SessionSummary[]> {
   for (const f of readdirSync(dir)) {
     if (!f.endsWith('.jsonl')) continue;
     const id = f.slice(0, -'.jsonl'.length);
-    const events = await store.readBySession(id);
+    let events;
+    try {
+      events = await store.readBySession(id);
+    } catch (err) {
+      console.warn(`skipping malformed session file ${f}: ${err}`);
+      continue;
+    }
     if (events.length === 0) continue;
     const tokens = events.reduce((acc, e) => {
       if (e.tokens) { acc.input += e.tokens.input; acc.output += e.tokens.output; acc.cached += e.tokens.cached; acc.total += e.tokens.total; }
