@@ -52,14 +52,22 @@ export async function registerSessionsRoutes(app: FastifyInstance) {
   app.get('/api/sessions', async () => listSessions(store));
 
   app.get<{ Params: { id: string } }>('/api/sessions/:id', async (req, reply) => {
-    const events = await store.readBySession(req.params.id);
-    if (events.length === 0) return reply.code(404).send({ error: { code: 'not_found', message: `session ${req.params.id} not found` } });
-    return events;
+    try {
+      const events = await store.readBySession(req.params.id);
+      if (events.length === 0) return reply.code(404).send({ error: { code: 'not_found', message: `session ${req.params.id} not found` } });
+      return events;
+    } catch (err) {
+      return reply.code(500).send({ error: { code: 'trace_corrupt', message: String(err) } });
+    }
   });
 
-  app.post<{ Params: { id: string }; Body: { targetSeq?: number } }>('/api/sessions/:id/replay', async (req) => {
-    const projection = new TraceProjection(store);
-    const target = req.body?.targetSeq ?? (await store.readBySession(req.params.id)).length;
-    return projection.projectAt(req.params.id, target);
+  app.post<{ Params: { id: string }; Body: { targetSeq?: number } }>('/api/sessions/:id/replay', async (req, reply) => {
+    try {
+      const projection = new TraceProjection(store);
+      const target = req.body?.targetSeq ?? (await store.readBySession(req.params.id)).length;
+      return await projection.projectAt(req.params.id, target);
+    } catch (err) {
+      return reply.code(500).send({ error: { code: 'trace_corrupt', message: String(err) } });
+    }
   });
 }

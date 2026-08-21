@@ -37,15 +37,22 @@ export function RunPage() {
     let buf = '';
     while (true) {
       const { value, done } = await reader.read(); if (done) break;
-      buf += dec.decode(value);
-      for (const part of buf.split('\n\n')) {
-        if (!part.trim().startsWith('data:')) continue;
-        const msg = JSON.parse(part.replace(/^data: /, ''));
-        if (msg.type === 'progress') setProgress(`events: ${msg.count}`);
-        if (msg.type === 'done') { nav(`/sessions/${msg.session_id}`); return; }
-        if (msg.type === 'error') setProgress(`error: ${msg.message}`);
+      buf += dec.decode(value, { stream: true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop() ?? '';
+      for (const part of parts) {
+        const trimmed = part.trim();
+        if (!trimmed.startsWith('data:')) continue;
+        try {
+          const msg = JSON.parse(trimmed.replace(/^data:\s*/, ''));
+          if (msg.type === 'progress' || msg.type === 'event') {
+            const c = msg.count ?? msg.event?.seq;
+            setProgress(c != null && c !== '' ? `events: ${c}` : 'events');
+          }
+          if (msg.type === 'done') { nav(`/sessions/${msg.session_id}`); return; }
+          if (msg.type === 'error') setProgress(`error: ${msg.message}`);
+        } catch { continue; }
       }
-      buf = '';
     }
   }
 

@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import { parseSpecYaml, runSpec, type SpecRunnerDeps } from '@veridical/spec';
-import { getStore } from '../store.js';
 import { OpenAICompatibleProvider, MockScriptedProvider, resolveTools } from '../providers.js';
 import { makeDecisionRunStep } from '../runStep.js';
 
@@ -16,6 +15,7 @@ interface RunBody {
 }
 
 export async function registerRunRoutes(app: FastifyInstance) {
+  const store = app.store;
   app.post<{ Body: RunBody }>('/api/run', async (req, reply) => {
     const body = req.body;
     if (!body?.specYaml) return reply.code(400).send({ error: { code: 'bad_request', message: 'specYaml required' } });
@@ -25,8 +25,6 @@ export async function registerRunRoutes(app: FastifyInstance) {
     } catch (e) {
       return reply.code(400).send({ error: { code: 'invalid_spec', message: String(e) } });
     }
-
-    const store = getStore();
     const sessionId = `run_${randomUUID()}`;
     const providers = new Map<string, any>();
     if (body.mode === 'live') {
@@ -47,6 +45,7 @@ export async function registerRunRoutes(app: FastifyInstance) {
     reply.raw.flushHeaders?.();
 
     const send = (obj: unknown) => {
+      if (reply.raw.writableEnded) return;
       try {
         reply.raw.write(`data: ${JSON.stringify(obj)}\n\n`);
       } catch {
@@ -57,13 +56,14 @@ export async function registerRunRoutes(app: FastifyInstance) {
     // Polling loop: every 150ms emit new events whose seq > lastSeq
     let lastSeq = 0;
     const poll = setInterval(async () => {
+      if (reply.raw.writableEnded) return;
       try {
         const evs = await store.readBySession(sessionId);
         // Emit seq-delta events (spec describes this behavior)
         for (const ev of evs) {
           const seq = (ev as any).seq ?? 0;
           if (seq > lastSeq) {
-            send({ type: 'event', event: ev });
+            send({ type: 'event', event: ev, count: evs.length });
             lastSeq = seq;
           }
         }
@@ -73,6 +73,9 @@ export async function registerRunRoutes(app: FastifyInstance) {
         // ignore poll errors
       }
     }, 150);
+    const clearPoll = () => clearInterval(poll);
+    req.raw.on('close', clearPoll);
+    reply.raw.on('close', clearPoll);
 
     const deps: SpecRunnerDeps = {
       store,
@@ -91,7 +94,7 @@ export async function registerRunRoutes(app: FastifyInstance) {
       for (const ev of final) {
         const seq = (ev as any).seq ?? 0;
         if (seq > lastSeq) {
-          send({ type: 'event', event: ev });
+          send({ type: 'event', event: ev, count: final.length });
           lastSeq = seq;
         }
       }
@@ -100,6 +103,7 @@ export async function registerRunRoutes(app: FastifyInstance) {
       clearInterval(poll);
       send({ type: 'error', message: String(e) });
     } finally {
+      clearInterval(poll);
       try {
         reply.raw.end();
       } catch {
