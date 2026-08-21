@@ -114,27 +114,38 @@ tools:
 ```ts
 import { JsonlTraceStore } from '@veridical/store';
 import { InMemorySpecRegistry, parseSpecYaml, runSpec } from '@veridical/spec';
-import { MockProvider } from '@veridical/llm';
+import { MockProvider, fingerprint } from '@veridical/llm';
 
 const store = new JsonlTraceStore('.traces');
 const spec = parseSpecYaml(`
 name: claim-filing
 version: 1.0.0
 schema_version: 1
-instruction: { system: "You are a claim assistant." }
-flow: { mode: single-loop, max_steps: 3 }
-llm: { provider: mock, model: m, fallback: [] }
+instruction:
+  system: You are a claim assistant.
+flow:
+  mode: single-loop
+  max_steps: 3
+llm:
+  provider: mock
+  model: m
+  fallback: []
 tools: []
 `);
 await new InMemorySpecRegistry().register(spec);
 
+const prompt = '我要报案';
 const mock = new MockProvider();
-mock.record('fp...', 'I collected policy_no.', { input: 1, output: 1, cached: 0, total: 2 });
+mock.record(
+  fingerprint({ provider: 'mock', model: 'm', messages: [{ role: 'system', content: 'You are a claim assistant.' }, { role: 'user', content: prompt }] }),
+  'I collected policy_no.',
+  { input: 1, output: 1, cached: 0, total: 2 },
+);
 
 const result = await runSpec(
   { store, providers: new Map([['mock', mock]]), tools: [], tenant_id: 't1' },
   spec,
-  '我要报案',
+  prompt,
 );
 // result.events 是完整 trace；可以重放、评测、比较
 ```
@@ -176,27 +187,38 @@ tools:
 ```ts
 import { JsonlTraceStore } from '@veridical/store';
 import { InMemorySpecRegistry, parseSpecYaml, runSpec } from '@veridical/spec';
-import { MockProvider } from '@veridical/llm';
+import { MockProvider, fingerprint } from '@veridical/llm';
 
 const store = new JsonlTraceStore('.traces');
 const spec = parseSpecYaml(`
 name: claim-filing
 version: 1.0.0
 schema_version: 1
-instruction: { system: "You are a claim assistant." }
-flow: { mode: single-loop, max_steps: 3 }
-llm: { provider: mock, model: m, fallback: [] }
+instruction:
+  system: You are a claim assistant.
+flow:
+  mode: single-loop
+  max_steps: 3
+llm:
+  provider: mock
+  model: m
+  fallback: []
 tools: []
 `);
 await new InMemorySpecRegistry().register(spec);
 
+const prompt = 'I want to file a claim';
 const mock = new MockProvider();
-mock.record('fp...', 'I collected policy_no.', { input: 1, output: 1, cached: 0, total: 2 });
+mock.record(
+  fingerprint({ provider: 'mock', model: 'm', messages: [{ role: 'system', content: 'You are a claim assistant.' }, { role: 'user', content: prompt }] }),
+  'I collected policy_no.',
+  { input: 1, output: 1, cached: 0, total: 2 },
+);
 
 const result = await runSpec(
   { store, providers: new Map([['mock', mock]]), tools: [], tenant_id: 't1' },
   spec,
-  'I want to file a claim',
+  prompt,
 );
 // result.events is the full trace; replayable, evaluable, comparable
 ```
@@ -238,27 +260,38 @@ tools:
 ```ts
 import { JsonlTraceStore } from '@veridical/store';
 import { InMemorySpecRegistry, parseSpecYaml, runSpec } from '@veridical/spec';
-import { MockProvider } from '@veridical/llm';
+import { MockProvider, fingerprint } from '@veridical/llm';
 
 const store = new JsonlTraceStore('.traces');
 const spec = parseSpecYaml(`
 name: claim-filing
 version: 1.0.0
 schema_version: 1
-instruction: { system: "You are a claim assistant." }
-flow: { mode: single-loop, max_steps: 3 }
-llm: { provider: mock, model: m, fallback: [] }
+instruction:
+  system: You are a claim assistant.
+flow:
+  mode: single-loop
+  max_steps: 3
+llm:
+  provider: mock
+  model: m
+  fallback: []
 tools: []
 `);
 await new InMemorySpecRegistry().register(spec);
 
+const prompt = '保険を申請したいです';
 const mock = new MockProvider();
-mock.record('fp...', 'I collected policy_no.', { input: 1, output: 1, cached: 0, total: 2 });
+mock.record(
+  fingerprint({ provider: 'mock', model: 'm', messages: [{ role: 'system', content: 'You are a claim assistant.' }, { role: 'user', content: prompt }] }),
+  'I collected policy_no.',
+  { input: 1, output: 1, cached: 0, total: 2 },
+);
 
 const result = await runSpec(
   { store, providers: new Map([['mock', mock]]), tools: [], tenant_id: 't1' },
   spec,
-  '保険を申請したいです',
+  prompt,
 );
 // result.events が完全なトレース。リプレイ・評価・比較が可能
 ```
