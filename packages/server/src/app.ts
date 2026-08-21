@@ -6,6 +6,8 @@ import { CONFIG } from './config.js';
 import { registerSessionsRoutes } from './routes/sessions.js';
 import { registerRunRoutes } from './routes/run.js';
 import { registerSpecRoutes } from './routes/specs.js';
+import { registerEvalRoutes } from './routes/eval.js';
+import { registerCompareRoutes } from './routes/compare.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -20,6 +22,8 @@ export async function buildApp(tracesDir?: string) {
   await app.register(registerSessionsRoutes);
   await app.register(registerRunRoutes);
   await app.register(registerSpecRoutes);
+  await app.register(registerEvalRoutes);
+  await app.register(registerCompareRoutes);
   app.get('/api/health', async () => ({ ok: true }));
   return app;
 }
