@@ -15,4 +15,15 @@ describe('Recorder', () => {
     expect(e1.tenant_id).toBe('t1');
     expect(e1.id).toBeTruthy();
   });
+
+  it('appends the recorded event to the store', async () => {
+    const store = new InMemoryTraceStore();
+    const session = new Session({ session_id: 's2', tenant_id: 't1', spec_version: '0.0.1' });
+    const rec = new Recorder(store, session);
+    await rec.record({ span_id: 'sp', parent_span_id: null, type: 'llm.request', verb: 'request', attempt: 1, duration_ms: 1, payload: {} });
+    const evts = await store.readBySession('s2');
+    expect(evts).toHaveLength(1);
+    expect(evts[0].type).toBe('llm.request');
+    expect(evts[0].session_id).toBe('s2');
+  });
 });

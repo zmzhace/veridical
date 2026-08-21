@@ -29,4 +29,23 @@ describe('LLMGateway', () => {
     const res = await gw.complete(req, new Recorder(new InMemoryTraceStore(), new Session({ session_id: 's', tenant_id: 't', spec_version: '0.0.1' })));
     expect(res.text).toBe('recorded answer');
   });
+
+  it('records a paired llm.response error when the provider is unknown', async () => {
+    const store = new InMemoryTraceStore();
+    const session = new Session({ session_id: 's2', tenant_id: 't1', spec_version: '0.0.1' });
+    const recorder = new Recorder(store, session);
+    const gw = new LLMGateway(new Map());
+    const req = { messages: [{ role: 'user', content: 'hello' }], model: 'm', provider: 'nope' };
+    await expect(gw.complete(req, recorder)).rejects.toThrow(/unknown provider/);
+    const events = await store.readBySession('s2');
+    expect(events.map(e => e.type)).toEqual(['llm.request', 'llm.response']);
+    expect(events[1].verb).toBe('error');
+    expect(events[1].payload.message).toContain('unknown provider');
+    expect(events[1].payload.provider).toBe('nope');
+  });
+
+  it('mock provider throws on a fingerprint with no recording', async () => {
+    const mock = new MockProvider();
+    await expect(mock.complete({ messages: [{ role: 'user', content: 'x' }], model: 'm', provider: 'mock' })).rejects.toThrow(/no recording/);
+  });
 });

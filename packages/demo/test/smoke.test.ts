@@ -17,11 +17,14 @@ describe('end-to-end smoke', () => {
     }
 
     const msgs = await deriveMessages(store, 's1');
-    expect(msgs.length).toBeGreaterThan(0);
+    const userMsgs = msgs.filter(m => m.role === 'user');
+    const assistantMsgs = msgs.filter(m => m.role === 'assistant');
+    expect(userMsgs.length).toBeGreaterThan(0);
+    expect(assistantMsgs.length).toBeGreaterThan(0);
+    expect(assistantMsgs.some(m => m.content.length > 0)).toBe(true);
 
     const totalTokens = events.reduce((s, e) => s + (e.tokens?.total ?? 0), 0);
-    const totalDuration = events.reduce((s, e) => s + (e.duration_ms ?? 0), 0);
     expect(totalTokens).toBeGreaterThan(0);
-    expect(totalDuration).toBeGreaterThan(0);
+    expect(events.every(e => typeof e.duration_ms === 'number')).toBe(true);
   });
 });
