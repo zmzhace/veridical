@@ -19,6 +19,9 @@ importers:
       '@veridical/schema':
         specifier: workspace:*
         version: link:../schema
+      '@veridical/spec':
+        specifier: workspace:*
+        version: link:../spec
       '@veridical/store':
         specifier: workspace:*
         version: link:../store

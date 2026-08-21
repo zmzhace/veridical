@@ -5,6 +5,7 @@
   "main": "src/run.ts",
   "dependencies": {
     "@veridical/schema": "workspace:*",
+    "@veridical/spec": "workspace:*",
     "@veridical/store": "workspace:*",
     "@veridical/runtime": "workspace:*",
     "@veridical/tools": "workspace:*",
