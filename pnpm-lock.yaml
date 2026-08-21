@@ -16,6 +16,9 @@ importers:
       '@veridical/llm':
         specifier: workspace:*
         version: link:../llm
+      '@veridical/memory':
+        specifier: workspace:*
+        version: link:../memory
       '@veridical/replay':
         specifier: workspace:*
         version: link:../replay
