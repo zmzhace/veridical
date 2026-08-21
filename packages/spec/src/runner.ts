@@ -33,6 +33,11 @@ export interface RunnerStepCtx {
   prompt: string;
 }
 
+export interface MemoryLike {
+  recall(query: string, opts?: { tags?: string[]; limit?: number }): Promise<{ key: string; value: unknown; scope: string; tags?: string[] }[]>;
+  onStep?: (step: number, ctx: { prompt: string }) => Promise<void>;
+}
+
 export interface SpecRunnerDeps {
   store: TraceStore;
   providers: Map<string, LLMProvider>;
@@ -43,6 +48,7 @@ export interface SpecRunnerDeps {
   verify?: (events: TraceEvent[]) => boolean;
   session_id?: string;
   tenant_id: string;
+  memory?: MemoryLike;
 }
 
 export interface RunResult {
@@ -53,15 +59,27 @@ export interface RunResult {
   events: TraceEvent[];
 }
 
-function requestFor(spec: AgentSpec, prompt: string): LLMRequest {
-  return {
-    provider: spec.llm.provider,
-    model: spec.llm.model,
-    messages: [
-      { role: 'system', content: spec.instruction.system },
-      { role: 'user', content: prompt },
-    ],
-  };
+async function buildRequest(spec: AgentSpec, prompt: string, memory?: MemoryLike): Promise<LLMRequest> {
+  let system = spec.instruction.system;
+  if (memory) {
+    try {
+      const recalled = await memory.recall(prompt);
+      if (recalled.length > 0) {
+        system = system + memorySystemBlock(recalled);
+      }
+    } catch {
+      // memory is augmentation; degrade to no-memory
+    }
+  }
+  return { provider: spec.llm.provider, model: spec.llm.model, messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }] };
+}
+
+function memorySystemBlock(recalled: { key: string; value: unknown; scope: string; tags?: string[] }[]): string {
+  const lines = recalled.map(m => {
+    const v = typeof m.value === 'string' ? m.value : JSON.stringify(m.value);
+    return `- [${m.scope}] ${m.key}: ${v}`;
+  });
+  return `\n## 记忆\n${lines.join('\n')}`;
 }
 
 async function completeWithFallback(
@@ -105,15 +123,19 @@ export async function runSpec(deps: SpecRunnerDeps, spec: AgentSpec, prompt: str
   });
 
   const defaultRunStep = async ({ llm, spec, recorder, prompt }: RunnerStepCtx) => {
-    const res = await completeWithFallback(llm, deps.providers, spec, requestFor(spec, prompt), recorder);
+    const req = await buildRequest(spec, prompt, deps.memory);
+    const res = await completeWithFallback(llm, deps.providers, spec, req, recorder);
     return { text: res.text };
   };
   const stepRun = deps.runStep ?? defaultRunStep;
 
   let stepEvents: TraceEvent[] = [];
+  let stepCount = 0;
   const ctx: FlowContext = {
     recorder,
     runStep: async (p) => {
+      stepCount += 1;
+      if (deps.memory?.onStep) await deps.memory.onStep(stepCount, { prompt: p });
       if (deps.verify) {
         stepEvents = await deps.store.readBySession(session_id);
       }
