@@ -56,6 +56,14 @@ describe('Memory', () => {
     expect(skills.map(s => s.value)).toContainEqual({ name: 'echo_helper', description: 'echo', procedure: 'return args' });
   });
 
+  it('listSkills drops a forgotten skill', async () => {
+    const store = new InMemoryTraceStore();
+    const m = makeMemory(store, 's1');
+    await m.rememberSkill('s', { name: 's', description: 's', procedure: 'proc' });
+    await m.forget('skill:s', 'skill');
+    expect(await m.listSkills()).toEqual([]);
+  });
+
   it('forget removes a memory (undefined tombstone)', async () => {
     const store = new InMemoryTraceStore();
     const m = makeMemory(store, 's1');

@@ -41,6 +41,7 @@ export class MemoryStore {
     for (const e of events) {
       if (e.type !== 'memory.write') continue;
       const p = payloadOf(e);
+      if (p.value === undefined) { byKey.delete(p.key); continue; }  // tombstone
       byKey.set(p.key, { key: p.key, value: p.value, scope: p.scope, ...(p.tags ? { tags: p.tags } : {}) });
     }
     return { entries: [...byKey.values()] };

@@ -34,6 +34,17 @@ describe('MemoryStore', () => {
     expect(snap.entries.length).toBe(1);
   });
 
+  it('snapshot excludes tombstoned keys', async () => {
+    const store = new InMemoryTraceStore();
+    const rec = await newRecorder(store);
+    const ms = new MemoryStore();
+    await ms.write(rec, { key: 'k', value: 'v', scope: 'working' });
+    await ms.write(rec, { key: 'k', value: undefined, scope: 'working' });
+    const snap = await ms.snapshot(store, 's1');
+    expect(snap.entries.find(e => e.key === 'k')).toBeUndefined();
+    expect(snap.entries).toEqual([]);
+  });
+
   it('keeps tags and multiple scopes', async () => {
     const store = new InMemoryTraceStore();
     const rec = await newRecorder(store);
