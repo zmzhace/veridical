@@ -48,4 +48,24 @@ describe('ReplayToolProvider', () => {
     await p.execute('echo', { x: 2 });
     await expect(p.execute('echo', { x: 3 })).rejects.toThrow(ReplayMissError);
   });
+
+  it('serves the successful result and ignores a blocked tool.result (verb: error)', async () => {
+    const mixed = [
+      evt(1, 'tool.called', 'request', { name: 'echo', args: { x: 1 } }),
+      evt(2, 'tool.result', 'error', { name: 'echo', result: 'blocked', blocked: true }),
+      evt(3, 'tool.called', 'request', { name: 'echo', args: { x: 2 } }),
+      evt(4, 'tool.result', 'response', { name: 'echo', result: { echoed: 2 } }),
+    ];
+    const p = new ReplayToolProvider(mixed);
+    expect(await p.execute('echo', { x: 1 })).toEqual({ echoed: 2 });
+  });
+
+  it('throws ReplayMissError when only a blocked tool.result exists', async () => {
+    const blockedOnly = [
+      evt(1, 'tool.called', 'request', { name: 'echo', args: { x: 1 } }),
+      evt(2, 'tool.result', 'error', { name: 'echo', result: 'blocked', blocked: true }),
+    ];
+    const p = new ReplayToolProvider(blockedOnly);
+    await expect(p.execute('echo', { x: 1 })).rejects.toThrow(ReplayMissError);
+  });
 });

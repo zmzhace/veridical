@@ -36,7 +36,7 @@ export class ReplayToolProvider {
   constructor(events: TraceEvent[]) {
     const byName = new Map<string, unknown[]>();
     for (const e of events) {
-      if (e.type === 'tool.result') {
+      if (e.type === 'tool.result' && e.verb === 'response') {
         const p = payloadOf(e);
         if (!byName.has(p.name)) byName.set(p.name, []);
         byName.get(p.name)!.push(p.result);
