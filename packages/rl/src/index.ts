@@ -4,3 +4,4 @@ export * from './reward';
 export * from './grpo';
 export * from './decision';
 export * from './demo';
+export * from './case-insurance';
