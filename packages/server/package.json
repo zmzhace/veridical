@@ -16,7 +16,9 @@
     "@veridical/replay": "workspace:*",
     "@veridical/llm": "workspace:*",
     "@veridical/eval": "workspace:*",
+    "@veridical/memory": "workspace:*",
     "@veridical/runtime": "workspace:*",
+    "@veridical/rl": "workspace:*",
     "@veridical/tools": "workspace:*",
     "fastify": "^4.28.0",
     "@fastify/cors": "^9.0.0"

@@ -160,6 +160,49 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@26.2.0)(jiti@1.21.7)(jsdom@24.1.3)(tsx@4.23.12)(yaml@2.9.0)
 
+  packages/rl:
+    dependencies:
+      '@veridical/eval':
+        specifier: workspace:*
+        version: link:../eval
+      '@veridical/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@veridical/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@veridical/replay':
+        specifier: workspace:*
+        version: link:../replay
+      '@veridical/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      '@veridical/schema':
+        specifier: workspace:*
+        version: link:../schema
+      '@veridical/spec':
+        specifier: workspace:*
+        version: link:../spec
+      '@veridical/store':
+        specifier: workspace:*
+        version: link:../store
+      '@veridical/tools':
+        specifier: workspace:*
+        version: link:../tools
+      yaml:
+        specifier: ^2.4.2
+        version: 2.9.0
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@26.2.0)(jiti@1.21.7)(jsdom@24.1.3)(tsx@4.23.12)(yaml@2.9.0)
+
   packages/runtime:
     dependencies:
       '@veridical/schema':
@@ -200,9 +243,15 @@ importers:
       '@veridical/llm':
         specifier: workspace:*
         version: link:../llm
+      '@veridical/memory':
+        specifier: workspace:*
+        version: link:../memory
       '@veridical/replay':
         specifier: workspace:*
         version: link:../replay
+      '@veridical/rl':
+        specifier: workspace:*
+        version: link:../rl
       '@veridical/runtime':
         specifier: workspace:*
         version: link:../runtime

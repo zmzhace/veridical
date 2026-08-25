@@ -10,6 +10,7 @@ import { registerRunRoutes } from './routes/run.js';
 import { registerSpecRoutes } from './routes/specs.js';
 import { registerEvalRoutes } from './routes/eval.js';
 import { registerCompareRoutes } from './routes/compare.js';
+import { registerRlRoutes } from './routes/rl.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -28,6 +29,7 @@ export async function buildApp(tracesDir?: string, specsDir?: string) {
   await app.register(registerSpecRoutes);
   await app.register(registerEvalRoutes);
   await app.register(registerCompareRoutes);
+  await app.register(registerRlRoutes);
   app.get('/api/health', async () => ({ ok: true }));
   return app;
 }
