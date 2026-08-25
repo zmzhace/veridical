@@ -6,6 +6,7 @@ import { RunPage } from './pages/RunPage';
 import { ComparePage } from './pages/ComparePage';
 import { AuditPage } from './pages/AuditPage';
 import { SpecsPage } from './pages/SpecsPage';
+import { RlPage } from './pages/RlPage';
 
 const router = createBrowserRouter([
   { path: '/', element: <AppShell />, children: [
@@ -15,6 +16,7 @@ const router = createBrowserRouter([
     { path: 'compare', element: <ComparePage /> },
     { path: 'audit', element: <AuditPage /> },
     { path: 'specs', element: <SpecsPage /> },
+    { path: 'rl', element: <RlPage /> },
     { path: '*', element: <Navigate to="/" replace /> },
   ] },
 ]);

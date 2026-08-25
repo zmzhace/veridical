@@ -1,6 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom';
 const links = [
-  ['/', 'Sessions'], ['/run', 'Run'], ['/compare', 'Compare'], ['/audit', 'Audit'], ['/specs', 'Specs'],
+  ['/', 'Sessions'], ['/run', 'Run'], ['/rl', 'RL'], ['/compare', 'Compare'], ['/audit', 'Audit'], ['/specs', 'Specs'],
 ];
 export function AppShell() {
   return (
