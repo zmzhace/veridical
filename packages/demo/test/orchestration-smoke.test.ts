@@ -16,5 +16,6 @@ describe('orchestration demo', () => {
     const expertStart = events.find(e => e.type === 'spec/run/start' && e.span_id === 'compare-agent')!;
     expect(expertStart.parent_span_id).toBe(dispatchEvt.id);
     expect(result.events.length).toBe(events.length);
+    expect(new Set(events.map(e => e.id)).size).toBe(events.length);
   });
 });

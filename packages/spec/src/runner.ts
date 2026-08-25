@@ -148,6 +148,8 @@ export async function runSpec(deps: SpecRunnerDeps, spec: AgentSpec, prompt: str
       await recorder.record({ span_id: 'supervisor', parent_span_id: null, type: 'agent.dispatch', verb: 'error', attempt: 1, duration_ms: 0, payload: { delegate, task, error: 'expert spec not found' } });
       throw new SpecRunError(`expert spec not found: ${ref.spec_ref}`);
     }
+    const tool = expert.tools[0];
+    if (!tool) throw new SpecRunError(`expert has no tool: ${delegate}`);
     const dispatchEvt = await recorder.record({
       span_id: 'supervisor', parent_span_id: null, type: 'agent.dispatch', verb: 'request', attempt: 1, duration_ms: 0,
       payload: { delegate, task, spec_ref: ref.spec_ref },
@@ -160,7 +162,7 @@ export async function runSpec(deps: SpecRunnerDeps, spec: AgentSpec, prompt: str
     });
     let expertResult: RunResult;
     try {
-      const expertRunStep = async () => ({ text: task, tool: { name: expert.tools[0].name, args: { task } } });
+      const expertRunStep = async () => ({ text: task, tool: { name: tool.name, args: { task } } });
       expertResult = await runSpec({ ...deps, session_id, runStep: expertRunStep }, expert, task);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

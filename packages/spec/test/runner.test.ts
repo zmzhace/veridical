@@ -234,4 +234,41 @@ agents:
     };
     await expect(runSpec(deps, hub, 'hi')).rejects.toThrow(SpecRunError);
   });
+
+  it('throws SpecRunError when dispatching to an expert with no tools', async () => {
+    const store = new InMemoryTraceStore();
+    const registry = new InMemorySpecRegistry();
+    await registry.register(parseSpecYaml(`
+name: no-tool-agent
+version: 1.0.0
+schema_version: 1
+instruction: { system: you are a no-tool agent }
+flow: { mode: single-loop, max_steps: 1 }
+llm: { provider: mock, model: m, fallback: [] }
+tools: []
+`));
+    const hub = parseSpecYaml(`
+name: hub
+version: 1.0.0
+schema_version: 1
+instruction: { system: you are a hub }
+flow: { mode: supervisor, max_steps: 2 }
+llm: { provider: mock, model: m, fallback: [] }
+tools: []
+agents:
+  - name: no-tool-agent
+    spec_ref: no-tool-agent@1.0.0
+`);
+    const deps: SpecRunnerDeps = {
+      store, registry,
+      providers: new Map([['mock', { complete: async () => ({ text: '', usage: { input: 1, output: 1, cached: 0, total: 2 } }) }]]),
+      tools: [],
+      tenant_id: 't1',
+      session_id: 'hub_no_tool',
+      runStep: async () => ({ delegate: 'no-tool-agent', task: 'x' }),
+    };
+    await expect(runSpec(deps, hub, 'hi')).rejects.toThrow(SpecRunError);
+    const events = await store.readBySession('hub_no_tool');
+    expect(events.filter(e => e.type === 'agent.dispatch' && e.verb === 'request').length).toBe(0);
+  });
 });

@@ -1,6 +1,6 @@
 import { InMemoryTraceStore, type TraceStore } from '@veridical/store';
 import { InMemorySpecRegistry, parseSpecYaml, runSpec, type SpecRunnerDeps } from '@veridical/spec';
-import { parseScenarioYaml, ruleToolCalled } from '@veridical/eval';
+import { parseScenarioYaml } from '@veridical/eval';
 import { MockPolicy } from './policy';
 import { RewardAggregator } from './reward';
 import { GRPOTrainer, stateFingerprint, type TrainConfig } from './grpo';
