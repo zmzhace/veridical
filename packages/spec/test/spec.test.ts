@@ -97,4 +97,16 @@ tools: []
     expect(spec.flow.mode).toBe('single-loop');
     expect(spec.agents).toEqual([]);
   });
+
+  it('rejects supervisor mode without agents', () => {
+    expect(() => parseSpecYaml(`
+name: hub
+version: 1.0.0
+schema_version: 1
+instruction: { system: you are a hub }
+flow: { mode: supervisor, max_steps: 2 }
+llm: { provider: mock, model: m, fallback: [] }
+tools: []
+`)).toThrow();
+  });
 });

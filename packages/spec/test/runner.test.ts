@@ -220,7 +220,9 @@ instruction: { system: you are a hub }
 flow: { mode: supervisor, max_steps: 2 }
 llm: { provider: mock, model: m, fallback: [] }
 tools: []
-agents: []
+agents:
+  - name: claims-agent
+    spec_ref: claims-agent@1.0.0
 `);
     const deps: SpecRunnerDeps = {
       store, registry,

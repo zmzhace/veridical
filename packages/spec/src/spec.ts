@@ -43,6 +43,9 @@ export const AgentSpecSchema = z.object({
   if (new Set(names).size !== names.length) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['tools'], message: 'duplicate tool name' });
   }
+  if (spec.flow.mode === 'supervisor' && spec.agents.length === 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['agents'], message: 'supervisor mode requires at least one agent' });
+  }
 });
 
 export type AgentSpec = z.infer<typeof AgentSpecSchema>;
