@@ -39,7 +39,6 @@ export async function runRlDemo(opts: { iterations?: number; groupSize?: number;
   const spec = parseSpecYaml(SPEC);
   const scenario = parseScenarioYaml(SCENARIO);
   const policy = new MockPolicy(CANDIDATES);
-  policy.seed('hello', CANDIDATES.hello);
   const reward = new RewardAggregator([ruleToolCalled('echo')]);
   const deps: SpecRunnerDeps = {
     store,

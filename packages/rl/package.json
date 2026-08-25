@@ -12,8 +12,7 @@
     "@veridical/tools": "workspace:*",
     "@veridical/eval": "workspace:*",
     "@veridical/replay": "workspace:*",
-    "@veridical/memory": "workspace:*",
-    "yaml": "^2.4.2"
+    "@veridical/memory": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

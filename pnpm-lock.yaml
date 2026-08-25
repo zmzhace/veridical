@@ -189,9 +189,6 @@ importers:
       '@veridical/tools':
         specifier: workspace:*
         version: link:../tools
-      yaml:
-        specifier: ^2.4.2
-        version: 2.9.0
     devDependencies:
       '@types/node':
         specifier: ^26.2.0

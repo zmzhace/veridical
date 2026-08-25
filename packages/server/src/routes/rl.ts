@@ -30,7 +30,6 @@ export async function registerRlRoutes(app: FastifyInstance) {
     for (const step of scenario.steps) candidatesByPrompt[step.user] = b.candidates;
 
     const policy = new MockPolicy(candidatesByPrompt);
-    for (const [p, texts] of Object.entries(candidatesByPrompt)) policy.seed(p, texts);
     const reward = new RewardAggregator(scenario.rules);
     const rewardCtx: any = { store, goldenSessionId: b.goldenSessionId };
 
