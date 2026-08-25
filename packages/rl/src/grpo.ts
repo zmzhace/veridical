@@ -4,6 +4,7 @@ import { runSpec, type AgentSpec, type SpecRunnerDeps } from '@veridical/spec';
 import type { IterationStats } from './types';
 import type { MockPolicy } from './policy';
 import type { RewardAggregator, RewardCtx } from './reward';
+import { decisionStepFrom } from './decision';
 
 export interface TrainConfig {
   deps: SpecRunnerDeps;
@@ -71,9 +72,6 @@ export class GRPOTrainer {
 
 async function runOne(deps: SpecRunnerDeps, spec: AgentSpec, prompt: string, chosen: string) {
   const sessionId = `rl_${Math.random().toString(36).slice(2)}`;
-  const local: SpecRunnerDeps = { ...deps, session_id: sessionId, runStep: async (ctx) => {
-    const raw = JSON.parse(chosen);
-    return { text: raw.text ?? chosen, tool: raw.tool };
-  } };
+  const local: SpecRunnerDeps = { ...deps, session_id: sessionId, runStep: decisionStepFrom(chosen) };
   return runSpec(local, spec, prompt);
 }
