@@ -6,7 +6,7 @@ export function decisionStepFrom(chosen: string) {
     if (!trimmed.startsWith('{')) return { text: trimmed };
     try {
       const obj = JSON.parse(trimmed);
-      return { text: obj.text ?? trimmed, tool: obj.tool };
+      return { text: obj.text ?? trimmed, tool: obj.tool, delegate: obj.delegate, task: obj.task };
     } catch {
       return { text: trimmed };
     }
