@@ -40,11 +40,13 @@ export class GRPOTrainer {
 
       for (const prompt of states) {
         const fp = stateFingerprint(prompt);
-        const texts = cfg.candidatesByPrompt[prompt] ?? policy.candidates(fp);
-        // Sample the full group first, then compute group-normalized advantages.
+        // Sample the full group from the current policy first, then compute
+        // group-normalized advantages. Policy-weighted sampling makes mean_reward
+        // rise as the policy concentrates on high-reward options.
+        const req = { provider: 'mock', model: 'm', messages: [{ role: 'user', content: prompt }] };
         const samples: { chosen: string; reward: number }[] = [];
         for (let g = 0; g < groupSize; g++) {
-          const chosen = texts[Math.floor(Math.random() * texts.length)];
+          const chosen = (await policy.complete(req)).text;
           const run = await runOne(deps, spec, prompt, chosen);
           const { reward: r } = await reward.score(run, rewardCtx);
           samples.push({ chosen, reward: r });

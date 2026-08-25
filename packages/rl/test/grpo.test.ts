@@ -59,8 +59,8 @@ describe('GRPOTrainer', () => {
     const last = stats[stats.length - 1];
     const correctProb = (o: any) => o.text === candidates.hello[0];
     expect(last.policy[fp].options.find(correctProb)?.prob).toBeGreaterThan(0.9);
-    // Training shifts the policy toward the correct option: its prob at the
-    // final iteration exceeds its prob after the first iteration.
-    expect(last.policy[fp].options.find(correctProb)?.prob).toBeGreaterThan(stats[0].policy[fp].options.find(correctProb)?.prob ?? 0);
+    // Under policy-weighted sampling, mean_reward rises as the policy concentrates
+    // on the high-reward (correct) option.
+    expect(stats[stats.length - 1].mean_reward).toBeGreaterThan(stats[0].mean_reward);
   });
 });
