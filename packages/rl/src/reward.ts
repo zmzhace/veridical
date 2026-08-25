@@ -40,8 +40,14 @@ export class RewardAggregator {
       judge = v.passed ? 1 : 0;
     }
 
-    const totalW = w.rule + w.replay + w.process + w.judge;
-    const reward = totalW === 0 ? 0 : (rule * w.rule + replay * w.replay + process * w.process + judge * w.judge) / totalW;
+    const effW = {
+      rule: this.rules && this.rules.length > 0 ? w.rule : 0,
+      replay: ctx.goldenSessionId ? w.replay : 0,
+      process: run.events.some((e) => e.type === 'step/end') ? w.process : 0,
+      judge: ctx.judge ? w.judge : 0,
+    };
+    const totalW = effW.rule + effW.replay + effW.process + effW.judge;
+    const reward = totalW === 0 ? 0 : (rule * effW.rule + replay * effW.replay + process * effW.process + judge * effW.judge) / totalW;
     return { reward, breakdown: { rule, replay, process, judge } };
   }
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { RewardAggregator } from '../src/reward';
-import { ruleOutcomeEquals, ruleToolCalled } from '@veridical/eval';
+import { ruleOutcomeEquals } from '@veridical/eval';
 import { InMemoryTraceStore } from '@veridical/store';
 import type { TraceEvent } from '@veridical/schema';
 
@@ -12,14 +12,11 @@ function run(outcome: unknown, events: TraceEvent[] = []) {
 }
 
 describe('RewardAggregator', () => {
-  it('rule source: passing rules contribute, failing gives 0', async () => {
+  it('rule source: passing rules give reward 1, failing gives 0', async () => {
     const agg = new RewardAggregator([ruleOutcomeEquals('done')]);
     const ok = await agg.score(run('done'), { store: new InMemoryTraceStore() });
     const bad = await agg.score(run('nope'), { store: new InMemoryTraceStore() });
-    // With default weights {rule:1, replay:1, process:0.5, judge:0.5} and no
-    // golden/judge/step events, the denominator is 3 and only `rule` is non-zero,
-    // so a passing rule yields 1/3 and a failing rule yields 0.
-    expect(ok.reward).toBeCloseTo(1 / 3, 5);
+    expect(ok.reward).toBe(1);
     expect(bad.reward).toBe(0);
   });
 
