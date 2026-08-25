@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { InMemoryTraceStore } from '@veridical/store';
 import { ToolBroker, type ToolDef } from '@veridical/tools';
 import type { LLMProvider } from '@veridical/llm';
-import { parseSpecYaml, runSpec, SpecRunError, SpecApprovalPolicy } from '../src/index';
+import { parseSpecYaml, runSpec, SpecRunError, SpecApprovalPolicy, InMemorySpecRegistry, type SpecRunnerDeps } from '../src/index';
 
 const SPEC_YAML = `
 name: runner-test
@@ -153,5 +153,79 @@ describe('ToolBroker integration', () => {
     const r = await broker.call('other', {});
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe('denied');
+  });
+});
+
+const EXPERT_SPEC = `
+name: claims-agent
+version: 1.0.0
+schema_version: 1
+instruction: { system: you are a claims agent }
+flow: { mode: single-loop, max_steps: 1 }
+llm: { provider: mock, model: m, fallback: [] }
+tools:
+  - name: query_claims
+    access: allow
+`;
+
+describe('supervisor runSpec', () => {
+  it('dispatches to an expert agent with nested span in same session', async () => {
+    const store = new InMemoryTraceStore();
+    const registry = new InMemorySpecRegistry();
+    await registry.register(parseSpecYaml(EXPERT_SPEC));
+    const hub = parseSpecYaml(`
+name: hub
+version: 1.0.0
+schema_version: 1
+instruction: { system: you are a hub }
+flow: { mode: supervisor, max_steps: 2 }
+llm: { provider: mock, model: m, fallback: [] }
+tools: []
+agents:
+  - name: claims-agent
+    spec_ref: claims-agent@1.0.0
+`);
+    const deps: SpecRunnerDeps = {
+      store, registry,
+      providers: new Map([['mock', { complete: async () => ({ text: '', usage: { input: 1, output: 1, cached: 0, total: 2 } }) }]]),
+      tools: [{ id: 'query_claims', name: 'query_claims', description: '', deterministic: true, execute: async (a) => a }],
+      tenant_id: 't1',
+      session_id: 'hub_s1',
+      runStep: async () => ({ delegate: 'claims-agent', task: '查理赔' }),
+    };
+    const result = await runSpec(deps, hub, '客户问理赔');
+    const events = await store.readBySession('hub_s1');
+    const types = events.map(e => e.type);
+    expect(types).toContain('agent.dispatch');
+    expect(types).toContain('agent.result');
+    // expert events nested under the dispatch
+    const dispatchEvt = events.find(e => e.type === 'agent.dispatch')!;
+    const expertEvt = events.find(e => e.type === 'spec/run/start' && e.span_id === 'claims-agent')!;
+    expect(expertEvt.parent_span_id).toBe(dispatchEvt.id);
+    expect(result.events.length).toBe(events.length);
+  });
+
+  it('throws SpecRunError when dispatch targets an unknown agent', async () => {
+    const store = new InMemoryTraceStore();
+    const registry = new InMemorySpecRegistry();
+    const hub = parseSpecYaml(`
+name: hub
+version: 1.0.0
+schema_version: 1
+instruction: { system: you are a hub }
+flow: { mode: supervisor, max_steps: 2 }
+llm: { provider: mock, model: m, fallback: [] }
+tools: []
+agents: []
+`);
+    const deps: SpecRunnerDeps = {
+      store, registry,
+      providers: new Map([['mock', { complete: async () => ({ text: '', usage: { input: 1, output: 1, cached: 0, total: 2 } }) }]]),
+      tools: [],
+      tenant_id: 't1',
+      session_id: 'hub_bad',
+      runStep: async () => ({ delegate: 'ghost', task: 'x' }),
+    };
+    await expect(runSpec(deps, hub, 'hi')).rejects.toThrow(SpecRunError);
   });
 });
