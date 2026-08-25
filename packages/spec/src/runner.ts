@@ -160,7 +160,8 @@ export async function runSpec(deps: SpecRunnerDeps, spec: AgentSpec, prompt: str
     });
     let expertResult: RunResult;
     try {
-      expertResult = await runSpec({ ...deps, session_id }, expert, task);
+      const expertRunStep = async () => ({ text: task, tool: { name: expert.tools[0].name, args: { task } } });
+      expertResult = await runSpec({ ...deps, session_id, runStep: expertRunStep }, expert, task);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       await expertRecorder.record({

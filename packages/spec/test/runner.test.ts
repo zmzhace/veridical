@@ -203,6 +203,10 @@ agents:
     const expertEvt = events.find(e => e.type === 'spec/run/start' && e.span_id === 'claims-agent')!;
     expect(expertEvt.parent_span_id).toBe(dispatchEvt.id);
     expect(result.events.length).toBe(events.length);
+    // expert acts on the task via its declared tool
+    expect(types).toContain('tool.called');
+    const toolEvt = events.find(e => e.type === 'tool.called');
+    expect(toolEvt?.payload?.name).toBe('query_claims');
   });
 
   it('throws SpecRunError when dispatch targets an unknown agent', async () => {
