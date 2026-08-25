@@ -5,10 +5,17 @@ import { valid } from 'semver';
 export const AccessSchema = z.enum(['allow', 'deny', 'ask']);
 export type Access = z.infer<typeof AccessSchema>;
 
-export const FlowModeSchema = z.enum(['single-loop']);
+export const FlowModeSchema = z.enum(['single-loop', 'supervisor']);
 export type FlowMode = z.infer<typeof FlowModeSchema>;
 
 const FallbackSchema = z.object({ provider: z.string().min(1), model: z.string().min(1) });
+
+const AgentRefSchema = z.object({
+  name: z.string().min(1),
+  spec_ref: z.string().min(1),
+  when: z.string().optional(),
+});
+export type AgentRef = z.infer<typeof AgentRefSchema>;
 
 export const AgentSpecSchema = z.object({
   name: z.string().min(1),
@@ -27,6 +34,7 @@ export const AgentSpecSchema = z.object({
     access: AccessSchema,
     deterministic: z.boolean().optional(),
   })),
+  agents: z.array(AgentRefSchema).default([]),
 }).superRefine((spec, ctx) => {
   if (!valid(spec.version)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['version'], message: `invalid semver: ${spec.version}` });

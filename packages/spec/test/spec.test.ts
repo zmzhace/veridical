@@ -62,3 +62,39 @@ describe('parseSpecYaml', () => {
     expect(() => parseSpecYaml(bad)).toThrow();
   });
 });
+
+describe('supervisor spec', () => {
+  it('parses agents list and supervisor flow mode', () => {
+    const spec = parseSpecYaml(`
+name: hub
+version: 1.0.0
+schema_version: 1
+instruction: { system: you are a hub }
+flow: { mode: supervisor, max_steps: 2 }
+llm: { provider: mock, model: m, fallback: [] }
+tools: []
+agents:
+  - name: claims-agent
+    spec_ref: claims@1.0.0
+    when: 客户询问理赔
+`);
+    expect(spec.flow.mode).toBe('supervisor');
+    expect(spec.agents).toHaveLength(1);
+    expect(spec.agents[0].name).toBe('claims-agent');
+    expect(spec.agents[0].spec_ref).toBe('claims@1.0.0');
+  });
+
+  it('defaults agents to empty when omitted (single-loop unchanged)', () => {
+    const spec = parseSpecYaml(`
+name: plain
+version: 1.0.0
+schema_version: 1
+instruction: { system: hi }
+flow: { mode: single-loop, max_steps: 1 }
+llm: { provider: mock, model: m, fallback: [] }
+tools: []
+`);
+    expect(spec.flow.mode).toBe('single-loop');
+    expect(spec.agents).toEqual([]);
+  });
+});
