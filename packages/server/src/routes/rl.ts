@@ -42,7 +42,7 @@ export async function registerRlRoutes(app: FastifyInstance) {
     reply.raw.flushHeaders?.();
     const send = (obj: unknown) => { if (reply.raw.writableEnded) return; try { reply.raw.write(`data: ${JSON.stringify(obj)}\n\n`); } catch {} };
     const abort = () => { try { reply.raw.end(); } catch {} };
-    req.raw.on('close', abort);
+    reply.raw.on('close', abort);
 
     const deps: SpecRunnerDeps = {
       store,
