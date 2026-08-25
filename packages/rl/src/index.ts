@@ -1,3 +1,4 @@
 export * from './types';
 export * from './policy';
 export * from './reward';
+export * from './grpo';
