@@ -64,3 +64,57 @@ describe('GRPOTrainer', () => {
     expect(stats[stats.length - 1].mean_reward).toBeGreaterThan(stats[0].mean_reward);
   });
 });
+
+import { ruleOutcomeEquals, ruleToolCalled } from '@veridical/eval';
+
+describe('GRPOTrainer per-step expect_rules', () => {
+  it('uses step expect_rules when present (mirrors Simulator merge)', async () => {
+    const store = new InMemoryTraceStore();
+    const spec = parseSpecYaml(SPEC);
+    // Two steps, each with its OWN expect_rules rewarding a DIFFERENT tool.
+    const scenario = parseScenarioYaml(`
+name: two-personas
+spec: { name: rl-demo }
+steps:
+  - user: persona A
+    expect_rules:
+      - tool_called: compare_policy
+  - user: persona B
+    expect_rules:
+      - tool_called: get_policy
+`);
+    const candidates = {
+      'persona A': [JSON.stringify({ text: 'compare', tool: { name: 'compare_policy', args: {} } }), JSON.stringify({ text: 'get', tool: { name: 'get_policy', args: {} } })],
+      'persona B': [JSON.stringify({ text: 'compare', tool: { name: 'compare_policy', args: {} } }), JSON.stringify({ text: 'get', tool: { name: 'get_policy', args: {} } })],
+    };
+    const policy = new MockPolicy(candidates);
+    const trainer = new GRPOTrainer();
+    const deps: SpecRunnerDeps = {
+      store,
+      providers: new Map([['mock', { complete: async () => ({ text: '', usage: { input: 1, output: 1, cached: 0, total: 2 } }) }]]),
+      tools: [
+        { id: 'get_policy', name: 'get_policy', description: '', deterministic: true, execute: async (a) => a },
+        { id: 'compare_policy', name: 'compare_policy', description: '', deterministic: true, execute: async (a) => a },
+      ],
+      tenant_id: 't1',
+    };
+    const reward = new RewardAggregator([ruleToolCalled('get_policy')]); // global fallback: never the per-step winner
+    const stats: any[] = [];
+    for await (const s of trainer.train({ deps, spec, scenario, iterations: 30, groupSize: 6, lr: 0.5, policy, reward, rewardCtx: { store }, candidatesByPrompt: candidates })) {
+      stats.push(s);
+    }
+    const last = stats[stats.length - 1];
+    const fpA = stateFingerprint('persona A');
+    const fpB = stateFingerprint('persona B');
+    // persona A must converge to compare_policy (its own expect_rule).
+    expect(last.policy[fpA].options.find((o: any) => o.text === candidates['persona A'][0])?.prob).toBeGreaterThan(0.8);
+    // persona B must converge to get_policy (its own expect_rule) even though
+    // the global fallback rewards get_policy — proving per-step rules win.
+    expect(last.policy[fpB].options.find((o: any) => o.text === candidates['persona B'][1])?.prob).toBeGreaterThan(0.8);
+    // The two persona states must diverge (learned different moves).
+    const pA = last.policy[fpA].options.find((o: any) => o.text === candidates['persona A'][0])?.prob ?? 0;
+    const pB = last.policy[fpB].options.find((o: any) => o.text === candidates['persona B'][1])?.prob ?? 0;
+    expect(pA).toBeGreaterThan(0.8);
+    expect(pB).toBeGreaterThan(0.8);
+  });
+});

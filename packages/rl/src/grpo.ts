@@ -3,7 +3,7 @@ import type { Scenario } from '@veridical/eval';
 import { runSpec, type AgentSpec, type SpecRunnerDeps } from '@veridical/spec';
 import type { IterationStats } from './types';
 import type { MockPolicy } from './policy';
-import type { RewardAggregator, RewardCtx } from './reward';
+import { RewardAggregator, type RewardCtx } from './reward';
 import { decisionStepFrom } from './decision';
 
 export interface TrainConfig {
@@ -39,8 +39,16 @@ export class GRPOTrainer {
       let totalReward = 0;
       const groupRewards: number[] = [];
 
-      for (const prompt of states) {
+      for (let si = 0; si < states.length; si++) {
+        const prompt = states[si];
+        const step = scenario.steps[si];
         const fp = stateFingerprint(prompt);
+        // Per-step reward: merge step.expect_rules with scenario.rules (mirrors Simulator).
+        // Fall back to the global aggregator when the step has no expect_rules.
+        const stepReward =
+          step.expect_rules && step.expect_rules.length > 0
+            ? new RewardAggregator([...(step.expect_rules ?? []), ...(scenario.rules ?? [])])
+            : reward;
         // Sample the full group from the current policy first, then compute
         // group-normalized advantages. Policy-weighted sampling makes mean_reward
         // rise as the policy concentrates on high-reward options.
@@ -49,7 +57,7 @@ export class GRPOTrainer {
         for (let g = 0; g < groupSize; g++) {
           const chosen = (await policy.complete(req)).text;
           const run = await runOne(deps, spec, prompt, chosen);
-          const { reward: r } = await reward.score(run, rewardCtx);
+          const { reward: r } = await stepReward.score(run, rewardCtx);
           samples.push({ chosen, reward: r });
         }
         const mean = samples.reduce((a, s) => a + s.reward, 0) / samples.length;
