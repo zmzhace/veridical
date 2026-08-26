@@ -82,4 +82,26 @@ describe('runStageGate', () => {
     const end = [...events].reverse().find(e => e.type === 'stage/end' && e.span_id === 'stage:health_check');
     expect(end?.verb).toBe('error');
   });
+
+  it('throws StageGateError when the gate tool call is denied/blocked', async () => {
+    const store = new InMemoryTraceStore();
+    const session = new Session({ session_id: 's3', tenant_id: 't1', spec_version: '1.0.0' });
+    const recorder = new Recorder(store, session);
+    const ctx: FlowContext = {
+      recorder,
+      runStep: async () => ({ text: '', tool: { name: 'verify_health', args: {} } }),
+      executeTool: async () => ({ ok: false, reason: 'denied' }),
+      shouldStop: () => false,
+      verifyToolResult: () => true,
+      maxSteps: 3,
+    };
+    const stages: Stage[] = [{ id: 'health_check', gate: { tool_called: 'verify_health' } }];
+    await expect(runStageGate(ctx, 'hi', stages, () => store.readBySession('s3'))).rejects.toThrow(StageGateError);
+    const events = await store.readBySession('s3');
+    // no satisfying tool.result (verb response) recorded for the denied call
+    const sat = events.find(e => e.type === 'tool.result' && e.verb === 'response' && (e.payload as any)?.name === 'verify_health');
+    expect(sat).toBeUndefined();
+    const end = [...events].reverse().find(e => e.type === 'stage/end' && e.span_id === 'stage:health_check');
+    expect(end?.verb).toBe('error');
+  });
 });

@@ -32,7 +32,8 @@ export async function runStageGate(ctx: FlowContext, prompt: string, stages: Sta
       if (res.tool) {
         await ctx.recorder.record({ span_id: span, parent_span_id: null, type: 'tool.called', verb: 'request', attempt: steps, duration_ms: 0, payload: { name: res.tool.name, args: res.tool.args } });
         const result = await ctx.executeTool(res.tool.name, res.tool.args);
-        const ok = ctx.verifyToolResult(res.tool.name, result);
+        const blocked = result && typeof result === 'object' && (result as { ok?: boolean }).ok === false;
+        const ok = !blocked && ctx.verifyToolResult(res.tool.name, result);
         if (!ok) {
           await ctx.recorder.record({ span_id: span, parent_span_id: null, type: 'tool.result', verb: 'error', attempt: steps, duration_ms: 0, payload: { name: res.tool.name, result, blocked: true } });
           await ctx.recorder.record({ span_id: span, parent_span_id: null, type: 'step/end', verb: 'error', attempt: steps, duration_ms: 0, payload: { stage: stage.id, step: steps, blocked: true } });

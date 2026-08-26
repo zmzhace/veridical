@@ -82,7 +82,7 @@ export class GRPOTrainer {
         }
         const overallMean = totalReward / states.length;
         const snap = policy.snapshot();
-        const fp = stateFingerprint(`s1:${states[0]}`); // 用第一个 state 的 s1 作 best 展示
+        const fp = stateFingerprint(`${stageIds[0]}:${states[0]}`); // 用第一个 stage 与第一个 state 作 best 展示
         const best = snap[fp]?.options.reduce((a, b) => (b.prob > a.prob ? b : a)).text ?? '';
         yield { iteration: iter, mean_reward: overallMean, best_option: best, group_rewards: groupRewards, policy: snap };
       }
