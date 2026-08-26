@@ -1,29 +1,23 @@
 import { useState } from 'react';
-import { useSpecs, useAddSpec } from '../api/queries';
+import { useSpecs } from '../api/queries';
+import { SpecForm } from '../components/SpecForm';
+import { YAMLSpecForm } from '../components/YAMLSpecForm';
 
 export function SpecsPage() {
   const { data, isLoading, refetch } = useSpecs();
-  const add = useAddSpec();
-  const [yaml, setYaml] = useState('');
-  const [err, setErr] = useState('');
-
-  async function submit() {
-    setErr('');
-    try { await add.mutateAsync(yaml); setYaml(''); await refetch(); }
-    catch (e: any) { setErr(e.message ?? '添加失败'); }
-  }
+  const [tab, setTab] = useState<'form' | 'yaml'>('form');
 
   return (
     <div>
-      <div className="mb-5"><h2 className="page-title">规格</h2><p className="page-desc">已注册的 agent 规格——定义人设、工具与流程。可粘贴 YAML 直接添加。</p></div>
-      <div className="card p-4 mb-6 space-y-3">
-        <label className="label">添加规格（粘贴 YAML）</label>
-        <textarea className="field h-32 mono text-[12px]" value={yaml} onChange={(e) => setYaml(e.target.value)} placeholder="粘贴 YAML…" />
-        <div className="flex items-center gap-3">
-          <button className="btn btn-primary" onClick={submit} disabled={!yaml.trim() || add.isPending}>{add.isPending ? '添加中…' : '添加规格'}</button>
-          {err && <span className="text-[12px] text-red-600">{err}</span>}
-        </div>
+      <div className="mb-5"><h2 className="page-title">规格</h2><p className="page-desc">已注册的 agent 规格——定义人设、工具与流程。</p></div>
+      <div className="flex gap-1 mb-4">
+        <button className={`tab ${tab === 'form' ? 'tab-active' : ''}`} onClick={() => setTab('form')}>表单</button>
+        <button className={`tab ${tab === 'yaml' ? 'tab-active' : ''}`} onClick={() => setTab('yaml')}>粘贴 YAML</button>
       </div>
+      {tab === 'form'
+        ? <SpecForm onSaved={() => refetch()} />
+        : <YAMLSpecForm onSaved={() => refetch()} />}
+      <h3 className="text-[13px] font-semibold text-[var(--muted)] mb-2">已注册规格</h3>
       {isLoading ? <p className="text-[var(--muted)]">加载中…</p> : data && data.length ? (
         <div className="space-y-2">
           {data.map((s: any) => (
