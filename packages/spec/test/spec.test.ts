@@ -110,3 +110,76 @@ tools: []
 `)).toThrow();
   });
 });
+
+import { parseSpecYaml } from '../src/spec';
+
+describe('stage-gate spec', () => {
+  it('parses stages with gates', () => {
+    const spec = parseSpecYaml(`
+name: transfer-advisor
+version: 1.0.0
+schema_version: 1
+instruction: { system: 你是转保顾问 }
+flow:
+  mode: stage-gate
+  max_steps: 3
+  stages:
+    - id: health_check
+      gate: { tool_called: verify_health }
+    - id: close
+llm: { provider: mock, model: m, fallback: [] }
+tools:
+  - name: verify_health
+    access: allow
+  - name: submit_transfer
+    access: allow
+`);
+    expect(spec.flow.mode).toBe('stage-gate');
+    expect(spec.flow.stages).toHaveLength(2);
+    expect(spec.flow.stages[0].gate?.tool_called).toBe('verify_health');
+    expect(spec.flow.stages[1].gate).toBeUndefined();
+  });
+
+  it('rejects stage-gate without stages', () => {
+    expect(() => parseSpecYaml(`
+name: bad
+version: 1.0.0
+schema_version: 1
+instruction: { system: hi }
+flow: { mode: stage-gate, max_steps: 3 }
+llm: { provider: mock, model: m, fallback: [] }
+tools: []
+`)).toThrow();
+  });
+
+  it('rejects stage-gate gate tool not in tools', () => {
+    expect(() => parseSpecYaml(`
+name: bad2
+version: 1.0.0
+schema_version: 1
+instruction: { system: hi }
+flow:
+  mode: stage-gate
+  max_steps: 3
+  stages:
+    - id: s1
+      gate: { tool_called: ghost_tool }
+llm: { provider: mock, model: m, fallback: [] }
+tools: []
+`)).toThrow();
+  });
+
+  it('single-loop without stages still parses (compat)', () => {
+    const spec = parseSpecYaml(`
+name: plain
+version: 1.0.0
+schema_version: 1
+instruction: { system: hi }
+flow: { mode: single-loop, max_steps: 1 }
+llm: { provider: mock, model: m, fallback: [] }
+tools: []
+`);
+    expect(spec.flow.mode).toBe('single-loop');
+    expect(spec.flow.stages).toBeUndefined();
+  });
+});
