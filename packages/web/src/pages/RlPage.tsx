@@ -73,11 +73,55 @@ const INSURANCE_CANDIDATES = [
   JSON.stringify({ text: '直接换吧，肯定比您现在的好', done: true }),
 ].join('\n');
 
+const TRANSFER_SPEC = `name: transfer-advisor
+version: 1.0.0
+schema_version: 1
+instruction: { system: 你是转保顾问，必须按顺序核验健康、评估退保损失、核对保障连续性，再促成。 }
+flow:
+  mode: stage-gate
+  max_steps: 4
+  stages:
+    - id: health_check
+      gate: { tool_called: verify_health }
+    - id: surrender_analysis
+      gate: { tool_called: assess_surrender }
+    - id: continuity_check
+      gate: { tool_called: compare_benefits }
+    - id: close
+      gate: { tool_called: submit_transfer }
+llm: { provider: mock, model: m, fallback: [] }
+tools:
+  - name: verify_health
+    access: allow
+  - name: assess_surrender
+    access: allow
+  - name: compare_benefits
+    access: allow
+  - name: submit_transfer
+    access: allow
+`;
+const TRANSFER_SCENARIO = `name: transfer-rl
+spec: { name: transfer-advisor }
+rules:
+  - tool_called: submit_transfer
+  - no_errors: true
+steps:
+  - user: 张先生40岁有慢性病想转保
+  - user: 李女士35岁旧保单交了很多年想转保
+`;
+const TRANSFER_CANDIDATES = [
+  JSON.stringify({ text: '', tool: { name: 'verify_health', args: {} } }),
+  JSON.stringify({ text: '', tool: { name: 'assess_surrender', args: {} } }),
+  JSON.stringify({ text: '', tool: { name: 'submit_transfer', args: {} } }),
+  JSON.stringify({ text: '直接推客户转保，不核验', done: true }),
+].join('\n');
+
 const PRESETS: Record<string, { spec: string; scenario: string; candidates: string; label: string }> = {
   insurance: { label: '换保单案例', spec: INSURANCE_SPEC, scenario: INSURANCE_SCENARIO, candidates: INSURANCE_CANDIDATES },
   echo: { label: 'echo demo', spec: ECHO_SPEC, scenario: ECHO_SCENARIO, candidates: ECHO_CANDIDATES },
+  transfer: { label: '转保案例', spec: TRANSFER_SPEC, scenario: TRANSFER_SCENARIO, candidates: TRANSFER_CANDIDATES },
 };
-const DEFAULT_PRESET = 'insurance';
+const DEFAULT_PRESET = 'transfer';
 
 export function RlPage() {
   const [preset, setPreset] = useState(DEFAULT_PRESET);
