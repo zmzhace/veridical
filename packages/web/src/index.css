@@ -8,9 +8,9 @@
   --ink: #1a1a1a;
   --muted: #6b6b6b;
   --line: #e8e6e1;
-  --accent: #3b5bdb;
+  --accent: #4338CA;
   --accent-ink: #ffffff;
-  --accent-soft: #eef1fe;
+  --accent-soft: #EDE9FE;
   --good: #2b8a3e;
   --good-soft: #e9f7ee;
   --warn: #c47f17;
@@ -83,3 +83,8 @@
   .empty-title { font-weight: 600; color: var(--ink); font-size: 14px; margin-bottom: 4px; }
   .empty-desc { font-size: 13px; }
 }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.animate-fade-in { animation: fadeIn 200ms ease-out; }
+@keyframes typing { 0%,100% { opacity: 0.2; } 50% { opacity: 1; } }
+.cursor-typing { display: inline-block; width: 2px; height: 1em; background: currentColor; animation: typing 800ms infinite; vertical-align: -0.1em; margin-left: 2px; }
