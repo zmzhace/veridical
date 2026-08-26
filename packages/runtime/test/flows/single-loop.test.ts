@@ -103,3 +103,23 @@ describe('runSingleLoop', () => {
     expect(runCalls).toBe(2);
   });
 });
+
+describe('runSingleLoop onStepEnd', () => {
+  it('calls onStepEnd once per step', async () => {
+    const store = new InMemoryTraceStore();
+    const session = new Session({ session_id: 's1', tenant_id: 't1', spec_version: '1.0.0' });
+    const recorder = new Recorder(store, session);
+    let calls = 0;
+    const ctx: FlowContext = {
+      recorder,
+      runStep: async () => ({ text: 'ok', tool: undefined }),
+      executeTool: async () => 'ok',
+      shouldStop: () => false,
+      verifyToolResult: () => true,
+      maxSteps: 3,
+      onStepEnd: async () => { calls += 1; },
+    };
+    await runSingleLoop(ctx, 'hi');
+    expect(calls).toBe(3);
+  });
+});

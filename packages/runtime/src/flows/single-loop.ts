@@ -16,6 +16,7 @@ export async function runSingleLoop(ctx: FlowContext, prompt: string): Promise<v
       if (!ok) {
         await ctx.recorder.record({ span_id: 'loop', parent_span_id: null, type: 'tool.result', verb: 'error', attempt: step, duration_ms: 0, payload: { name: res.tool.name, result, blocked: true } });
         await ctx.recorder.record({ span_id: 'loop', parent_span_id: null, type: 'step/end', verb: 'error', attempt: step, duration_ms: 0, payload: { step, blocked: true } });
+        await ctx.onStepEnd?.();
         continue;
       }
       await ctx.recorder.record({ span_id: 'loop', parent_span_id: null, type: 'tool.result', verb: 'response', attempt: step, duration_ms: 0, payload: { name: res.tool.name, result } });
@@ -25,6 +26,7 @@ export async function runSingleLoop(ctx: FlowContext, prompt: string): Promise<v
       outcome = res.text;
     }
     await ctx.recorder.record({ span_id: 'loop', parent_span_id: null, type: 'step/end', verb: 'response', attempt: step, duration_ms: 0, payload: { step } });
+    await ctx.onStepEnd?.();
   }
   await ctx.recorder.record({ span_id: 'loop', parent_span_id: null, type: 'turn/end', verb: 'response', attempt: 1, duration_ms: 0, payload: { outcome } });
 }

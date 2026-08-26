@@ -7,4 +7,5 @@ export interface FlowContext {
   shouldStop(outcome: unknown): boolean;
   verifyToolResult(name: string, result: unknown): boolean;
   maxSteps: number;
+  onStepEnd?: () => Promise<void>;
 }

@@ -37,6 +37,7 @@ export async function runStageGate(ctx: FlowContext, prompt: string, stages: Sta
         if (!ok) {
           await ctx.recorder.record({ span_id: span, parent_span_id: null, type: 'tool.result', verb: 'error', attempt: steps, duration_ms: 0, payload: { name: res.tool.name, result, blocked: true } });
           await ctx.recorder.record({ span_id: span, parent_span_id: null, type: 'step/end', verb: 'error', attempt: steps, duration_ms: 0, payload: { stage: stage.id, step: steps, blocked: true } });
+          await ctx.onStepEnd?.();
           continue;
         }
         await ctx.recorder.record({ span_id: span, parent_span_id: null, type: 'tool.result', verb: 'response', attempt: steps, duration_ms: 0, payload: { name: res.tool.name, result } });
@@ -44,6 +45,7 @@ export async function runStageGate(ctx: FlowContext, prompt: string, stages: Sta
         await ctx.recorder.record({ span_id: span, parent_span_id: null, type: 'assistant.message', verb: 'response', attempt: steps, duration_ms: 0, payload: { text: res.text } });
       }
       await ctx.recorder.record({ span_id: span, parent_span_id: null, type: 'step/end', verb: 'response', attempt: steps, duration_ms: 0, payload: { stage: stage.id, step: steps } });
+      await ctx.onStepEnd?.();
     }
     const finalEvents = await readEvents();
     if (!gateSatisfied(stage, finalEvents)) {
