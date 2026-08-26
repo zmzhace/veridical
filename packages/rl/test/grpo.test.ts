@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseSpecYaml, type SpecRunnerDeps } from '@veridical/spec';
-import { parseScenarioYaml, ruleToolCalled } from '@veridical/eval';
+import { parseScenarioYaml, ruleToolCalled, ruleNoErrors } from '@veridical/eval';
 import { InMemoryTraceStore } from '@veridical/store';
 import { MockPolicy } from '../src/policy';
 import { RewardAggregator } from '../src/reward';
@@ -116,5 +116,68 @@ steps:
     const pB = last.policy[fpB].options.find((o: any) => o.text === candidates['persona B'][1])?.prob ?? 0;
     expect(pA).toBeGreaterThan(0.8);
     expect(pB).toBeGreaterThan(0.8);
+  });
+});
+
+const SG_SPEC = `
+name: sg
+version: 1.0.0
+schema_version: 1
+instruction: { system: sg }
+flow:
+  mode: stage-gate
+  max_steps: 3
+  stages:
+    - id: s1
+      gate: { tool_called: t1 }
+    - id: s2
+      gate: { tool_called: t2 }
+llm: { provider: mock, model: m, fallback: [] }
+tools:
+  - name: t1
+    access: allow
+  - name: t2
+    access: allow
+`;
+
+describe('GRPOTrainer stage-gate', () => {
+  it('trains per-stage decisions to end-to-end success', async () => {
+    const store = new InMemoryTraceStore();
+    const spec = parseSpecYaml(SG_SPEC);
+    const scenario = parseScenarioYaml(`
+name: sg-rl
+spec: { name: sg }
+rules:
+  - tool_called: t2
+  - no_errors: true
+steps:
+  - user: 客户A
+`);
+    const candidates = {
+      '客户A': [JSON.stringify({ text: '', tool: { name: 't1', args: {} } }), JSON.stringify({ text: '', tool: { name: 't2', args: {} } })],
+    };
+    const policy = new MockPolicy(candidates);
+    const reward = new RewardAggregator([ruleToolCalled('t2'), ruleNoErrors()]);
+    const deps: SpecRunnerDeps = {
+      store,
+      providers: new Map([['mock', { complete: async () => ({ text: '', usage: { input: 1, output: 1, cached: 0, total: 2 } }) }]]),
+      tools: [
+        { id: 't1', name: 't1', description: '', deterministic: true, execute: async (a) => a },
+        { id: 't2', name: 't2', description: '', deterministic: true, execute: async (a) => a },
+      ],
+      tenant_id: 't1',
+    };
+    const trainer = new GRPOTrainer();
+    const stats: any[] = [];
+    for await (const s of trainer.train({ deps, spec, scenario, iterations: 40, groupSize: 8, lr: 0.5, policy, reward, rewardCtx: { store }, candidatesByPrompt: candidates })) {
+      stats.push(s);
+    }
+    const last = stats[stats.length - 1];
+    expect(last.mean_reward).toBeGreaterThan(0.7);
+    // s1 state converges to t1; s2 state converges to t2
+    const fp1 = stateFingerprint('s1:客户A');
+    const fp2 = stateFingerprint('s2:客户A');
+    expect(last.policy[fp1]?.options.find((o: any) => o.text.includes('"name":"t1"'))?.prob ?? 0).toBeGreaterThan(0.7);
+    expect(last.policy[fp2]?.options.find((o: any) => o.text.includes('"name":"t2"'))?.prob ?? 0).toBeGreaterThan(0.7);
   });
 });
