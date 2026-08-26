@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { TraceStore } from '@veridical/store';
 import type { TraceEvent } from '@veridical/schema';
-import { Session, Recorder, runSingleLoop, type FlowContext } from '@veridical/runtime';
+import { Session, Recorder, runSingleLoop, runStageGate, StageGateError, type FlowContext } from '@veridical/runtime';
 import { ToolBroker, type ApprovalDecision, type ApprovalPolicy, type ToolDef } from '@veridical/tools';
 import { LLMGateway, type LLMProvider, type LLMRequest, type LLMResponse } from '@veridical/llm';
 import type { AgentSpec } from './spec';
@@ -239,7 +239,11 @@ export async function runSpec(deps: SpecRunnerDeps, spec: AgentSpec, prompt: str
   let error: unknown;
   let outcome: unknown;
   try {
-    await runSingleLoop(ctx, prompt);
+    if (spec.flow.mode === 'stage-gate' && spec.flow.stages && spec.flow.stages.length > 0) {
+      await runStageGate(ctx, prompt, spec.flow.stages, () => deps.store.readBySession(session_id));
+    } else {
+      await runSingleLoop(ctx, prompt);
+    }
   } catch (err) {
     caught = true;
     error = err;
@@ -248,10 +252,11 @@ export async function runSpec(deps: SpecRunnerDeps, spec: AgentSpec, prompt: str
     const events = await deps.store.readBySession(session_id);
     const endTurn = [...events].reverse().find(e => e.type === 'turn/end');
     outcome = (endTurn?.payload as { outcome?: unknown } | undefined)?.outcome;
+    const stuckStage = error instanceof StageGateError ? error.stage : undefined;
 
     await recorder.record({
       span_id: 'spec', parent_span_id: null, type: 'spec/run/end', verb: caught ? 'error' : 'response', attempt: 1, duration_ms: 0,
-      payload: caught ? { outcome, message: error instanceof Error ? error.message : String(error) } : { outcome },
+      payload: caught ? { outcome, message: error instanceof Error ? error.message : String(error), ...(stuckStage ? { stuck_stage: stuckStage } : {}) } : { outcome },
     });
   }
 

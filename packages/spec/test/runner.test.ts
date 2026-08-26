@@ -3,6 +3,7 @@ import { InMemoryTraceStore } from '@veridical/store';
 import { ToolBroker, type ToolDef } from '@veridical/tools';
 import type { LLMProvider } from '@veridical/llm';
 import { parseSpecYaml, runSpec, SpecRunError, SpecApprovalPolicy, InMemorySpecRegistry, type SpecRunnerDeps } from '../src/index';
+import { StageGateError } from '@veridical/runtime';
 
 const SPEC_YAML = `
 name: runner-test
@@ -270,5 +271,74 @@ agents:
     await expect(runSpec(deps, hub, 'hi')).rejects.toThrow(SpecRunError);
     const events = await store.readBySession('hub_no_tool');
     expect(events.filter(e => e.type === 'agent.dispatch' && e.verb === 'request').length).toBe(0);
+  });
+});
+
+const STAGE_SPEC = `
+name: transfer-advisor
+version: 1.0.0
+schema_version: 1
+instruction: { system: 你是转保顾问 }
+flow:
+  mode: stage-gate
+  max_steps: 3
+  stages:
+    - id: health_check
+      gate: { tool_called: verify_health }
+    - id: close
+llm: { provider: mock, model: m, fallback: [] }
+tools:
+  - name: verify_health
+    access: allow
+  - name: submit_transfer
+    access: allow
+`;
+
+describe('stage-gate runSpec', () => {
+  it('runs stages when gates satisfied', async () => {
+    const store = new InMemoryTraceStore();
+    const spec = parseSpecYaml(STAGE_SPEC);
+    const deps: SpecRunnerDeps = {
+      store,
+      providers: new Map([['mock', { complete: async () => ({ text: '', usage: { input: 1, output: 1, cached: 0, total: 2 } }) }]]),
+      tools: [
+        { id: 'verify_health', name: 'verify_health', description: '', deterministic: true, execute: async (a) => a },
+        { id: 'submit_transfer', name: 'submit_transfer', description: '', deterministic: true, execute: async (a) => a },
+      ],
+      tenant_id: 't1',
+      session_id: 'sg_s1',
+      runStep: async () => ({ text: '', tool: { name: 'verify_health', args: {} } }),
+    };
+    const result = await runSpec(deps, spec, '我想转保');
+    const events = await store.readBySession('sg_s1');
+    const types = events.map(e => e.type);
+    expect(types).toContain('stage/start');
+    expect(types.filter(t => t === 'stage/start')).toHaveLength(2);
+    expect(types.filter(t => t === 'stage/end')).toHaveLength(2);
+    expect(types).toContain('tool.called');
+    expect(result.events.length).toBe(events.length);
+  });
+
+  it('throws StageGateError and records stuck_stage when gate never satisfied', async () => {
+    const store = new InMemoryTraceStore();
+    const spec = parseSpecYaml(STAGE_SPEC);
+    const deps: SpecRunnerDeps = {
+      store,
+      providers: new Map([['mock', { complete: async () => ({ text: '', usage: { input: 1, output: 1, cached: 0, total: 2 } }) }]]),
+      tools: [
+        { id: 'verify_health', name: 'verify_health', description: '', deterministic: true, execute: async (a) => a },
+        { id: 'submit_transfer', name: 'submit_transfer', description: '', deterministic: true, execute: async (a) => a },
+      ],
+      tenant_id: 't1',
+      session_id: 'sg_stuck',
+      runStep: async () => ({ text: '我不核验，直接聊', tool: undefined }),
+    };
+    await expect(runSpec(deps, spec, '我想转保')).rejects.toThrow(StageGateError);
+    const events = await store.readBySession('sg_stuck');
+    const runEnd = [...events].reverse().find(e => e.type === 'spec/run/end')!;
+    expect(runEnd.verb).toBe('error');
+    expect((runEnd.payload as any).stuck_stage).toBe('health_check');
+    // did not reach stage 2
+    expect(events.some(e => e.type === 'stage/start' && (e.payload as any).stage === 'close')).toBe(false);
   });
 });
