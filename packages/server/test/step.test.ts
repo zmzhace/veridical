@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildApp } from '../src/app';
+import { DuplicateSpecError } from '@veridical/spec';
 
 describe('checkpoints + step run', () => {
   it('GET /api/sessions/:id/checkpoints filters checkpoint events', async () => {
@@ -12,6 +13,16 @@ describe('checkpoints + step run', () => {
     const body = res.json();
     expect(body.length).toBe(1);
     expect(body[0].type).toBe('state.checkpoint');
+    await app.close();
+  });
+
+  it('POST /api/specs returns 409 on duplicate', async () => {
+    const app = await buildApp('/tmp/rt-spec-dup-' + Date.now(), '/tmp/rt-spec-dup-specs-' + Date.now());
+    const yaml = `name: dup\nversion: 1.0.0\nschema_version: 1\ninstruction: { system: hi }\nflow: { mode: single-loop, max_steps: 1 }\nllm: { provider: mock, model: m, fallback: [] }\ntools: []\n`;
+    const r1 = await app.inject({ method: 'POST', url: '/api/specs', payload: { yaml } });
+    expect(r1.statusCode).toBe(201);
+    const r2 = await app.inject({ method: 'POST', url: '/api/specs', payload: { yaml } });
+    expect(r2.statusCode).toBe(409);
     await app.close();
   });
 });

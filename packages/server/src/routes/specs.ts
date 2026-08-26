@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { parseSpecYaml } from '@veridical/spec';
+import { parseSpecYaml, DuplicateSpecError } from '@veridical/spec';
 
 export async function registerSpecRoutes(app: FastifyInstance) {
   const registry = app.specRegistry;
@@ -10,6 +10,9 @@ export async function registerSpecRoutes(app: FastifyInstance) {
       await registry.register(spec);
       return reply.code(201).send(spec);
     } catch (e) {
+      if (e instanceof DuplicateSpecError) {
+        return reply.code(409).send({ error: { code: 'duplicate_spec', message: e.message } });
+      }
       return reply.code(400).send({ error: { code: 'invalid_spec', message: String(e) } });
     }
   });
