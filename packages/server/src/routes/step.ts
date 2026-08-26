@@ -36,7 +36,13 @@ export async function registerStepRoutes(app: FastifyInstance) {
     // @ts-ignore
     reply.raw.flushHeaders?.();
     const send = (obj: unknown) => { if (reply.raw.writableEnded) return; try { reply.raw.write(`data: ${JSON.stringify(obj)}\n\n`); } catch {} };
-    const abort = () => { const fn = pendingSteps.get(sessionId); if (fn) { pendingSteps.delete(sessionId); fn(); } try { reply.raw.end(); } catch {} };
+    const aborted = { value: false };
+    const abort = () => {
+      aborted.value = true;
+      const fn = pendingSteps.get(sessionId);
+      if (fn) { pendingSteps.delete(sessionId); fn(); }
+      try { reply.raw.end(); } catch {}
+    };
     // IMPORTANT: use reply.raw 'close' (real client disconnect). req.raw 'close' fires as
     // soon as the POST body is received — that would abort the step run immediately.
     // On client disconnect, release the pending gate so runSpec completes/cleans up.
@@ -44,6 +50,7 @@ export async function registerStepRoutes(app: FastifyInstance) {
 
     const script = b.script?.[0] ?? JSON.stringify({ text: 'done', done: true });
     const stepBoundary = () => new Promise<void>((resolve) => {
+      if (aborted.value) { resolve(); return; }
       pendingSteps.set(sessionId, resolve);
     });
 
@@ -63,7 +70,6 @@ export async function registerStepRoutes(app: FastifyInstance) {
     try {
       const result = await runSpec(deps, spec, b.prompt ?? 'hello');
       const events = await store.readBySession(sessionId);
-      const cps = events.filter(e => e.type === 'state.checkpoint');
       send({ type: 'done', session_id: sessionId, event_count: events.length, outcome: result.outcome });
     } catch (e) {
       send({ type: 'error', message: String(e) });

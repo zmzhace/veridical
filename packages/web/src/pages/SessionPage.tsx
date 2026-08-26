@@ -118,7 +118,7 @@ export function SessionPage() {
                             {it.tools.map((t) => (
                               <button key={t.id} onClick={() => setSelected(t)}
                                 className="text-[11px] px-2 py-0.5 rounded-full border bg-white text-[#44403C] border-[#E7E5E4] hover:border-[#4338CA] hover:text-[#4338CA] transition-colors">
-                                ⚙ {toolHuman(String((t.payload as any)?.name ?? ''))}{t.type === 'tool.result' ? ' ✓' : ''}
+                                ⚙ {toolHuman(String((t.payload as any)?.name ?? ''))}{t.type === 'tool.result' ? (t.verb === 'error' ? ' ✕' : ' ✓') : ''}
                               </button>
                             ))}
                           </div>
