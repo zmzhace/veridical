@@ -4,3 +4,5 @@ dist/
 # Superpowers workflow docs (design specs + implementation plans) — local only, not committed
 /superpowers/
 /docs/superpowers/
+# Case-study docs — local only, not committed
+/docs/case/
