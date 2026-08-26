@@ -1,9 +1,12 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiFetch } from './client';
+import type { TraceEvent } from '@veridical/schema';
 import type { SessionSummary, SessionEvents, ReplayResponse, CompareResponse, EvalResponse, RunResponse } from './types';
 
 export const useSessions = () => useQuery({ queryKey: ['sessions'], queryFn: () => apiFetch<SessionSummary[]>('/api/sessions') });
 export const useSession = (id: string) => useQuery({ queryKey: ['session', id], queryFn: () => apiFetch<SessionEvents>(`/api/sessions/${id}`), enabled: !!id });
+export const useCheckpoints = (id: string) => useQuery({ queryKey: ['checkpoints', id], queryFn: () => apiFetch<TraceEvent[]>(`/api/sessions/${id}/checkpoints`), enabled: !!id });
+export const useAddSpec = () => useMutation({ mutationFn: (yaml: string) => apiFetch<unknown>('/api/specs', { method: 'POST', body: JSON.stringify({ yaml }) }) });
 export const useReplay = (id: string, seq: number) => useQuery({ queryKey: ['replay', id, seq], queryFn: () => apiFetch<ReplayResponse>(`/api/sessions/${id}/replay`, { method: 'POST', body: JSON.stringify({ targetSeq: seq }) }), enabled: !!id && seq > 0 });
 export const useSpecs = () => useQuery({ queryKey: ['specs'], queryFn: () => apiFetch<unknown[]>('/api/specs') });
 export const useRun = () => useMutation({ mutationFn: (body: unknown) => apiFetch<RunResponse>('/api/run', { method: 'POST', body: JSON.stringify(body) }) });

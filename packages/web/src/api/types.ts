@@ -6,6 +6,7 @@ export interface SessionSummary {
   total_duration_ms: number; first_seq: number; last_seq: number;
 }
 export type SessionEvents = TraceEvent[];
+export interface Checkpoint { frame: number; stage?: string; messages: unknown[]; memory?: unknown; outcome_so_far: unknown; blocked?: boolean }
 export interface ReplayResponse {
   session_id: string; up_to_seq: number; events: TraceEvent[]; last_event?: TraceEvent;
 }
