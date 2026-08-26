@@ -342,3 +342,61 @@ describe('stage-gate runSpec', () => {
     expect(events.some(e => e.type === 'stage/start' && (e.payload as any).stage === 'close')).toBe(false);
   });
 });
+
+describe('checkpoint + stepBoundary', () => {
+  it('records state.checkpoint per step and awaits stepBoundary', async () => {
+    const store = new InMemoryTraceStore();
+    const spec = parseSpecYaml(`
+name: cp
+version: 1.0.0
+schema_version: 1
+instruction: { system: hi }
+flow: { mode: single-loop, max_steps: 2 }
+llm: { provider: mock, model: m, fallback: [] }
+tools: []
+`);
+    let boundaryCalls = 0;
+    const deps: SpecRunnerDeps = {
+      store,
+      providers: new Map([['mock', { complete: async () => ({ text: '', usage: { input: 1, output: 1, cached: 0, total: 2 } }) }]]),
+      tools: [],
+      tenant_id: 't1',
+      session_id: 'cp_s1',
+      stepBoundary: async () => { boundaryCalls += 1; },
+      runStep: async () => ({ text: 'ok', tool: undefined }),
+    };
+    await runSpec(deps, spec, 'hi');
+    const events = await store.readBySession('cp_s1');
+    const cps = events.filter(e => e.type === 'state.checkpoint');
+    expect(cps.length).toBe(2);
+    expect(boundaryCalls).toBe(2);
+    const cp = cps[0];
+    expect((cp.payload as any).frame).toBe(1);
+    expect(Array.isArray((cp.payload as any).messages)).toBe(true);
+    expect((cp.payload as any).outcome_so_far).toBe('ok');
+  });
+
+  it('does NOT call stepBoundary when not injected (compat)', async () => {
+    const store = new InMemoryTraceStore();
+    const spec = parseSpecYaml(`
+name: cp2
+version: 1.0.0
+schema_version: 1
+instruction: { system: hi }
+flow: { mode: single-loop, max_steps: 2 }
+llm: { provider: mock, model: m, fallback: [] }
+tools: []
+`);
+    const deps: SpecRunnerDeps = {
+      store,
+      providers: new Map([['mock', { complete: async () => ({ text: '', usage: { input: 1, output: 1, cached: 0, total: 2 } }) }]]),
+      tools: [],
+      tenant_id: 't1',
+      session_id: 'cp_s2',
+      runStep: async () => ({ text: 'ok', tool: undefined }),
+    };
+    await runSpec(deps, spec, 'hi');
+    const events = await store.readBySession('cp_s2');
+    expect(events.filter(e => e.type === 'state.checkpoint').length).toBe(2);
+  });
+});

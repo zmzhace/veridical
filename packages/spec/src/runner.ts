@@ -51,6 +51,7 @@ export interface SpecRunnerDeps {
   session_id?: string;
   tenant_id: string;
   memory?: MemoryLike;
+  stepBoundary?: () => Promise<void>;
 }
 
 export interface RunResult {
@@ -233,6 +234,30 @@ export async function runSpec(deps: SpecRunnerDeps, spec: AgentSpec, prompt: str
         }
       : () => true,
     maxSteps: spec.flow.max_steps,
+    onStepEnd: async () => {
+      const events = await deps.store.readBySession(session_id);
+      const stepEnd = [...events].reverse().find(e => e.type === 'step/end');
+      const frame = (stepEnd?.payload as any)?.step ?? stepCount;
+      const messages = events
+        .filter(e => ['user.message', 'assistant.message', 'tool.called', 'tool.result'].includes(e.type))
+        .slice(-20)
+        .map(e => ({ type: e.type, payload: e.payload }));
+      const blocked = events.some(e => e.type === 'step/end' && e.verb === 'error' && (e.payload as any)?.blocked);
+      const currentStage = events
+        .filter(e => e.type === 'stage/start')
+        .reverse()
+        .find(s => !events.some(x => x.type === 'stage/end' && (x.payload as any)?.stage === (s.payload as any)?.stage));
+      const outcomeEvent = [...events].reverse().find(e => (e.type === 'tool.result' && e.verb === 'response') || e.type === 'assistant.message');
+      const op = outcomeEvent?.payload as { text?: unknown; result?: unknown } | undefined;
+      const outcome_so_far = outcomeEvent ? (outcomeEvent.type === 'assistant.message' ? op?.text : op?.result) : null;
+      await recorder.record({
+        span_id: spec.flow.mode === 'stage-gate' ? `stage:${(currentStage?.payload as any)?.stage ?? ''}` : 'loop',
+        parent_span_id: null,
+        type: 'state.checkpoint', verb: 'response', attempt: 1, duration_ms: 0,
+        payload: { frame, stage: (currentStage?.payload as any)?.stage, messages, outcome_so_far, blocked: blocked || undefined },
+      });
+      if (deps.stepBoundary) await deps.stepBoundary();
+    },
   };
 
   let caught = false;
