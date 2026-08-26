@@ -2,6 +2,34 @@ import { useSpecs } from '../api/queries';
 
 export function SpecsPage() {
   const { data, isLoading } = useSpecs();
-  if (isLoading) return <p>Loading…</p>;
-  return (<div><h2 className="text-xl font-semibold mb-3">Specs</h2>{data && data.length ? <ul className="space-y-1">{data.map((s: any) => <li key={s.name + s.version} className="border p-2 rounded">{s.name}@{s.version}</li>)}</ul> : <p>No specs registered.</p>}</div>);
+  return (
+    <div>
+      <div className="mb-5">
+        <h2 className="page-title">规格</h2>
+        <p className="page-desc">已注册的 agent 规格——定义人设、工具与流程。</p>
+      </div>
+      {isLoading ? <p className="text-[var(--muted)]">加载中…</p> : data && data.length ? (
+        <div className="space-y-2">
+          {data.map((s: any) => (
+            <div key={s.name + s.version} className="card px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold">{s.name}</span>
+                <span className="badge badge-neutral mono">v{s.version}</span>
+                {s.flow?.mode && <span className="badge badge-accent">{flowLabel(s.flow.mode)}</span>}
+              </div>
+              {s.description && <p className="text-[12px] text-[var(--muted)] mt-1">{s.description}</p>}
+              <p className="text-[11px] text-[var(--muted)] mt-1 mono">
+                {s.tools?.length ?? 0} 个工具 · {(s.agents ?? []).length} 个专家{(s.flow?.stages?.length ?? 0) ? ` · ${s.flow.stages.length} 个阶段` : ''}
+              </p>
+            </div>
+          ))}
+        </div>
+      ) : <div className="empty"><div className="empty-title">暂无已注册规格</div><div className="empty-desc">规格在服务启动时从 specs 目录加载。</div></div>}
+    </div>
+  );
+}
+
+function flowLabel(mode: string): string {
+  const m: Record<string, string> = { 'single-loop': '单循环', supervisor: '主管编排', 'stage-gate': '合规状态机' };
+  return m[mode] ?? mode;
 }

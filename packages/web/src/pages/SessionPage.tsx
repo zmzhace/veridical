@@ -4,6 +4,7 @@ import { useSession, useReplay } from '../api/queries';
 import { TraceTimeline } from '../components/TraceTimeline';
 import { EventDetail } from '../components/EventDetail';
 import { ReplayControls } from '../components/ReplayControls';
+import { sessionHuman } from '../lib/events';
 import type { TraceEvent } from '@veridical/schema';
 
 export function SessionPage() {
@@ -15,12 +16,15 @@ export function SessionPage() {
   const maxSeq = data?.length ?? 0;
   const shown = seq > 0 && replay.data ? replay.data.events : (data ?? []);
 
-  if (isLoading) return <p>Loading…</p>;
+  if (isLoading) return <p className="text-[var(--muted)]">加载中…</p>;
   return (
     <div className="relative">
-      <h2 className="text-xl font-semibold mb-2">Session {id}</h2>
+      <div className="mb-4">
+        <h2 className="page-title">{sessionHuman(id)}</h2>
+        <p className="page-desc mono text-[12px]">{id} · 点击任意事件查看详情</p>
+      </div>
       <ReplayControls maxSeq={maxSeq} value={seq} onScrub={setSeq} />
-      <TraceTimeline events={shown} onSelect={setSelected} />
+      {shown.length ? <TraceTimeline events={shown} onSelect={setSelected} /> : <div className="empty"><div className="empty-title">该会话没有事件</div></div>}
       {selected && <EventDetail event={selected} onClose={() => setSelected(null)} />}
     </div>
   );

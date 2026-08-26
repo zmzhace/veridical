@@ -8,9 +8,10 @@ const events: TraceEvent[] = [
   { id: '2', tenant_id: 't1', session_id: 's1', span_id: 'b', parent_span_id: 'a', seq: 2, type: 'llm.response', verb: 'response', attempt: 1, duration_ms: 10, payload: { text: 'hi' }, spec_version: '1.0.0' },
 ];
 
-test('renders one row per event and shows seq + type', () => {
+test('renders one row per event with a human label and seq', () => {
   render(<TraceTimeline events={events} onSelect={() => {}} />);
-  expect(screen.getByText('seq 1')).toBeInTheDocument();
-  expect(screen.getByText('llm.request')).toBeInTheDocument();
-  expect(screen.getByText('llm.response')).toBeInTheDocument();
+  expect(screen.getByText('请求模型')).toBeInTheDocument();
+  expect(screen.getByText('模型返回')).toBeInTheDocument();
+  expect(screen.getByText('1')).toBeInTheDocument();
+  expect(screen.getByText('2')).toBeInTheDocument();
 });

@@ -116,12 +116,24 @@ const TRANSFER_CANDIDATES = [
   JSON.stringify({ text: '直接推客户转保，不核验', done: true }),
 ].join('\n');
 
-const PRESETS: Record<string, { spec: string; scenario: string; candidates: string; label: string }> = {
-  insurance: { label: '换保单案例', spec: INSURANCE_SPEC, scenario: INSURANCE_SCENARIO, candidates: INSURANCE_CANDIDATES },
-  echo: { label: 'echo demo', spec: ECHO_SPEC, scenario: ECHO_SCENARIO, candidates: ECHO_CANDIDATES },
-  transfer: { label: '转保案例', spec: TRANSFER_SPEC, scenario: TRANSFER_SCENARIO, candidates: TRANSFER_CANDIDATES },
+const PRESETS: Record<string, { spec: string; scenario: string; candidates: string; label: string; desc: string }> = {
+  transfer: { label: '转保案例', desc: '合规状态机 · 强制先核验再促成', spec: TRANSFER_SPEC, scenario: TRANSFER_SCENARIO, candidates: TRANSFER_CANDIDATES },
+  insurance: { label: '换保单案例', desc: '六类客户 · 学会对画像选打法', spec: INSURANCE_SPEC, scenario: INSURANCE_SCENARIO, candidates: INSURANCE_CANDIDATES },
+  echo: { label: 'echo demo', desc: '最小示例 · 入门用', spec: ECHO_SPEC, scenario: ECHO_SCENARIO, candidates: ECHO_CANDIDATES },
 };
 const DEFAULT_PRESET = 'transfer';
+
+function actionText(text: string): { main: string; sub?: string } {
+  try {
+    const o = JSON.parse(text);
+    if (o.tool) return { main: o.text || '调用工具', sub: `工具 ${o.tool.name}` };
+    if (o.delegate) return { main: o.text || '派发专家', sub: `专家 ${o.delegate}` };
+    if (o.done) return { main: o.text || '直接结束', sub: '无工具调用' };
+    return { main: o.text || text };
+  } catch {
+    return { main: text };
+  }
+}
 
 export function RlPage() {
   const [preset, setPreset] = useState(DEFAULT_PRESET);
@@ -145,7 +157,7 @@ export function RlPage() {
   }
 
   async function onRun() {
-    setRows([]); setPolicy(null); setStatus('training…');
+    setRows([]); setPolicy(null); setStatus('训练中…');
     const body = {
       specYaml, scenarioYaml,
       candidates: candidates.split('\n').map((s) => s.trim()).filter(Boolean),
@@ -164,62 +176,102 @@ export function RlPage() {
           if (msg.type === 'iteration') {
             setRows((r) => [...r, { iteration: msg.iteration, mean_reward: msg.mean_reward, best_option: msg.best_option }]);
             setPolicy(msg.policy);
-            setStatus(`iteration ${msg.iteration}`);
-          } else if (msg.type === 'done') setStatus(`done (${msg.iterations} iters, mean ${msg.final_mean_reward.toFixed(3)})`);
-          else if (msg.type === 'error') setStatus(`error: ${msg.message}`);
+            setStatus(`训练中 · 第 ${msg.iteration} 轮`);
+          } else if (msg.type === 'done') setStatus(`完成 · ${msg.iterations} 轮 · 平均奖励 ${msg.final_mean_reward.toFixed(3)}`);
+          else if (msg.type === 'error') setStatus(`出错：${msg.message}`);
         } catch { continue; }
       }
     }
   }
 
   const maxR = rows.length ? Math.max(...rows.map((r) => r.mean_reward), 1) : 1;
+  const stateNames: Record<string, string> = {
+    'health_check': '阶段 · 健康核验', 'surrender_analysis': '阶段 · 退保评估', 'continuity_check': '阶段 · 保障核对', 'close': '阶段 · 促成',
+    's1': '阶段一', 's2': '阶段二',
+  };
 
   return (
-    <div className="space-y-4 max-w-4xl">
-      <h2 className="text-xl font-semibold">RL train (GRPO)</h2>
-      <select value={preset} onChange={(e) => onPreset(e.target.value)} className="border p-1 text-sm">
+    <div className="space-y-6 max-w-4xl">
+      <div>
+        <h2 className="page-title">RL 训练</h2>
+        <p className="page-desc">GRPO 分组优势训练：agent 对不同客户/阶段学会选正确的动作。选一个案例，调整参数，点训练。</p>
+      </div>
+
+      <div className="grid gap-2">
         {Object.entries(PRESETS).map(([k, p]) => (
-          <option key={k} value={k}>{p.label}</option>
+          <button key={k} onClick={() => onPreset(k)}
+            className={`card p-3.5 text-left transition-all ${preset === k ? 'border-[var(--accent)] ring-2 ring-[var(--accent-soft)]' : 'hover:border-[var(--line)]'}`}>
+            <div className="flex items-center justify-between">
+              <span className="text-[13px] font-semibold">{p.label}</span>
+              {preset === k && <span className="badge badge-neutral">已选</span>}
+            </div>
+            <div className="text-[11px] text-[var(--muted)] mt-0.5">{p.desc}</div>
+          </button>
         ))}
-      </select>
-      <div className="grid grid-cols-2 gap-3">
-        <div><label className="text-sm font-medium">Spec YAML</label><textarea className="w-full h-40 border font-mono text-sm p-2" value={specYaml} onChange={(e) => setSpecYaml(e.target.value)} /></div>
-        <div><label className="text-sm font-medium">Scenario YAML</label><textarea className="w-full h-40 border font-mono text-sm p-2" value={scenarioYaml} onChange={(e) => setScenarioYaml(e.target.value)} /></div>
       </div>
-      <div><label className="text-sm font-medium">Candidates (one JSON decision per line)</label><textarea className="w-full h-28 border font-mono text-sm p-2" value={candidates} onChange={(e) => setCandidates(e.target.value)} /></div>
-      <div className="flex gap-4">
-        <label className="text-sm">iterations <input className="border p-1 w-20" value={iterations} onChange={(e) => setIterations(e.target.value)} /></label>
-        <label className="text-sm">groupSize <input className="border p-1 w-20" value={groupSize} onChange={(e) => setGroupSize(e.target.value)} /></label>
-        <label className="text-sm">lr <input className="border p-1 w-20" value={lr} onChange={(e) => setLr(e.target.value)} /></label>
-        <button onClick={onRun} className="bg-black text-white px-4 py-2 rounded">Train</button>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div><label className="label">规格 (Spec)</label><textarea className="field h-48 mono text-[12px]" value={specYaml} onChange={(e) => setSpecYaml(e.target.value)} /></div>
+        <div><label className="label">场景 (Scenario)</label><textarea className="field h-48 mono text-[12px]" value={scenarioYaml} onChange={(e) => setScenarioYaml(e.target.value)} /></div>
       </div>
-      <p className="text-sm text-gray-600">{status}</p>
+      <div><label className="label">候选动作（每行一个 JSON 决策）</label><textarea className="field h-24 mono text-[12px]" value={candidates} onChange={(e) => setCandidates(e.target.value)} /></div>
+
+      <div className="flex flex-wrap items-end gap-4">
+        {(['iterations', 'groupSize', 'lr'] as const).map((k) => (
+          <div key={k} className="w-24">
+            <label className="label">{k}</label>
+            <input className="field" value={k === 'iterations' ? iterations : k === 'groupSize' ? groupSize : lr}
+              onChange={(e) => k === 'iterations' ? setIterations(e.target.value) : k === 'groupSize' ? setGroupSize(e.target.value) : setLr(e.target.value)} />
+          </div>
+        ))}
+        <button onClick={onRun} className="btn btn-primary">开始训练</button>
+        {status && <span className="text-[13px] text-[var(--muted)]">{status}</span>}
+      </div>
 
       {rows.length > 0 && (
-        <div>
-          <h3 className="font-semibold mb-1">mean_reward per iteration</h3>
-          <div className="flex items-end gap-[2px] h-24 border">
+        <div className="card p-4">
+          <h3 className="text-[13px] font-semibold mb-3">平均奖励 / 轮</h3>
+          <div className="flex items-end gap-[2px] h-28">
             {rows.map((r, i) => (
-              <div key={i} className="flex-1 bg-blue-500" style={{ height: `${(r.mean_reward / maxR) * 100}%` }} title={`iter ${r.iteration}: ${r.mean_reward.toFixed(3)}`} />
+              <div key={i} className="flex-1 rounded-t-sm bg-[var(--accent)] transition-all"
+                style={{ height: `${Math.max((r.mean_reward / maxR) * 100, 2)}%`, opacity: 0.35 + 0.65 * (i / Math.max(rows.length - 1, 1)) }}
+                title={`第 ${r.iteration} 轮：${r.mean_reward.toFixed(3)}`} />
             ))}
           </div>
         </div>
       )}
 
       {policy && (
-        <div>
-          <h3 className="font-semibold mb-1">Policy</h3>
-          {Object.entries(policy).map(([fp, st]) => (
-            <div key={fp} className="mb-2 border p-2">
-              <p className="text-xs font-mono text-gray-500">fp: {fp}</p>
-              {st.options.map((o, i) => (
-                <div key={i} className="flex justify-between text-sm font-mono">
-                  <span>{o.text}</span>
-                  <span>logit {o.logit.toFixed(2)} · prob {(o.prob * 100).toFixed(1)}%</span>
+        <div className="card p-4">
+          <h3 className="text-[13px] font-semibold mb-3">学到的策略</h3>
+          <div className="space-y-4">
+            {Object.entries(policy).map(([fp, st]) => {
+              const best = [...st.options].sort((a, b) => b.prob - a.prob)[0];
+              const name = stateNames[fp] ?? '状态 ' + fp.slice(0, 8);
+              return (
+                <div key={fp}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[12px] font-semibold">{name}</span>
+                    <span className="text-[11px] text-[var(--muted)]">首选：{(best && actionText(best.text).main) || '-'} {(best ? best.prob * 100 : 0).toFixed(0)}%</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {st.options.map((o, i) => {
+                      const at = actionText(o.text);
+                      return (
+                        <div key={i} className="flex items-center gap-3">
+                          <div className="w-40 shrink-0 truncate text-[12px]" title={o.text}>{at.main}{at.sub && <span className="text-[var(--muted)]"> · {at.sub}</span>}</div>
+                          <div className="flex-1 h-2 rounded-full bg-[#f1efe9] overflow-hidden">
+                            <div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${o.prob * 100}%` }} />
+                          </div>
+                          <div className="w-12 text-right text-[11px] tnum shrink-0">{(o.prob * 100).toFixed(1)}%</div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              ))}
-            </div>
-          ))}
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
