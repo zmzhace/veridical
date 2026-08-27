@@ -470,3 +470,48 @@ tools: []
     expect((seenMessages as { role: string }[]).map((m) => m.role)).toEqual(['system', 'user']);
   });
 });
+
+describe('runSpecTurn stage-gate continuation', () => {
+  it('two turns drive a stage-gate spec to completion', async () => {
+    const store = new InMemoryTraceStore();
+    const spec = parseSpecYaml(`
+name: convsg
+version: 1.0.0
+schema_version: 1
+instruction: { system: 你是转保顾问 }
+flow:
+  mode: stage-gate
+  max_steps: 2
+  stages:
+    - id: s1
+      gate: { tool_called: verify_health }
+    - id: s2
+      gate: { tool_called: submit_transfer }
+llm: { provider: mock, model: m, fallback: [] }
+tools:
+  - name: verify_health
+    access: allow
+  - name: submit_transfer
+    access: allow
+`);
+    const tools: ToolDef[] = [
+      { id: 'verify_health', name: 'verify_health', description: '', deterministic: true, execute: async (a) => a },
+      { id: 'submit_transfer', name: 'submit_transfer', description: '', deterministic: true, execute: async (a) => a },
+    ];
+    // turn1 runStep calls verify_health (s1 gate), turn2 calls submit_transfer (s2 gate)
+    let turn = 0;
+    const mkCtx = () => {
+      const names = ['verify_health', 'submit_transfer'];
+      const n = names[turn];
+      return async () => ({ text: '', tool: { name: n, args: {} } });
+    };
+    // 兼容:第一轮走非-turn 的 runSpec,s2 gate 未满足按旧行为抛 StageGateError(s1 已完成落盘)
+    await expect(runSpec({ store, providers: new Map([['mock', { complete: async () => ({ text: '', usage: { input: 1, output: 1, cached: 0, total: 2 } }) }]]), tools, tenant_id: 't1', session_id: 'csg', runStep: mkCtx() as any }, spec, '我要转保')).rejects.toThrow(StageGateError);
+    turn = 1;
+    await runSpecTurn({ store, providers: new Map([['mock', { complete: async () => ({ text: '', usage: { input: 1, output: 1, cached: 0, total: 2 } }) }]]), tools, tenant_id: 't1', session_id: 'csg', runStep: mkCtx() as any }, spec, '我同意提交');
+    const events = await store.readBySession('csg');
+    const completed = events.filter(e => e.type === 'stage/end' && e.verb === 'response').map(e => (e.payload as any).stage);
+    expect(completed).toEqual(expect.arrayContaining(['s1', 's2']));
+    expect(events.filter(e => e.type === 'spec/run/start').length).toBe(1); // runSpecTurn 不再重记
+  });
+});

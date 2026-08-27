@@ -274,7 +274,7 @@ export async function runSpec(deps: SpecRunnerDeps, spec: AgentSpec, prompt: str
   let outcome: unknown;
   try {
     if (spec.flow.mode === 'stage-gate' && spec.flow.stages && spec.flow.stages.length > 0) {
-      await runStageGate(ctx, prompt, spec.flow.stages, () => deps.store.readBySession(session_id));
+      await runStageGate(ctx, prompt, spec.flow.stages, () => deps.store.readBySession(session_id), { turn: deps.turn === true });
     } else {
       await runSingleLoop(ctx, prompt);
     }
