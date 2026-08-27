@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { InMemoryTraceStore } from '@veridical/store';
 import { ToolBroker, type ToolDef } from '@veridical/tools';
 import type { LLMProvider } from '@veridical/llm';
-import { parseSpecYaml, runSpec, SpecRunError, SpecApprovalPolicy, InMemorySpecRegistry, type SpecRunnerDeps } from '../src/index';
+import { parseSpecYaml, runSpec, runSpecTurn, SpecRunError, SpecApprovalPolicy, InMemorySpecRegistry, type SpecRunnerDeps } from '../src/index';
 import { StageGateError } from '@veridical/runtime';
 
 const SPEC_YAML = `
@@ -398,5 +398,75 @@ tools: []
     await runSpec(deps, spec, 'hi');
     const events = await store.readBySession('cp_s2');
     expect(events.filter(e => e.type === 'state.checkpoint').length).toBe(2);
+  });
+});
+
+describe('runSpecTurn (continuation)', () => {
+  const TURN_SPEC = `
+name: conv
+version: 1.0.0
+schema_version: 1
+instruction: { system: 你是助手 }
+flow: { mode: single-loop, max_steps: 2 }
+llm: { provider: mock, model: m, fallback: [] }
+tools: []
+`;
+
+  it('appends to the same session without re-recording spec/run/start or spec/run/end', async () => {
+    const store = new InMemoryTraceStore();
+    const spec = parseSpecYaml(TURN_SPEC);
+    const deps: SpecRunnerDeps = {
+      store,
+      providers: new Map([['mock', { complete: async () => ({ text: '', usage: { input: 1, output: 1, cached: 0, total: 2 } }) }]]),
+      tools: [],
+      tenant_id: 't1',
+      session_id: 'conv_a',
+    };
+    await runSpec({ ...deps, session_id: 'conv_a' } as SpecRunnerDeps, spec, '你好');
+    await runSpecTurn(deps, spec, '继续');
+    const events = await store.readBySession('conv_a');
+    const starts = events.filter((e) => e.type === 'spec/run/start');
+    const ends = events.filter((e) => e.type === 'spec/run/end');
+    const turns = events.filter((e) => e.type === 'turn/start');
+    expect(starts.length).toBe(1);
+    expect(ends.length).toBe(1);
+    expect(turns.length).toBe(2);
+    expect((events[events.length - 1] as any).session_id).toBe('conv_a');
+  });
+
+  it('injects historyMessages before the current prompt in LLMRequest', async () => {
+    const store = new InMemoryTraceStore();
+    const spec = parseSpecYaml(TURN_SPEC);
+    let seenMessages: unknown[] = [];
+    const spy: SpecRunnerDeps = {
+      store,
+      providers: new Map([['mock', { complete: async (req: any) => { seenMessages = req.messages; return { text: '', usage: { input: 1, output: 1, cached: 0, total: 2 } }; } }]]),
+      tools: [],
+      tenant_id: 't1',
+      session_id: 'conv_b',
+      historyMessages: [{ role: 'user', content: '上一轮' }, { role: 'assistant', content: '上一轮回复' }],
+    };
+    await runSpecTurn(spy, spec, '这轮问题');
+    expect(seenMessages).toEqual([
+      { role: 'system', content: '你是助手' },
+      { role: 'user', content: '上一轮' },
+      { role: 'assistant', content: '上一轮回复' },
+      { role: 'user', content: '这轮问题' },
+    ]);
+  });
+
+  it('does not inject history when historyMessages is undefined (compat)', async () => {
+    const store = new InMemoryTraceStore();
+    const spec = parseSpecYaml(TURN_SPEC);
+    let seenMessages: unknown[] = [];
+    const deps: SpecRunnerDeps = {
+      store,
+      providers: new Map([['mock', { complete: async (req: any) => { seenMessages = req.messages; return { text: '', usage: { input: 1, output: 1, cached: 0, total: 2 } }; } }]]),
+      tools: [],
+      tenant_id: 't1',
+      session_id: 'conv_c',
+    };
+    await runSpec(deps, spec, '普通跑');
+    expect((seenMessages as { role: string }[]).map((m) => m.role)).toEqual(['system', 'user']);
   });
 });

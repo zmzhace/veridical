@@ -52,6 +52,8 @@ export interface SpecRunnerDeps {
   tenant_id: string;
   memory?: MemoryLike;
   stepBoundary?: () => Promise<void>;
+  turn?: boolean;
+  historyMessages?: { role: 'user' | 'assistant'; content: string }[];
 }
 
 export interface RunResult {
@@ -62,7 +64,7 @@ export interface RunResult {
   events: TraceEvent[];
 }
 
-async function buildRequest(spec: AgentSpec, prompt: string, memory?: MemoryLike): Promise<LLMRequest> {
+async function buildRequest(spec: AgentSpec, prompt: string, memory?: MemoryLike, history?: { role: 'user' | 'assistant'; content: string }[]): Promise<LLMRequest> {
   let system = spec.instruction.system;
   if (memory) {
     try {
@@ -74,7 +76,12 @@ async function buildRequest(spec: AgentSpec, prompt: string, memory?: MemoryLike
       // memory is augmentation; degrade to no-memory
     }
   }
-  return { provider: spec.llm.provider, model: spec.llm.model, messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }] };
+  const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [{ role: 'system', content: system }];
+  for (const h of history ?? []) {
+    messages.push({ role: h.role, content: h.content });
+  }
+  messages.push({ role: 'user', content: prompt });
+  return { provider: spec.llm.provider, model: spec.llm.model, messages };
 }
 
 function memorySystemBlock(recalled: { key: string; value: unknown; scope: string; tags?: string[] }[]): string {
@@ -120,13 +127,15 @@ export async function runSpec(deps: SpecRunnerDeps, spec: AgentSpec, prompt: str
   const policy = deps.policy ?? new SpecApprovalPolicy(spec, deps.onAsk);
   const broker = new ToolBroker(deps.tools, policy);
 
-  await recorder.record({
-    span_id: 'spec', parent_span_id: null, type: 'spec/run/start', verb: 'request', attempt: 1, duration_ms: 0,
-    payload: { spec_name: spec.name, spec_version: spec.version, input: prompt },
-  });
+  if (deps.turn !== true) {
+    await recorder.record({
+      span_id: 'spec', parent_span_id: null, type: 'spec/run/start', verb: 'request', attempt: 1, duration_ms: 0,
+      payload: { spec_name: spec.name, spec_version: spec.version, input: prompt },
+    });
+  }
 
   const defaultRunStep = async ({ llm, spec, recorder, prompt }: RunnerStepCtx) => {
-    const req = await buildRequest(spec, prompt, deps.memory);
+    const req = await buildRequest(spec, prompt, deps.memory, deps.historyMessages);
     const res = await completeWithFallback(llm, deps.providers, spec, req, recorder);
     return { text: res.text };
   };
@@ -279,10 +288,12 @@ export async function runSpec(deps: SpecRunnerDeps, spec: AgentSpec, prompt: str
     outcome = (endTurn?.payload as { outcome?: unknown } | undefined)?.outcome;
     const stuckStage = error instanceof StageGateError ? error.stage : undefined;
 
-    await recorder.record({
-      span_id: 'spec', parent_span_id: null, type: 'spec/run/end', verb: caught ? 'error' : 'response', attempt: 1, duration_ms: 0,
-      payload: caught ? { outcome, message: error instanceof Error ? error.message : String(error), ...(stuckStage ? { stuck_stage: stuckStage } : {}) } : { outcome },
-    });
+    if (deps.turn !== true) {
+      await recorder.record({
+        span_id: 'spec', parent_span_id: null, type: 'spec/run/end', verb: caught ? 'error' : 'response', attempt: 1, duration_ms: 0,
+        payload: caught ? { outcome, message: error instanceof Error ? error.message : String(error), ...(stuckStage ? { stuck_stage: stuckStage } : {}) } : { outcome },
+      });
+    }
   }
 
   return {
@@ -292,4 +303,8 @@ export async function runSpec(deps: SpecRunnerDeps, spec: AgentSpec, prompt: str
     outcome,
     events: await deps.store.readBySession(session_id),
   };
+}
+
+export async function runSpecTurn(deps: SpecRunnerDeps, spec: AgentSpec, prompt: string): Promise<RunResult> {
+  return runSpec({ ...deps, turn: true }, spec, prompt);
 }
