@@ -135,7 +135,8 @@ export async function registerTurnRoutes(app: FastifyInstance) {
     };
 
     // 事件轮询：唯一的 seq-delta interval，推送已落 store 的事件（tool/checkpoint/turn…）
-    let lastSeq = 0;
+    // 续轮时从既有会话最高 seq 起推——只回灌本轮新事件，不重放历史轮。
+    let lastSeq = past.length ? past[past.length - 1].seq : 0;
     let poll: ReturnType<typeof setInterval> | undefined;
     try {
       poll = setInterval(async () => {
