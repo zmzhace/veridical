@@ -10,6 +10,9 @@ interface SessionSummary {
   total_duration_ms: number;
   first_seq: number;
   last_seq: number;
+  spec_name?: string;
+  turn_count?: number;
+  first_message?: string;
 }
 
 async function listSessions(store: TraceStore): Promise<SessionSummary[]> {
@@ -33,14 +36,20 @@ async function listSessions(store: TraceStore): Promise<SessionSummary[]> {
       if (e.tokens) { acc.input += e.tokens.input; acc.output += e.tokens.output; acc.cached += e.tokens.cached; acc.total += e.tokens.total; }
       return acc;
     }, { input: 0, output: 0, cached: 0, total: 0 });
+    const turnCount = events.filter(e => e.type === 'turn/start').length;
+    const startEvt = [...events].find(e => e.type === 'spec/run/start');
+    const firstMsg = [...events].find(e => e.type === 'user.message');
     out.push({
       session_id: id,
       spec_version: events[0]?.spec_version ?? '',
+      spec_name: (startEvt?.payload as { spec_name?: string } | undefined)?.spec_name,
       event_count: events.length,
       total_tokens: tokens.total > 0 ? tokens : undefined,
       total_duration_ms: events.reduce((s, e) => s + e.duration_ms, 0),
       first_seq: events[0]?.seq ?? 0,
       last_seq: events[events.length - 1]?.seq ?? 0,
+      turn_count: turnCount,
+      first_message: typeof (firstMsg?.payload as { text?: unknown } | undefined)?.text === 'string' ? ((firstMsg?.payload as { text: string }).text).slice(0, 40) : '',
     });
   }
   return out.sort((a, b) => b.last_seq - a.last_seq);
