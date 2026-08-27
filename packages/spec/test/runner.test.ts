@@ -505,13 +505,16 @@ tools:
       const n = names[turn];
       return async () => ({ text: '', tool: { name: n, args: {} } });
     };
-    // 兼容:第一轮走非-turn 的 runSpec,s2 gate 未满足按旧行为抛 StageGateError(s1 已完成落盘)
-    await expect(runSpec({ store, providers: new Map([['mock', { complete: async () => ({ text: '', usage: { input: 1, output: 1, cached: 0, total: 2 } }) }]]), tools, tenant_id: 't1', session_id: 'csg', runStep: mkCtx() as any }, spec, '我要转保')).rejects.toThrow(StageGateError);
+    const mkProviders = () => new Map([['mock', { complete: async () => ({ text: '', usage: { input: 1, output: 1, cached: 0, total: 2 } }) }]]);
+    // turn1 = 新对话首轮：turn:true + firstTurn:true（runSpec），stage-gate 走 turn 模式，s1 过 s2 未完 → 优雅结束不抛
+    await runSpec({ store, providers: mkProviders(), tools, tenant_id: 't1', session_id: 'csg', runStep: mkCtx() as any, turn: true, firstTurn: true }, spec, '我要转保');
     turn = 1;
-    await runSpecTurn({ store, providers: new Map([['mock', { complete: async () => ({ text: '', usage: { input: 1, output: 1, cached: 0, total: 2 } }) }]]), tools, tenant_id: 't1', session_id: 'csg', runStep: mkCtx() as any }, spec, '我同意提交');
+    await runSpecTurn({ store, providers: mkProviders(), tools, tenant_id: 't1', session_id: 'csg', runStep: mkCtx() as any }, spec, '我同意提交');
     const events = await store.readBySession('csg');
     const completed = events.filter(e => e.type === 'stage/end' && e.verb === 'response').map(e => (e.payload as any).stage);
     expect(completed).toEqual(expect.arrayContaining(['s1', 's2']));
-    expect(events.filter(e => e.type === 'spec/run/start').length).toBe(1); // runSpecTurn 不再重记
+    expect(events.filter(e => e.type === 'spec/run/start').length).toBe(1);
+    expect(events.filter(e => e.type === 'turn/start').length).toBe(2);
+    expect(events.some(e => e.type === 'spec/run/end')).toBe(false); // 会话不记 spec/run/end
   });
 });

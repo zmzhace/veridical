@@ -53,6 +53,7 @@ export interface SpecRunnerDeps {
   memory?: MemoryLike;
   stepBoundary?: () => Promise<void>;
   turn?: boolean;
+  firstTurn?: boolean;
   historyMessages?: { role: 'user' | 'assistant'; content: string }[];
 }
 
@@ -127,7 +128,7 @@ export async function runSpec(deps: SpecRunnerDeps, spec: AgentSpec, prompt: str
   const policy = deps.policy ?? new SpecApprovalPolicy(spec, deps.onAsk);
   const broker = new ToolBroker(deps.tools, policy);
 
-  if (deps.turn !== true) {
+  if (deps.turn !== true || deps.firstTurn === true) {
     await recorder.record({
       span_id: 'spec', parent_span_id: null, type: 'spec/run/start', verb: 'request', attempt: 1, duration_ms: 0,
       payload: { spec_name: spec.name, spec_version: spec.version, input: prompt },

@@ -164,7 +164,9 @@ export async function registerTurnRoutes(app: FastifyInstance) {
       };
       const prompt = b.prompt ?? 'hello';
 
-      const result = isNew ? await runSpec(deps, spec, prompt) : await runSpecTurn(deps, spec, prompt);
+      const result = isNew
+        ? await runSpec({ ...deps, turn: true, firstTurn: true }, spec, prompt)
+        : await runSpecTurn(deps, spec, prompt);
       // 收尾 flush：补推尚未轮询到的剩余事件 + turn_end + done
       const evs = await store.readBySession(session_id);
       for (const ev of evs) {
