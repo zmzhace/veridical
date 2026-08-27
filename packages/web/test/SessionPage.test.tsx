@@ -49,6 +49,20 @@ test('sends a message and renders token + assistant bubble', async () => {
   expect(fetch).toHaveBeenCalledTimes(3);
 });
 
+test('disables chat input on run trace sessions', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => [] }));
+  const qc = new QueryClient();
+  render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter initialEntries={['/sessions/run_abc']}>
+        <Routes><Route path="/sessions/:id" element={<SessionPage />} /></Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const ta = await screen.findByPlaceholderText('单次运行轨迹不支持继续对话');
+  expect(ta).toBeDisabled();
+});
+
 test('renders empty state for id=new', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => [] }));
   const qc = new QueryClient();

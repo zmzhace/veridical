@@ -107,6 +107,8 @@ export function SessionPage() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const isNew = id === 'new';
+  // 只有新会话与对话（conv_*）允许继续发轮次；run_/step_ 轨迹会话禁止追加，保护 'conv_ 前缀 = 对话' 的分组不变量
+  const canChat = isNew || id.startsWith('conv_');
   const newSpec = params.get('spec') ?? '';
   // 对话页 mock-only：旧链接里的 ?mode= 仍可安全打开，但一律按 mock 运行（真实模型请到运行页）
   const newMode = 'mock' as const;
@@ -146,6 +148,7 @@ export function SessionPage() {
   };
 
   async function onSend(prompt: string) {
+    if (!canChat) return; // 纵深防御：非对话会话不允许发轮次（输入框也已禁用）
     if (sending || !prompt.trim()) return;
     setSending(true);
     setTurnError('');
@@ -273,7 +276,7 @@ export function SessionPage() {
             )}
           </div>
           {turnError && <div className="mx-4 mt-2 px-3 py-2 rounded-lg text-[12px] bg-[#FEF2F2] text-[#B91C1C] border border-[#FECACA]">本轮执行失败：{turnError}</div>}
-          <ChatInput onSend={onSend} disabled={sending} loading={sending} />
+          <ChatInput onSend={onSend} disabled={!canChat || sending} loading={sending} placeholder={canChat ? '输入消息…' : '单次运行轨迹不支持继续对话'} />
         </div>
       ) : (
         <div>
