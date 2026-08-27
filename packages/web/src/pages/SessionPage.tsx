@@ -17,6 +17,7 @@ export interface ChatItem {
   event: TraceEvent;
   tools: TraceEvent[];
   checkpoints: TraceEvent[];
+  turn?: number;
 }
 
 const textOf = (e: TraceEvent) => {
@@ -24,52 +25,78 @@ const textOf = (e: TraceEvent) => {
   return typeof t === 'string' ? t : '';
 };
 
+// 工具胶囊行：assistant/user 气泡共用（tool-first 轮次的胶囊挂在 user 气泡上）
+const ToolPills = ({ tools, onSelect }: { tools: TraceEvent[]; onSelect: (e: TraceEvent) => void }) => (
+  <div className="flex flex-wrap gap-1.5 pt-1">
+    {tools.map((t) => (
+      <button key={t.id} onClick={() => onSelect(t)}
+        className="text-[11px] px-2 py-0.5 rounded-full border bg-white text-[#44403C] border-[#E7E5E4] hover:border-[#4338CA] hover:text-[#4338CA] transition-colors">
+        ⚙ {toolHuman(String((t.payload as any)?.name ?? ''))}{t.type === 'tool.result' ? (t.verb === 'error' ? ' ✕' : ' ✓') : ''}
+      </button>
+    ))}
+  </div>
+);
+
+// 检查点"回看"锚点行：靠左（assistant 侧）或靠右（user 侧）
+const CheckpointRow = ({ checkpoints, align, onSelect }: { checkpoints: TraceEvent[]; align: 'left' | 'right'; onSelect: (e: TraceEvent) => void }) => (
+  <div className={`flex flex-wrap gap-2 ${align === 'left' ? 'pl-11' : 'pr-11 justify-end'}`}>
+    {checkpoints.map((cp) => (
+      <button key={cp.id} onClick={() => onSelect(cp)}
+        className="text-[11px] px-2 py-0.5 rounded-full border border-[#C7D2FE] bg-[#EEF2FF] text-[#3730A3] hover:bg-[#E0E7FF] transition-colors">
+        ↺ 回看
+      </button>
+    ))}
+  </div>
+);
+
 export function buildChat(events: TraceEvent[], checkpoints: TraceEvent[]): ChatItem[] {
   const items: ChatItem[] = [];
   const seen = new Set<string>();
-  const pushed = new Set<string>();           // 已在 events 流里挂到某 assistant 气泡的 cp id
-  const seenUserPerTurn = new Set<string>();  // 已出现 user.message 的 turn id
-  let lastAi: ChatItem | null = null;
-  let currentTurn = 'init';
+  const pushed = new Set<string>();           // 已在 events 流里挂到某气泡的 cp id
   const extra: TraceEvent[] = [];
-  for (const cp of checkpoints) {
-    if (!seen.has(cp.id)) { seen.add(cp.id); extra.push(cp); }
-  }
+  for (const cp of checkpoints) { if (!seen.has(cp.id)) { seen.add(cp.id); extra.push(cp); } }
+
+  let turn = -1;
+  let bufTools: TraceEvent[] = [];
+  let bufCps: TraceEvent[] = [];
+  let lastAssistantInTurn: ChatItem | null = null;
+  let userBubbleInTurn: ChatItem | null = null;
+  const closeTurn = () => {
+    // 轮末统一挂载：该轮最后一个 assistant 气泡；无 assistant 则挂该轮 user 气泡（仍无则不挂）——不跨轮
+    const target = lastAssistantInTurn ?? userBubbleInTurn;
+    if (target) {
+      for (const t of bufTools) target.tools.push(t);
+      for (const c of bufCps) { target.checkpoints.push(c); pushed.add(c.id); }
+    }
+    bufTools = []; bufCps = []; lastAssistantInTurn = null; userBubbleInTurn = null;
+  };
+  const openTurn = () => { turn += 1; closeTurn(); };
+  openTurn(); // 默认 turn 0，兼容无 turn/start 的旧数据
+
   for (const e of events) {
-    if (e.type === 'turn/start') {
-      currentTurn = e.id;
-      seenUserPerTurn.clear();
-      items.push({ kind: 'stage', event: e, tools: [], checkpoints: [] });
-      continue;
-    }
-    if (e.type === 'turn/end') {
-      items.push({ kind: 'stage', event: e, tools: [], checkpoints: [] });
-      continue;
-    }
+    if (e.type === 'turn/start') { openTurn(); items.push({ kind: 'stage', event: e, tools: [], checkpoints: [], turn }); continue; }
+    if (e.type === 'turn/end') { closeTurn(); items.push({ kind: 'stage', event: e, tools: [], checkpoints: [], turn }); continue; }
     if (e.type === 'user.message') {
-      if (seenUserPerTurn.has(currentTurn)) continue; // 同轮重复 user.message 只保留一条
-      seenUserPerTurn.add(currentTurn);
-      lastAi = { kind: 'bubble', role: 'user', event: e, tools: [], checkpoints: [] };
-      items.push(lastAi);
-    } else if (e.type === 'assistant.message') {
-      lastAi = { kind: 'bubble', role: 'assistant', event: e, tools: [], checkpoints: [] };
-      items.push(lastAi);
-    } else if ((e.type === 'tool.called' || e.type === 'tool.result') && lastAi?.role === 'assistant') {
-      lastAi.tools.push(e);
-    } else if (e.type === 'state.checkpoint') {
-      if (lastAi?.role === 'assistant') { lastAi.checkpoints.push(e); pushed.add(e.id); }
-    } else if (e.type === 'stage/start' || e.type === 'stage/end') {
-      items.push({ kind: 'stage', event: e, tools: [], checkpoints: [] });
+      if (userBubbleInTurn) continue; // 同轮重复 user.message 只保留一条
+      const b: ChatItem = { kind: 'bubble', role: 'user', event: e, tools: [], checkpoints: [], turn };
+      userBubbleInTurn = b; items.push(b); continue;
     }
+    if (e.type === 'assistant.message') {
+      const b: ChatItem = { kind: 'bubble', role: 'assistant', event: e, tools: [], checkpoints: [], turn };
+      lastAssistantInTurn = b; items.push(b); continue;
+    }
+    if (e.type === 'tool.called' || e.type === 'tool.result') { bufTools.push(e); continue; }
+    if (e.type === 'state.checkpoint') { bufCps.push(e); continue; }
+    if (e.type === 'stage/start' || e.type === 'stage/end') { items.push({ kind: 'stage', event: e, tools: [], checkpoints: [], turn }); continue; }
   }
-  // 列表里的 cp：未被 events 流挂载的，按"最近 assistant（seq<=cp.seq）"补挂（保留既有 test 语义）
+  closeTurn();
+
+  // 列表独有的 cp：未被 events 流挂载的，按"最近 assistant（seq<=cp.seq）"补挂（保留既有 test 语义）
   for (const cp of extra) {
     if (pushed.has(cp.id)) continue;
     let best: ChatItem | null = null;
-    for (const it of items) {
-      if (it.kind === 'bubble' && it.role === 'assistant' && it.event.seq <= cp.seq) best = it;
-    }
-    if (best) best.checkpoints.push(cp);
+    for (const it of items) if (it.kind === 'bubble' && it.role === 'assistant' && it.event.seq <= cp.seq) best = it;
+    if (best) { best.checkpoints.push(cp); pushed.add(cp.id); }
   }
   return items;
 }
@@ -81,7 +108,8 @@ export function SessionPage() {
   const qc = useQueryClient();
   const isNew = id === 'new';
   const newSpec = params.get('spec') ?? '';
-  const newMode = params.get('mode') === 'live' ? 'live' : 'mock';
+  // 对话页 mock-only：旧链接里的 ?mode= 仍可安全打开，但一律按 mock 运行（真实模型请到运行页）
+  const newMode = 'mock' as const;
 
   // isNew 时 id 传 '' → useSession/useCheckpoints/useReplay 的 enabled:!!id 为 false，不查询
   const { data, isLoading } = useSession(isNew ? '' : id);
@@ -200,32 +228,25 @@ export function SessionPage() {
                     );
                   }
                   if (it.role === 'user') {
-                    return <ChatBubble key={it.event.id ?? i} role="user" content={textOf(it.event)} />;
+                    // tool-first 轮次（如 stage-gate）：本轮无 assistant 气泡，胶囊挂在 user 气泡上，也要渲染
+                    if (!it.tools.length && !it.checkpoints.length) {
+                      return <ChatBubble key={it.event.id ?? i} role="user" content={textOf(it.event)} />;
+                    }
+                    return (
+                      <div key={it.event.id ?? i} className="space-y-1.5">
+                        <ChatBubble role="user" content={textOf(it.event)}>
+                          {it.tools.length > 0 && <ToolPills tools={it.tools} onSelect={setSelected} />}
+                        </ChatBubble>
+                        {it.checkpoints.length > 0 && <CheckpointRow checkpoints={it.checkpoints} align="right" onSelect={setSelected} />}
+                      </div>
+                    );
                   }
                   return (
                     <div key={it.event.id ?? i} className="space-y-1.5">
                       <ChatBubble role="assistant" content={textOf(it.event)}>
-                        {it.tools.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 pt-1">
-                            {it.tools.map((t) => (
-                              <button key={t.id} onClick={() => setSelected(t)}
-                                className="text-[11px] px-2 py-0.5 rounded-full border bg-white text-[#44403C] border-[#E7E5E4] hover:border-[#4338CA] hover:text-[#4338CA] transition-colors">
-                                ⚙ {toolHuman(String((t.payload as any)?.name ?? ''))}{t.type === 'tool.result' ? (t.verb === 'error' ? ' ✕' : ' ✓') : ''}
-                              </button>
-                            ))}
-                          </div>
-                        )}
+                        {it.tools.length > 0 && <ToolPills tools={it.tools} onSelect={setSelected} />}
                       </ChatBubble>
-                      {it.checkpoints.length > 0 && (
-                        <div className="flex flex-wrap gap-2 pl-11">
-                          {it.checkpoints.map((cp) => (
-                            <button key={cp.id} onClick={() => setSelected(cp)}
-                              className="text-[11px] px-2 py-0.5 rounded-full border border-[#C7D2FE] bg-[#EEF2FF] text-[#3730A3] hover:bg-[#E0E7FF] transition-colors">
-                              ↺ 回看
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                      {it.checkpoints.length > 0 && <CheckpointRow checkpoints={it.checkpoints} align="left" onSelect={setSelected} />}
                     </div>
                   );
                 })}

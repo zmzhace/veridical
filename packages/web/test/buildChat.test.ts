@@ -54,6 +54,30 @@ test('dedupes user.message within a turn but keeps across turns', () => {
   expect(users).toEqual(['你好', '我的保单']);
 });
 
+test('tool-first turn attaches capsules to that turn, not the next/previous', () => {
+  const events = [
+    ev({ id: 't1', seq: 1, type: 'turn/start', payload: {} }),
+    ev({ id: 'u1', seq: 2, type: 'user.message', payload: { text: '我要转保' } }),
+    ev({ id: 'c1', seq: 3, type: 'tool.called', payload: { name: 'verify_health' } }),
+    ev({ id: 'r1', seq: 4, type: 'tool.result', verb: 'response', payload: { name: 'verify_health' } }),
+    ev({ id: 'cp1', seq: 5, type: 'state.checkpoint' }),
+    ev({ id: 'a1', seq: 6, type: 'assistant.message', payload: { text: '已核验' } }),
+    ev({ id: 't2', seq: 7, type: 'turn/start', payload: {} }),
+    ev({ id: 'u2', seq: 8, type: 'user.message', payload: { text: '提交' } }),
+    ev({ id: 'c2', seq: 9, type: 'tool.called', payload: { name: 'submit_transfer' } }),
+    ev({ id: 'r2', seq: 10, type: 'tool.result', verb: 'response', payload: { name: 'submit_transfer' } }),
+  ];
+  const items = buildChat(events, []);
+  const assistantBubbles = items.filter((i) => i.kind === 'bubble' && i.role === 'assistant');
+  // turn1's assistant bubble got turn1's tool pair (not dropped)
+  expect(assistantBubbles[0]!.tools.map((t) => t.id)).toEqual(['c1', 'r1']);
+  // turn2 has no assistant.message → its tools attach to its user bubble
+  const user2 = items.find((i) => i.role === 'user' && (i.event.payload as any).text === '提交')!;
+  expect(user2.tools.map((t) => t.id)).toEqual(['c2', 'r2']);
+  // cp1 stayed in turn1's assistant, did not leak to a later turn
+  expect(assistantBubbles[0]!.checkpoints.map((c) => c.id)).toEqual(['cp1']);
+});
+
 test('inserts a turn boundary item between turns', () => {
   const events = [
     ev({ id: 't1', seq: 1, type: 'turn/start', payload: {} }),

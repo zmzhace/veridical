@@ -9,7 +9,6 @@ export function SessionsPage() {
   const nav = useNavigate();
   const [showNew, setShowNew] = useState(false);
   const [specName, setSpecName] = useState('');
-  const [mode, setMode] = useState<'mock' | 'live'>('mock');
 
   const convs = useMemo(() => (data ?? []).filter((s) => s.session_id.startsWith('conv_')), [data]);
   const runs = useMemo(() => (data ?? []).filter((s) => !s.session_id.startsWith('conv_')), [data]);
@@ -61,18 +60,20 @@ export function SessionsPage() {
             <select className="field mb-3" value={specName} onChange={(e) => setSpecName(e.target.value)}>
               {(specs ?? []).map((s: any) => <option key={s.name + s.version} value={s.name}>{s.name}@{s.version}</option>)}
             </select>
+            {/* mock-only：对话页固定走 mock 决策，live 卡禁用并指引到运行页 */}
             <div className="grid grid-cols-2 gap-2 mb-4">
-              {(['mock', 'live'] as const).map((m) => (
-                <button key={m} onClick={() => setMode(m)}
-                  className={`card p-3 text-left ${mode === m ? 'border-[var(--accent)] ring-2 ring-[var(--accent-soft)]' : ''}`}>
-                  <div className="text-[13px] font-semibold">{m === 'mock' ? '模拟运行' : '接入真实模型'}</div>
-                  <div className="text-[11px] text-[var(--muted)] mt-0.5">{m === 'mock' ? 'mock 决策，快且免费' : '需 API Key'}</div>
-                </button>
-              ))}
+              <div className="card p-3 text-left border-[var(--accent)] ring-2 ring-[var(--accent-soft)]">
+                <div className="text-[13px] font-semibold">模拟运行</div>
+                <div className="text-[11px] text-[var(--muted)] mt-0.5">mock 决策，快且免费</div>
+              </div>
+              <div className="card p-3 text-left opacity-50" aria-disabled="true" title="真实模型请到运行页">
+                <div className="text-[13px] font-semibold">接入真实模型</div>
+                <div className="text-[11px] text-[var(--muted)] mt-0.5">真实模型请到运行页</div>
+              </div>
             </div>
             <div className="flex gap-2 justify-end">
               <button className="btn btn-ghost" onClick={() => setShowNew(false)}>取消</button>
-              <button className="btn btn-primary" disabled={!specName} onClick={() => nav(`/sessions/new?spec=${encodeURIComponent(specName)}&mode=${mode}`)}>开始对话</button>
+              <button className="btn btn-primary" disabled={!specName} onClick={() => nav(`/sessions/new?spec=${encodeURIComponent(specName)}&mode=mock`)}>开始对话</button>
             </div>
           </div>
         </div>
