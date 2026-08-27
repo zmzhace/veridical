@@ -72,6 +72,7 @@
   .badge-warn { background: var(--warn-soft); color: var(--warn); }
   .badge-bad { background: var(--bad-soft); color: var(--bad); }
   .badge-neutral { background: #f1efe9; color: var(--muted); }
+  .badge-accent { background: var(--accent-soft); color: var(--accent); }
 
   .tab { padding: 6px 14px; font-size: 13px; font-weight: 600; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
   .tab:hover { background: #f1efe9; }

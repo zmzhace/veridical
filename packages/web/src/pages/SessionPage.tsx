@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { useSession, useReplay, useCheckpoints } from '../api/queries';
+import { useMemo, useRef, useState } from 'react';
+import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
+import { useSession, useReplay, useCheckpoints, useStartTurn } from '../api/queries';
+import type { TurnFrame } from '../api/types';
 import { ChatBubble } from '../components/ChatBubble';
 import { ChatInput } from '../components/ChatInput';
 import { TraceTimeline } from '../components/TraceTimeline';
@@ -74,25 +76,90 @@ export function buildChat(events: TraceEvent[], checkpoints: TraceEvent[]): Chat
 
 export function SessionPage() {
   const { id = '' } = useParams();
-  const { data, isLoading } = useSession(id);
-  const cps = useCheckpoints(id);
+  const [params] = useSearchParams();
+  const nav = useNavigate();
+  const qc = useQueryClient();
+  const isNew = id === 'new';
+  const newSpec = params.get('spec') ?? '';
+  const newMode = params.get('mode') === 'live' ? 'live' : 'mock';
+
+  // isNew 时 id 传 '' → useSession/useCheckpoints/useReplay 的 enabled:!!id 为 false，不查询
+  const { data, isLoading } = useSession(isNew ? '' : id);
+  const cps = useCheckpoints(isNew ? '' : id);
   const [view, setView] = useState<'chat' | 'timeline'>('chat');
   const [seq, setSeq] = useState(0);
   const [selected, setSelected] = useState<TraceEvent | null>(null);
-  const [note, setNote] = useState('');
-  const replay = useReplay(id, seq);
+  const replay = useReplay(isNew ? '' : id, seq);
+  const { run: runTurn } = useStartTurn();
+
+  // 非空会话：从首条 spec/run/start 事件取本次对话的 spec_name；否则用 ?spec= 参数
+  const specName = useMemo(() => {
+    if (isNew) return newSpec;
+    const start = (data ?? []).find((e) => e.type === 'spec/run/start');
+    return (start?.payload as any)?.spec_name ?? newSpec;
+  }, [isNew, newSpec, data]);
+
+  const [sending, setSending] = useState(false);
+  const [liveEvents, setLiveEvents] = useState<TraceEvent[]>([]);
+  const [liveText, setLiveText] = useState('');
+  const [turnError, setTurnError] = useState('');
+  const liveEventsRef = useRef<TraceEvent[]>([]);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   const events = data ?? [];
+  const checkpoints = cps.data ?? [];
   const maxSeq = events.length;
   const shown = seq > 0 && replay.data ? replay.data.events : events;
-  const items = useMemo(() => buildChat(events, cps.data ?? []), [events, cps.data]);
+  const merged = useMemo(() => [...events, ...liveEvents], [events, liveEvents]);
+  const items = useMemo(() => buildChat(merged, checkpoints), [merged, checkpoints]);
+
+  const scrollToBottom = () => {
+    requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }));
+  };
+
+  async function onSend(prompt: string) {
+    if (sending || !prompt.trim()) return;
+    setSending(true);
+    setTurnError('');
+    setLiveText('');
+    setLiveEvents([]);
+    liveEventsRef.current = [];
+    let convId = isNew ? '' : id;
+    try {
+      await runTurn({ specName, prompt, mode: newMode, conversationId: convId || undefined }, (f: TurnFrame) => {
+        if (f.type === 'token') { setLiveText((t) => t + (f.text ?? '')); scrollToBottom(); }
+        else if (f.type === 'event') {
+          // 累积事件（含 checkpoint/assistant.message）——既是流式渲染源，也是 done 后缓存种子
+          const evs = [...liveEventsRef.current, f.event];
+          liveEventsRef.current = evs;
+          setLiveEvents(evs);
+          scrollToBottom();
+        }
+        else if (f.type === 'done') { convId = f.session_id; }
+        else if (f.type === 'error') { setTurnError(f.message); }
+      });
+      // done 后把流式累积事件原子落进 react-query 缓存（setQueryData，不 refetch），并清空流式态
+      const finalEvents = liveEventsRef.current;
+      const newCps = finalEvents.filter((e) => e.type === 'state.checkpoint');
+      qc.setQueryData(['session', convId], isNew ? finalEvents : [...events, ...finalEvents]);
+      qc.setQueryData(['checkpoints', convId], isNew ? newCps : [...checkpoints, ...newCps]);
+      setLiveEvents([]);
+      liveEventsRef.current = [];
+      if (convId && convId !== id) nav(`/sessions/${convId}`, { replace: true });
+    } catch (e) {
+      setTurnError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSending(false);
+      setLiveText('');
+    }
+  }
 
   if (isLoading) return <p className="text-[var(--muted)]">加载中…</p>;
   return (
     <div className="relative">
       <div className="mb-4">
-        <h2 className="page-title">{sessionHuman(id)}</h2>
-        <p className="page-desc mono text-[12px]">{id} · {view === 'chat' ? '对话视图' : '点击任意事件查看详情'}</p>
+        <h2 className="page-title">{isNew ? newSpec : sessionHuman(id)}</h2>
+        <p className="page-desc mono text-[12px]">{isNew ? '新对话' : `${id} · ${view === 'chat' ? '对话视图' : '点击任意事件查看详情'}`}</p>
       </div>
 
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -100,7 +167,7 @@ export function SessionPage() {
           <button className={`btn ${view === 'chat' ? 'btn-primary' : 'btn-ghost'} px-3 py-1.5 text-[13px]`} onClick={() => setView('chat')}>对话</button>
           <button className={`btn ${view === 'timeline' ? 'btn-primary' : 'btn-ghost'} px-3 py-1.5 text-[13px]`} onClick={() => setView('timeline')}>时间线</button>
         </div>
-        <div className="flex items-center gap-2" title="逐步执行请到运行页发起，此处仅作状态展示">
+        <div className="flex items-center gap-2" title="逐步执行控制即将上线">
           <button className="btn btn-ghost px-3 py-1.5 text-[13px]" disabled>▶ 继续</button>
           <button className="btn btn-ghost px-3 py-1.5 text-[13px]" disabled>⏸</button>
           <button className="btn btn-ghost px-3 py-1.5 text-[13px]" disabled>⏹</button>
@@ -110,10 +177,19 @@ export function SessionPage() {
       {view === 'chat' ? (
         <div className="h-[calc(100vh-15rem)] flex flex-col rounded-2xl border border-[var(--line)] bg-white overflow-hidden">
           <div className="flex-1 min-h-0 overflow-auto p-6">
-            {items.length ? (
+            {items.length || liveText ? (
               <div className="space-y-4">
                 {items.map((it, i) => {
                   if (it.kind === 'stage') {
+                    // 对话轮边界：turn/start 渲染为轮分隔条，turn/end 不渲染（下一条 turn/start 提供分隔）
+                    if (it.event.type === 'turn/start') {
+                      return (
+                        <div key={it.event.id ?? i} className="flex justify-center">
+                          <span className="text-[11px] text-[var(--muted)] px-2 py-0.5">— 新对话轮次 —</span>
+                        </div>
+                      );
+                    }
+                    if (it.event.type === 'turn/end') return null;
                     const meta = eventMeta(it.event);
                     return (
                       <div key={it.event.id ?? i} className="flex justify-center">
@@ -153,15 +229,23 @@ export function SessionPage() {
                     </div>
                   );
                 })}
+                {sending && liveText && (
+                  <ChatBubble role="assistant" content={liveText} streaming />
+                )}
+                <div ref={bottomRef} />
               </div>
             ) : (
               <div className="h-full flex items-center justify-center">
-                <div className="empty"><div className="empty-title">该会话没有对话内容</div><div className="empty-desc">切换到时间线视图查看事件轨迹。</div></div>
+                {isNew ? (
+                  <div className="empty"><div className="empty-title">开始新对话</div><div className="empty-desc">输入消息即可运行，回复将实时流式显示在这里。</div></div>
+                ) : (
+                  <div className="empty"><div className="empty-title">该会话没有对话内容</div><div className="empty-desc">切换到时间线视图查看事件轨迹。</div></div>
+                )}
               </div>
             )}
           </div>
-          {note && <div className="px-4 pt-2 text-[12px] text-[#4338CA]">{note}</div>}
-          <ChatInput onSend={() => setNote('请到运行页发起逐步执行。')} placeholder="发送新消息（逐步执行请到运行页）" />
+          {turnError && <div className="mx-4 mt-2 px-3 py-2 rounded-lg text-[12px] bg-[#FEF2F2] text-[#B91C1C] border border-[#FECACA]">本轮执行失败：{turnError}</div>}
+          <ChatInput onSend={onSend} disabled={sending} loading={sending} />
         </div>
       ) : (
         <div>
