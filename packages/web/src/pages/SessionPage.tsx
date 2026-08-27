@@ -9,7 +9,7 @@ import { ReplayControls } from '../components/ReplayControls';
 import { eventMeta, toolHuman, sessionHuman, stageHuman } from '../lib/events';
 import type { TraceEvent } from '@veridical/schema';
 
-interface ChatItem {
+export interface ChatItem {
   kind: 'bubble' | 'stage';
   role?: 'user' | 'assistant';
   event: TraceEvent;
@@ -22,31 +22,47 @@ const textOf = (e: TraceEvent) => {
   return typeof t === 'string' ? t : '';
 };
 
-function buildChat(events: TraceEvent[], checkpoints: TraceEvent[]): ChatItem[] {
+export function buildChat(events: TraceEvent[], checkpoints: TraceEvent[]): ChatItem[] {
   const items: ChatItem[] = [];
   const seen = new Set<string>();
+  const pushed = new Set<string>();           // 已在 events 流里挂到某 assistant 气泡的 cp id
+  const seenUserPerTurn = new Set<string>();  // 已出现 user.message 的 turn id
   let lastAi: ChatItem | null = null;
+  let currentTurn = 'init';
   const extra: TraceEvent[] = [];
   for (const cp of checkpoints) {
-    if (!seen.has(cp.id)) {
-      seen.add(cp.id);
-      extra.push(cp);
-    }
+    if (!seen.has(cp.id)) { seen.add(cp.id); extra.push(cp); }
   }
   for (const e of events) {
-    if (e.type === 'user.message' || e.type === 'assistant.message') {
-      lastAi = { kind: 'bubble', role: e.type === 'user.message' ? 'user' : 'assistant', event: e, tools: [], checkpoints: [] };
+    if (e.type === 'turn/start') {
+      currentTurn = e.id;
+      seenUserPerTurn.clear();
+      items.push({ kind: 'stage', event: e, tools: [], checkpoints: [] });
+      continue;
+    }
+    if (e.type === 'turn/end') {
+      items.push({ kind: 'stage', event: e, tools: [], checkpoints: [] });
+      continue;
+    }
+    if (e.type === 'user.message') {
+      if (seenUserPerTurn.has(currentTurn)) continue; // 同轮重复 user.message 只保留一条
+      seenUserPerTurn.add(currentTurn);
+      lastAi = { kind: 'bubble', role: 'user', event: e, tools: [], checkpoints: [] };
+      items.push(lastAi);
+    } else if (e.type === 'assistant.message') {
+      lastAi = { kind: 'bubble', role: 'assistant', event: e, tools: [], checkpoints: [] };
       items.push(lastAi);
     } else if ((e.type === 'tool.called' || e.type === 'tool.result') && lastAi?.role === 'assistant') {
       lastAi.tools.push(e);
     } else if (e.type === 'state.checkpoint') {
-      seen.add(e.id);
-      if (lastAi?.role === 'assistant') lastAi.checkpoints.push(e);
+      if (lastAi?.role === 'assistant') { lastAi.checkpoints.push(e); pushed.add(e.id); }
     } else if (e.type === 'stage/start' || e.type === 'stage/end') {
       items.push({ kind: 'stage', event: e, tools: [], checkpoints: [] });
     }
   }
+  // 列表里的 cp：未被 events 流挂载的，按"最近 assistant（seq<=cp.seq）"补挂（保留既有 test 语义）
   for (const cp of extra) {
+    if (pushed.has(cp.id)) continue;
     let best: ChatItem | null = null;
     for (const it of items) {
       if (it.kind === 'bubble' && it.role === 'assistant' && it.event.seq <= cp.seq) best = it;
