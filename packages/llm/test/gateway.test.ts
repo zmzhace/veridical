@@ -49,3 +49,65 @@ describe('LLMGateway', () => {
     await expect(mock.complete({ messages: [{ role: 'user', content: 'x' }], model: 'm', provider: 'mock' })).rejects.toThrow(/no recording/);
   });
 });
+
+describe('LLMGateway.stream', () => {
+  it('yields chunks via provider.stream and records llm.stream_chunk events', async () => {
+    const store = new InMemoryTraceStore();
+    const session = new Session({ session_id: 's3', tenant_id: 't1', spec_version: '0.0.1' });
+    const recorder = new Recorder(store, session);
+    const streaming: LLMProvider = {
+      complete: async () => ({ text: 'ab', usage }),
+      stream: async function* () {
+        yield 'a';
+        yield 'b';
+      },
+    };
+    const gw = new LLMGateway(new Map([['mock', streaming]]));
+    const tokens: string[] = [];
+    const res = await gw.stream(
+      { messages: [{ role: 'user', content: 'x' }], model: 'm', provider: 'mock' },
+      recorder,
+      (chunk) => tokens.push(chunk),
+    );
+    expect(res.text).toBe('ab');
+    expect(tokens).toEqual(['a', 'b']);
+    const events = await store.readBySession('s3');
+    const types = events.map((e) => e.type);
+    expect(types).toEqual(['llm.request', 'llm.stream_chunk', 'llm.stream_chunk', 'llm.response']);
+    const chunks = events.filter((e) => e.type === 'llm.stream_chunk');
+    expect(chunks.every((c) => c.verb === 'stream_chunk')).toBe(true);
+    expect(chunks.map((c) => (c.payload as { text?: string }).text)).toEqual(['a', 'b']);
+    const resp = events.find((e) => e.type === 'llm.response');
+    expect(resp?.verb).toBe('response');
+    expect(resp?.tokens?.total).toBe(2);
+  });
+
+  it('falls back to complete() when provider has no stream()', async () => {
+    const store = new InMemoryTraceStore();
+    const session = new Session({ session_id: 's4', tenant_id: 't1', spec_version: '0.0.1' });
+    const recorder = new Recorder(store, session);
+    const plain: LLMProvider = { complete: async () => ({ text: 'hi', usage }) };
+    const gw = new LLMGateway(new Map([['mock', plain]]));
+    const res = await gw.stream(
+      { messages: [{ role: 'user', content: 'x' }], model: 'm', provider: 'mock' },
+      recorder,
+    );
+    expect(res.text).toBe('hi');
+    const events = await store.readBySession('s4');
+    expect(events.filter((e) => e.type === 'llm.stream_chunk').length).toBe(0);
+    expect(events.map((e) => e.type)).toEqual(['llm.request', 'llm.response']);
+  });
+
+  it('records llm.response error when provider is unknown', async () => {
+    const store = new InMemoryTraceStore();
+    const session = new Session({ session_id: 's5', tenant_id: 't1', spec_version: '0.0.1' });
+    const recorder = new Recorder(store, session);
+    const gw = new LLMGateway(new Map());
+    await expect(
+      gw.stream({ messages: [{ role: 'user', content: 'x' }], model: 'm', provider: 'nope' }, recorder),
+    ).rejects.toThrow(/unknown provider/);
+    const events = await store.readBySession('s5');
+    expect(events.map((e) => e.type)).toEqual(['llm.request', 'llm.response']);
+    expect(events[1].verb).toBe('error');
+  });
+});
