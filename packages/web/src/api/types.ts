@@ -24,7 +24,7 @@ export type TurnFrame =
   | { type: 'event'; event: TraceEvent }
   | { type: 'turn_end'; session_id: string }
   | { type: 'done'; session_id: string; event_count: number; outcome?: unknown }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string; session_id?: string };
 
 export interface TurnRequestBody {
   specName: string; version?: string; conversationId?: string;

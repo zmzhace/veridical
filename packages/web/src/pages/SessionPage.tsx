@@ -157,6 +157,8 @@ export function SessionPage() {
       await runTurn({ specName, prompt, mode: newMode, conversationId: convId || undefined }, (f: TurnFrame) => {
         if (f.type === 'token') { setLiveText((t) => t + (f.text ?? '')); scrollToBottom(); }
         else if (f.type === 'event') {
+          // 按 id 去重：防 poll interval 与 done 前收尾 flush 竞态重复推送（M-3）
+          if (liveEventsRef.current.some((x) => x.id === f.event.id)) return;
           // 累积事件（含 checkpoint/assistant.message）——既是流式渲染源，也是 done 后缓存种子
           const evs = [...liveEventsRef.current, f.event];
           liveEventsRef.current = evs;
@@ -164,7 +166,12 @@ export function SessionPage() {
           scrollToBottom();
         }
         else if (f.type === 'done') { convId = f.session_id; }
-        else if (f.type === 'error') { setTurnError(f.message); }
+        else if (f.type === 'error') {
+          // error 帧若带 session_id 且尚未拿到（新会话首轮就失败），捕获之——
+          // 避免 done 后 setQueryData(['session','']) 污染缓存（M-2）
+          if (!convId && f.session_id) convId = f.session_id;
+          setTurnError(f.message);
+        }
       });
       // done 后把流式累积事件原子落进 react-query 缓存（setQueryData，不 refetch），并清空流式态
       const finalEvents = liveEventsRef.current;

@@ -176,7 +176,7 @@ export async function registerTurnRoutes(app: FastifyInstance) {
       send({ type: 'turn_end', session_id });
       send({ type: 'done', session_id, event_count: evs.length, outcome: result.outcome });
     } catch (e) {
-      send({ type: 'error', message: e instanceof Error ? e.message : String(e) });
+      send({ type: 'error', message: e instanceof Error ? e.message : String(e), session_id });
     } finally {
       if (poll) clearInterval(poll);
       abort();

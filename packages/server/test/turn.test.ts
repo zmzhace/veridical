@@ -68,4 +68,11 @@ describe('POST /api/run/turn error paths', () => {
     expect(res.json().error.code).toBe('not_found');
     await app.close();
   });
+
+  it('400 body unchanged when specName missing (sanity)', async () => {
+    const app = await buildApp('/tmp/rt-turn-d-' + Date.now(), '/tmp/rt-turn-specs-' + Date.now());
+    const res = await app.inject({ method: 'POST', url: '/api/run/turn', payload: { prompt: 'hi' } });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
 });
