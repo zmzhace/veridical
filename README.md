@@ -30,9 +30,9 @@ The guiding invariant is simple and enforced:
 
 ---
 
-## What's here now (Phases 1–5)
+## What's here now
 
-Veridical is built in phases; every phase is merged and test-covered.
+Veridical is built in phases; every phase is merged and test-covered. Beyond the numbered phases, the platform ships an **interactive conversation runtime** — see the [conversation section](#10-conversation--交互对话运行时--interactive-conversation-runtime) below.
 
 ```
 packages/
@@ -55,8 +55,15 @@ packages/
 ├── replay      Replay engine — re-execute a run from recorded responses
 │               · ReplayEngine (ReplayPlan) · TraceProjection (time-travel state)
 │               · RunComparator (event-level diff)
-└── memory      Memory system — event-log-driven working / semantic / skill memory
-                · MemoryStore · Memory facade · memoryToSystemPrompt
+├── memory      Memory system — event-log-driven working / semantic / skill memory
+│               · MemoryStore · Memory facade · memoryToSystemPrompt
+├── rl          Agentic RL — trains decision policies over recorded traces
+├── server      Fastify HTTP layer — sessions / run / turn(SSE) / specs / eval / compare / RL
+│               · POST /api/run/turn — streaming conversation turns (token + event frames)
+├── demo        End-to-end demo specs (insurance policy-switch, transfer advisor)
+└── web         React observation console — traces, replay, eval, compare, RL
+                · conversation UI — interactive multi-turn dialog with token streaming,
+                  per-step checkpoints, and full-trajectory review
 ```
 
 ---
@@ -65,8 +72,9 @@ packages/
 
 ```bash
 pnpm install
-pnpm test        # runs every package's suite (133 tests across 10 packages)
+pnpm test        # runs every package's suite (217 tests across 13 packages)
 pnpm build       # strict TypeScript build across the monorepo
+pnpm dev         # Fastify API (server) + React console (web), wired together
 ```
 
 Run the end-to-end demos (each persists a real JSONL timeline):
@@ -74,6 +82,8 @@ Run the end-to-end demos (each persists a real JSONL timeline):
 ```bash
 pnpm -F @veridical/demo test    # runs all demo smoke tests
 ```
+
+Open the conversation console at the dev URL: **＋ 新对话 → pick a spec → chat**. Every turn is recorded as events on one `conv_` session — checkpoints are taken per step, and the whole conversation is a replayable trajectory.
 
 ---
 
@@ -477,6 +487,37 @@ const result = await runSpec({ store, providers, tools, tenant_id: 't1', memory 
 // defaultRunStep recalls memory for the prompt and injects a "## 记忆" system block
 ```
 
+### 10. Conversation — 交互对话运行时 / Interactive conversation runtime
+
+A conversation is one `conv_` session; each user message is a *turn* appended to the same event timeline. Every step records a `state.checkpoint` frame, so the whole conversation is inspectable and replayable — checkpoints, tool capsules, and stage gates are all clickable in the web console.
+
+```ts
+import { runSpec, runSpecTurn } from '@veridical/spec';
+
+// Turn 1 — starts the conversation (records spec/run/start once)
+await runSpec({ ...deps, session_id: 'conv_abc', turn: true, firstTurn: true }, spec, '我要转保');
+
+// Turn 2+ — continues the same session; prior turns are injected as LLM context
+// (per-turn deduped, last 10 turns)
+await runSpecTurn({ ...deps, session_id: 'conv_abc' }, spec, '那退保损失呢？');
+// · single-loop turns: free-form multi-turn chat
+// · stage-gate turns: gate checks are scoped to the current turn; the flow resumes
+//   at the first incomplete stage and ends the turn gracefully when blocked
+```
+
+Over HTTP, `POST /api/run/turn` streams a turn over SSE — `token` frames (typewriter), `event` frames (tool/checkpoint as they land), then `turn_end` / `done`:
+
+```bash
+curl -N -X POST localhost:8787/api/run/turn \
+  -H 'Content-Type: application/json' \
+  -d '{"specName":"transfer-advisor","prompt":"我要转保","mode":"mock"}'
+# data: {"type":"token","session_id":"conv_...","text":"…"}
+# data: {"type":"event","event":{"type":"tool.called",…}}
+# data: {"type":"done","session_id":"conv_...","event_count":14,…}
+```
+
+The React console renders the live stream (bubbles + tool capsules + ↺ checkpoint anchors), and the same trajectory can be reviewed afterwards — switch to the timeline view or open any event.
+
 ---
 
 ## Roadmap
@@ -487,6 +528,9 @@ Phase 2   Agent spec system (declarative YAML, validated, versioned)           �
 Phase 3   Evaluation engine (rules/golden + LLM-judge + scenario simulator)    ✓ done
 Phase 4   Replay engine + time-travel debugger + run comparison                ✓ done
 Phase 5   Memory (working / long-term semantic / procedural skills)            ✓ done
+  +       Stage-gate + supervisor flows · agentic RL over traces · web console ✓ done
+  +       Conversation runtime — streaming multi-turn dialog, per-step         ✓ done
+          checkpoints, single-session turn continuation (conv_ timeline)
 Phase 6   Multi-tenant platform (API / auth / audit / namespace isolation)
 Phase 7   Release + review gate + data feedback loop
 Phase 8   Natural-language → spec compiler
