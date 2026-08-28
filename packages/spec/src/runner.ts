@@ -108,10 +108,7 @@ async function completeWithFallback(
       return await llm.complete({ ...req, provider: r.provider, model: r.model }, recorder);
     } catch (err) {
       lastErr = err;
-      await recorder.record({
-        span_id: 'llm', parent_span_id: null, type: 'llm.response', verb: 'error', attempt: 1, duration_ms: 0,
-        payload: { provider: r.provider, model: r.model, message: err instanceof Error ? err.message : String(err) },
-      });
+      // LLMGateway owns the paired error event, including its request fingerprint.
     }
   }
   throw new SpecRunError(`all LLM providers failed: ${chain.map(c => c.provider).join(', ')}`, lastErr);

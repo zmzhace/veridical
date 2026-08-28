@@ -3,6 +3,16 @@ import { InMemoryTraceStore } from '@veridical/store';
 import { Session, Recorder } from '../src/index';
 
 describe('Recorder', () => {
+  it('coordinates concurrent recorder instances through the store', async () => {
+    const store = new InMemoryTraceStore();
+    const session = new Session({ session_id: 'concurrent', tenant_id: 't1', spec_version: '1.0.0' });
+    const recorders = [new Recorder(store, session), new Recorder(store, session)];
+    const events = await Promise.all(Array.from({ length: 20 }, (_, i) => recorders[i % 2].record({
+      span_id: 'probe', parent_span_id: null, type: 'probe', verb: 'response', attempt: 1, duration_ms: 0, payload: {},
+    })));
+    expect(new Set(events.map(e => e.seq)).size).toBe(20);
+    expect(new Set(events.map(e => e.id)).size).toBe(20);
+  });
   it('assigns monotonic seq and fills identity fields', async () => {
     const store = new InMemoryTraceStore();
     const session = new Session({ session_id: 's1', tenant_id: 't1', spec_version: '0.0.1' });

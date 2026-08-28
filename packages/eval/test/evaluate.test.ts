@@ -17,6 +17,15 @@ function result(outcome: unknown, extra: TraceEvent[] = []): RunResult {
 }
 
 describe('evaluateRun', () => {
+  it('fails closed when no checks were configured', async () => {
+    expect(await evaluateRun(result('done'), {})).toEqual({ passed: false, reason: 'no_checks' });
+    expect(await evaluateRun(result('bad', [evt(2, 'tool.result', 'error', {})]), { rules: [] })).toEqual({ passed: false, reason: 'no_checks' });
+  });
+
+  it('does not silently ignore a configured but unavailable judge', async () => {
+    const report = await evaluateRun(result('done'), { rules: [ruleNoErrors()], judge: { provider: 'j', model: 'j', rubric: 'r' } });
+    expect(report).toEqual({ passed: false, reason: 'judge_unavailable' });
+  });
   it('passes when all rules pass', async () => {
     const report = await evaluateRun(result('done'), { rules: [ruleOutcomeEquals('done')] });
     expect(report.passed).toBe(true);

@@ -3,6 +3,10 @@
   "version": "0.0.1",
   "type": "module",
   "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./core": "./src/core.ts"
+  },
   "dependencies": {
     "@veridical/llm": "workspace:*",
     "@veridical/spec": "workspace:*",

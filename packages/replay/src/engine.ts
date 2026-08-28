@@ -1,4 +1,5 @@
 import type { TraceStore } from '@veridical/store';
+import { randomUUID } from 'node:crypto';
 import type { TraceEvent } from '@veridical/schema';
 import { fingerprint, type LLMProvider } from '@veridical/llm';
 import { runSpec, type SpecRegistry, type SpecRunnerDeps } from '@veridical/spec';
@@ -111,7 +112,7 @@ export class ReplayEngine {
       },
     }));
 
-    const replaySessionId = `replay_${session_id}`;
+    const replaySessionId = `replay_${randomUUID()}`;
     const deps: SpecRunnerDeps = {
       store: this.store,
       providers,

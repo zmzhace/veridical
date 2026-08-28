@@ -2,13 +2,24 @@
 
 # Veridical
 
-**An enterprise-grade, trace-centric agent harness.**
+**A trace-centric agent harness with a guarded production API profile.**
 
 Agents that are **evaluable**, **replayable**, **comparable**, and **governable** — built on a single, immutable event timeline as the source of truth.
 
 </div>
 
 ---
+
+> **Two explicit profiles:** `/v1` is the guarded, authenticated production API:
+> encrypted transactional storage, tenant isolation, approval-gated releases,
+> recorded-response replay and candidate-only automatic improvement. Its supported
+> scope is **single host, local disk, read-only tools, single-loop / stage-gate**.
+> The legacy `/api` console, JSONL, memory and RL demos remain **research-only**;
+> `pnpm dev` explicitly selects that mode. Production is the default for the built
+> server and refuses to start without secure configuration.
+> Read the [production runbook and launch gates](docs/production-profile.md),
+> [API workflow](docs/production-api.md) and [verification record](docs/production-verification.md).
+> This is not a claim of HA, regulatory certification or proven autonomous learning.
 
 ## The idea
 
@@ -70,9 +81,13 @@ packages/
 
 ## Quick start
 
+The commands below launch the **local research console**, not the production profile.
+Production requires Node 22.14+ (22/24 LTS recommended), separate credentials and keys;
+follow the [runbook](docs/production-profile.md).
+
 ```bash
 pnpm install
-pnpm test        # runs every package's suite (217 tests across 13 packages)
+pnpm test        # runs every package's suite
 pnpm build       # strict TypeScript build across the monorepo
 pnpm dev         # Fastify API (server) + React console (web), wired together
 ```
@@ -91,7 +106,7 @@ Open the conversation console at the dev URL: **＋ 新对话 → pick a spec �
 
 ### 中文 (Chinese)
 
-**Veridical 是什么？** 一套以**事件轨迹（trace）为中心**的企业级 agent 框架。所有交互——LLM 调用、工具执行、记忆读写——都是追加式事件日志上不可变的一等事件。
+**Veridical 是什么？** 一套以**事件轨迹（trace）为中心**的 agent 框架。受限生产 API 与研究控制台分开运行；具体支持范围和上线验收要求见上方说明。
 
 **核心不变式**：*"模型可见必须可记录"*——任何到达模型请求的内容，都必须能从事件日志重建。
 
@@ -164,7 +179,7 @@ const result = await runSpec(
 
 ### English
 
-**What is Veridical?** An enterprise-grade **trace-centric** agent framework. Every interaction — an LLM call, a tool invocation, a memory read — is a first-class, immutable event on an append-only session timeline.
+**What is Veridical?** A **trace-centric** agent framework. The guarded production API and research console run separately; their capabilities and limitations differ as described above.
 
 **The core invariant**: *"Model-visible means logged."* Anything that reaches a model request must be reconstructable from the event log.
 
@@ -541,8 +556,8 @@ Phase 8   Natural-language → spec compiler
 ## Design principles
 
 1. **The trace is the spine.** Every cross-boundary interaction is an event; nothing runs without being recorded.
-2. **Deterministic by construction.** The only sources of nondeterminism (LLM calls, tools) are fully recorded, so any run can be replayed byte-for-byte.
-3. **Derived, never duplicated.** Model context, UI, and eval inputs are *projected* from the event log — never stored separately — so replay and live runs can never diverge.
+2. **Recorded-response replay.** Supported sequential runs can be re-executed from recorded responses. Full failure, streaming, multi-turn and environment replay remain work in progress; comparisons cover selected event fields, not byte-for-byte identity.
+3. **Trace-derived state as the target.** UI and evaluation consume the event log. Some runtime paths still build model context separately; a canonical trace-derived runtime is a hardening milestone.
 4. **Composable control flow.** A single-loop is one pluggable driver. Router, orchestrator, evaluator-loop, and chain modes plug into the same seam and trace model.
 5. **Explicit failure.** Denied, blocked, and failed stages return explicit results and emit explicit events — nothing is silently swallowed.
 6. **One yardstick.** Runtime single-step verify and offline evaluation share the same `RuleEngine`.

@@ -58,8 +58,9 @@ export function ruleNoErrors(): Rule {
   return {
     name: 'no_errors',
     check(events) {
-      const err = events.find(e => (e.type === 'llm.response' || e.type === 'tool.result' || e.type === 'spec/run/end') && e.verb === 'error');
-      return err ? { passed: false, detail: `${err.type} verb:error at seq ${err.seq}` } : { passed: true };
+      const err = events.find(e => e.verb === 'error' ||
+        (e.type === 'tool.result' && (payloadOf(e)?.blocked === true || payloadOf(e)?.result?.ok === false)));
+      return err ? { passed: false, detail: `${err.type} failure at seq ${err.seq}` } : { passed: true };
     },
   };
 }

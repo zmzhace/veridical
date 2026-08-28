@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { parseSpecYaml, type SpecRunnerDeps } from '@veridical/spec';
 import { parseScenarioYaml } from '@veridical/eval';
-import { MockPolicy, RewardAggregator, GRPOTrainer, decisionStepFrom, type TrainConfig } from '@veridical/rl';
+import { MockPolicy, RewardAggregator, GRPOTrainer, decisionStepFrom, type TrainConfig } from '@veridical/rl/core';
 import { Memory, MemoryStore, MEMORY_SESSION } from '@veridical/memory';
 import { Session, Recorder } from '@veridical/runtime';
 import { resolveTools } from '../providers.js';

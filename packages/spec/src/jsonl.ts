@@ -1,8 +1,9 @@
-import { mkdirSync, readdirSync, readFileSync, appendFileSync, existsSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { gt } from 'semver';
 import { AgentSpecSchema, type AgentSpec } from './spec';
 import { DuplicateSpecError, type SpecRegistry } from './registry';
+import { assertStorageKey } from '@veridical/store';
 
 export class JsonlSpecRegistry implements SpecRegistry {
   constructor(private dir: string) {
@@ -10,13 +11,20 @@ export class JsonlSpecRegistry implements SpecRegistry {
   }
 
   private file(name: string, version: string): string {
+    assertStorageKey(name);
+    assertStorageKey(version);
     return join(this.dir, `${name}@${version}.jsonl`);
   }
 
   async register(spec: AgentSpec): Promise<void> {
+    spec = AgentSpecSchema.parse(spec);
     const f = this.file(spec.name, spec.version);
-    if (existsSync(f)) throw new DuplicateSpecError(spec.name, spec.version);
-    appendFileSync(f, JSON.stringify(spec) + '\n', 'utf8');
+    try {
+      writeFileSync(f, JSON.stringify(spec) + '\n', { encoding: 'utf8', flag: 'wx' });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new DuplicateSpecError(spec.name, spec.version);
+      throw error;
+    }
   }
 
   async resolve(name: string, version?: string): Promise<AgentSpec | undefined> {

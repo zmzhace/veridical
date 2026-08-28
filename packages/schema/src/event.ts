@@ -27,6 +27,10 @@ export const TraceEventSchema = z.object({
   payload: z.unknown(),
   call_id: z.string().optional(),
   spec_version: z.string(),
+  timestamp: z.string().datetime().optional(),
+  event_schema_version: z.number().int().positive().optional(),
+  actor_id: z.string().optional(),
+  run_id: z.string().optional(),
 });
 
 export type TraceEvent = z.infer<typeof TraceEventSchema>;

@@ -8,4 +8,5 @@ export const CONFIG = {
     ? resolve(process.env.VERIDICAL_SPECS_DIR)
     : resolve(process.cwd(), '.specs'),
   port: Number(process.env.VERIDICAL_PORT ?? 8787),
+  host: process.env.VERIDICAL_HOST ?? '127.0.0.1',
 };

@@ -1,6 +1,15 @@
 node_modules/
 dist/
 *.tsbuildinfo
+.env
+.env.*
+*.db
+*.db-wal
+*.db-shm
+ledger-keys.env
+operator-credentials.json
+.traces/
+.specs/
 # Superpowers workflow docs (design specs + implementation plans) — local only, not committed
 /superpowers/
 /docs/superpowers/

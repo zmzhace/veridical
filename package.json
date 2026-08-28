@@ -2,12 +2,14 @@
   "name": "veridical",
   "private": true,
   "packageManager": "pnpm@9.0.0",
-  "engines": { "node": ">=20.19.0" },
+  "engines": { "node": ">=22.14.0" },
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "dev": "pnpm -r --parallel -F @veridical/server -F @veridical/web dev",
     "dev:server": "pnpm -F @veridical/server dev",
-    "dev:web": "pnpm -F @veridical/web dev"
-  }
+    "dev:web": "pnpm -F @veridical/web dev",
+    "format:check": "prettier --check 'packages/server/src/production/**/*.ts' 'packages/server/scripts/*.mjs' 'packages/server/test/{production,ledger,secure-provider}.test.ts' 'packages/server/test/fixtures/*.ts'"
+  },
+  "devDependencies": {"prettier":"3.6.2"}
 }

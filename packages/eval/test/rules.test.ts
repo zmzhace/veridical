@@ -52,6 +52,16 @@ describe('built-in rules', () => {
     const bad = run([evt(2, 'llm.response', 'error', { message: 'boom' })]);
     expect(ruleNoErrors().check(bad)).toMatchObject({ passed: false });
   });
+
+  it('rejects legacy denied results even when their verb is response', () => {
+    expect(ruleNoErrors().check(run([
+      evt(2, 'tool.result', 'response', { name: 'echo', result: { ok: false, reason: 'denied' } }),
+    ])).passed).toBe(false);
+  });
+
+  it('rejects stage and step errors as well as provider errors', () => {
+    expect(ruleNoErrors().check(run([evt(2, 'stage/end', 'error', {})])).passed).toBe(false);
+  });
 });
 
 describe('RuleEngine', () => {

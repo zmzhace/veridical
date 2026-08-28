@@ -12,7 +12,8 @@ export async function runSingleLoop(ctx: FlowContext, prompt: string): Promise<v
     if (res.tool) {
       await ctx.recorder.record({ span_id: 'loop', parent_span_id: null, type: 'tool.called', verb: 'request', attempt: step, duration_ms: 0, payload: { name: res.tool.name, args: res.tool.args } });
       const result = await ctx.executeTool(res.tool.name, res.tool.args);
-      const ok = ctx.verifyToolResult(res.tool.name, result);
+      const blocked = result && typeof result === 'object' && (result as { ok?: boolean }).ok === false;
+      const ok = !blocked && ctx.verifyToolResult(res.tool.name, result);
       if (!ok) {
         await ctx.recorder.record({ span_id: 'loop', parent_span_id: null, type: 'tool.result', verb: 'error', attempt: step, duration_ms: 0, payload: { name: res.tool.name, result, blocked: true } });
         await ctx.recorder.record({ span_id: 'loop', parent_span_id: null, type: 'step/end', verb: 'error', attempt: step, duration_ms: 0, payload: { step, blocked: true } });

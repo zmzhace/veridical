@@ -83,7 +83,7 @@ export async function registerRunRoutes(app: FastifyInstance) {
       tools: resolveTools(spec.tools.map((t) => t.name)),
       tenant_id: 't1',
       session_id: sessionId,
-      runStep: makeDecisionRunStep(() => providers.get(spec.llm.provider)),
+      runStep: makeDecisionRunStep(),
     };
 
     try {

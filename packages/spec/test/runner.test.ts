@@ -69,6 +69,8 @@ describe('runSpec', () => {
     );
     const denied = result.events.find(e => e.type === 'tool.result' && (e.payload as any)?.result?.reason === 'denied');
     expect(denied).toBeDefined();
+    expect(denied?.verb).toBe('error');
+    expect(result.events.filter(e => e.type === 'step/end').every(e => e.verb === 'error')).toBe(true);
   });
 
   it('falls back when the primary provider fails', async () => {
@@ -82,6 +84,10 @@ describe('runSpec', () => {
     );
     expect(result.outcome).toBe('saved');
     expect(result.events.some(e => e.type === 'llm.response' && e.verb === 'error')).toBe(true);
+    const requests = result.events.filter(e => e.type === 'llm.request');
+    const responses = result.events.filter(e => e.type === 'llm.response');
+    expect(responses).toHaveLength(requests.length);
+    expect(responses.every(e => typeof (e.payload as any).fingerprint === 'string')).toBe(true);
   });
 
   it('throws SpecRunError when all providers fail', async () => {

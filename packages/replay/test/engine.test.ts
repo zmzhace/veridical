@@ -64,6 +64,10 @@ describe('ReplayEngine', () => {
     const result = await engine.replay('s1', { spec: { name: 'replay-test', version: '1.0.0' } }, [echo]);
     expect(result.identical).toBe(true);
     expect(result.outcome).toBe('answer');
+    const again = await engine.replay('s1', { spec: { name: 'replay-test', version: '1.0.0' } }, [echo]);
+    expect(again.identical).toBe(true);
+    expect(again.session_id).not.toBe(result.session_id);
+    expect(again.events).toHaveLength(result.events.length);
   });
 
   it('throws TraceDivergenceError when the recorded response changed', async () => {

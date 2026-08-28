@@ -1,4 +1,4 @@
-export interface LLMRequest { messages: unknown[]; model: string; provider: string }
+export interface LLMRequest { messages: unknown[]; model: string; provider: string; signal?: AbortSignal; maxOutputTokens?: number }
 export interface LLMUsage { input: number; output: number; cached: number; total: number }
 export interface LLMResponse { text: string; usage: LLMUsage }
 export interface LLMProvider {

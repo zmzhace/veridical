@@ -12,6 +12,7 @@ export interface EvalConfig {
   pass_requirement?: 'all' | 'any';
 }
 export interface EvalReport {
+  reason?: 'no_checks' | 'judge_unavailable';
   rules?: RuleReport;
   judge?: { passed: boolean; reasoning: string; tokens: LLMUsage };
   passed: boolean;
@@ -19,6 +20,8 @@ export interface EvalReport {
 
 export async function evaluateRun(result: RunResult, config: EvalConfig, judge?: LLMJudge): Promise<EvalReport> {
   const rules = [...(config.rules ?? []), ...(config.golden !== undefined ? [ruleOutcomeEquals(config.golden)] : [])];
+  if (config.judge && !judge) return { passed: false, reason: 'judge_unavailable' };
+  if (rules.length === 0 && !config.judge) return { passed: false, reason: 'no_checks' };
   const rulesReport = rules.length > 0 ? new RuleEngine(rules).evaluate(result.events) : undefined;
 
   let judgeReport: EvalReport['judge'];

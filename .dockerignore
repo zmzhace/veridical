@@ -1,0 +1,13 @@
+**/node_modules
+**/dist
+.git
+.env*
+**/*.env
+**/*credentials*.json
+**/config.json
+**/*.db*
+**/.traces
+**/.specs
+**/*.tsbuildinfo
+docs/case
+superpowers

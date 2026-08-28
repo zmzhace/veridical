@@ -48,6 +48,18 @@ describe('JsonlSpecRegistry', () => {
     await expect(new JsonlSpecRegistry(dir).register(specAt('1.0.0'))).rejects.toThrow(DuplicateSpecError);
   });
 
+  it.each(['../escape', '/absolute', 'a/b', 'a\\b'])('rejects unsafe spec name %s', async name => {
+    const reg = new JsonlSpecRegistry(dir);
+    await expect(reg.register({ ...specAt('1.0.0'), name })).rejects.toThrow(/storage key/);
+  });
+
+  it('allows exactly one concurrent registration across registry instances', async () => {
+    const regs = [new JsonlSpecRegistry(dir), new JsonlSpecRegistry(dir)];
+    const results = await Promise.allSettled(regs.map(reg => reg.register(specAt('1.0.0'))));
+    expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+    expect(await regs[0].list()).toHaveLength(1);
+  });
+
   it('lists all persisted specs', async () => {
     const reg = new JsonlSpecRegistry(dir);
     await reg.register(specAt('1.0.0'));

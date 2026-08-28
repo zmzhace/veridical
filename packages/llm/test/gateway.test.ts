@@ -6,6 +6,16 @@ import { LLMGateway, fingerprint, MockProvider, type LLMProvider } from '../src/
 const usage = { input: 1, output: 1, cached: 0, total: 2 };
 
 describe('LLMGateway', () => {
+  it('records exactly one paired error when a registered provider throws', async () => {
+    const store = new InMemoryTraceStore();
+    const recorder = new Recorder(store, new Session({ session_id: 'failure', tenant_id: 't1', spec_version: '1.0.0' }));
+    const gw = new LLMGateway(new Map([['mock', { complete: async () => { throw new Error('provider failed'); } }]]));
+    const req = { provider: 'mock', model: 'm', messages: [] };
+    await expect(gw.complete(req, recorder)).rejects.toThrow('provider failed');
+    const events = await store.readBySession('failure');
+    expect(events.map(e => e.type)).toEqual(['llm.request', 'llm.response']);
+    expect(events[1]).toMatchObject({ verb: 'error', payload: { fingerprint: fingerprint(req), message: 'provider failed' } });
+  });
   it('emits request/response events with fingerprint and usage', async () => {
     const store = new InMemoryTraceStore();
     const session = new Session({ session_id: 's1', tenant_id: 't1', spec_version: '0.0.1' });
@@ -51,6 +61,20 @@ describe('LLMGateway', () => {
 });
 
 describe('LLMGateway.stream', () => {
+  it('retains partial chunks and records a terminal error on stream failure', async () => {
+    const store = new InMemoryTraceStore();
+    const recorder = new Recorder(store, new Session({ session_id: 'partial', tenant_id: 't1', spec_version: '1.0.0' }));
+    const provider: LLMProvider = {
+      complete: async () => ({ text: '', usage }),
+      stream: async function* () { yield 'partial'; throw new Error('stream failed'); },
+    };
+    const req = { provider: 'mock', model: 'm', messages: [] };
+    const gw = new LLMGateway(new Map([['mock', provider]]));
+    await expect(gw.stream(req, recorder)).rejects.toThrow('stream failed');
+    const events = await store.readBySession('partial');
+    expect(events.map(e => e.type)).toEqual(['llm.request', 'llm.stream_chunk', 'llm.response']);
+    expect(events[2]).toMatchObject({ verb: 'error', payload: { fingerprint: fingerprint(req), message: 'stream failed' } });
+  });
   it('yields chunks via provider.stream and records llm.stream_chunk events', async () => {
     const store = new InMemoryTraceStore();
     const session = new Session({ session_id: 's3', tenant_id: 't1', spec_version: '0.0.1' });
