@@ -70,10 +70,11 @@ test('tool-first turn attaches capsules to that turn, not the next/previous', ()
   const items = buildChat(events, []);
   const assistantBubbles = items.filter((i) => i.kind === 'bubble' && i.role === 'assistant');
   // turn1's assistant bubble got turn1's tool pair (not dropped)
-  expect(assistantBubbles[0]!.tools.map((t) => t.id)).toEqual(['c1', 'r1']);
+  // called + result are one logical tool pill; the result carries final status.
+  expect(assistantBubbles[0]!.tools.map((t) => t.id)).toEqual(['r1']);
   // turn2 has no assistant.message → its tools attach to its user bubble
   const user2 = items.find((i) => i.role === 'user' && (i.event.payload as any).text === '提交')!;
-  expect(user2.tools.map((t) => t.id)).toEqual(['c2', 'r2']);
+  expect(user2.tools.map((t) => t.id)).toEqual(['r2']);
   // cp1 stayed in turn1's assistant, did not leak to a later turn
   expect(assistantBubbles[0]!.checkpoints.map((c) => c.id)).toEqual(['cp1']);
 });

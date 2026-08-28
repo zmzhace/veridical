@@ -23,8 +23,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
-      - run: pnpm test
-      - run: pnpm build
+      - run: pnpm test:regression
       - run: pnpm audit --prod --audit-level=moderate
       - run: node packages/server/scripts/smoke-production.mjs
       - run: node packages/server/scripts/package-runtime.mjs "$RUNNER_TEMP/veridical-runtime"

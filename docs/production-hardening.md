@@ -64,8 +64,8 @@ remain separate work. Do not expose the API publicly or load sensitive business 
 - No change here claims a canonical trace-driven runtime, resumable side effects,
   complete failure replay, or byte-for-byte trace equivalence. `RunComparator`
   continues to compare selected event fields.
-- MockPolicy training and automatic skill writes are unchanged. Training output
-  is not validated for production use; no automatic deployment is authorized.
+- Internal MockPolicy training and its skill-write route have been removed.
+  RL trajectory export remains supported; external training does not authorize automatic deployment.
 
 ## Next milestones and acceptance gates
 

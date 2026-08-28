@@ -3,6 +3,10 @@
   "version": "0.0.1",
   "type": "module",
   "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/spec.ts"
+  },
   "dependencies": {
     "@veridical/schema": "workspace:*",
     "@veridical/store": "workspace:*",

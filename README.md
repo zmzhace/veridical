@@ -14,7 +14,7 @@ Agents that are **evaluable**, **replayable**, **comparable**, and **governable*
 > encrypted transactional storage, tenant isolation, approval-gated releases,
 > recorded-response replay and candidate-only automatic improvement. Its supported
 > scope is **single host, local disk, read-only tools, single-loop / stage-gate**.
-> The legacy `/api` console, JSONL, memory and RL demos remain **research-only**;
+> The legacy `/api` console, JSONL and memory remain **research-only**;
 > `pnpm dev` explicitly selects that mode. Production is the default for the built
 > server and refuses to start without secure configuration.
 > Read the [production runbook and launch gates](docs/production-profile.md),
@@ -68,11 +68,10 @@ packages/
 │               · RunComparator (event-level diff)
 ├── memory      Memory system — event-log-driven working / semantic / skill memory
 │               · MemoryStore · Memory facade · memoryToSystemPrompt
-├── rl          Agentic RL — trains decision policies over recorded traces
-├── server      Fastify HTTP layer — sessions / run / turn(SSE) / specs / eval / compare / RL
+├── server      Fastify HTTP layer — sessions / run / turn(SSE) / specs / eval / compare / trajectory export
 │               · POST /api/run/turn — streaming conversation turns (token + event frames)
 ├── demo        End-to-end demo specs (insurance policy-switch, transfer advisor)
-└── web         React observation console — traces, replay, eval, compare, RL
+└── web         React observation console — traces, replay, eval, compare
                 · conversation UI — interactive multi-turn dialog with token streaming,
                   per-step checkpoints, and full-trajectory review
 ```
@@ -84,6 +83,11 @@ packages/
 The commands below launch the **local research console**, not the production profile.
 Production requires Node 22.14+ (22/24 LTS recommended), separate credentials and keys;
 follow the [runbook](docs/production-profile.md).
+
+For an explicit, small **real-model local development check**, configure the ignored
+root `.env.local` and run `pnpm test:llm:live`. This makes at most two live calls and
+then verifies an offline replay; it does not publish a production release. See the
+[local live-LLM guide](docs/local-live-llm.md). Regular tests never use this credential.
 
 ```bash
 pnpm install
@@ -543,7 +547,7 @@ Phase 2   Agent spec system (declarative YAML, validated, versioned)           �
 Phase 3   Evaluation engine (rules/golden + LLM-judge + scenario simulator)    ✓ done
 Phase 4   Replay engine + time-travel debugger + run comparison                ✓ done
 Phase 5   Memory (working / long-term semantic / procedural skills)            ✓ done
-  +       Stage-gate + supervisor flows · agentic RL over traces · web console ✓ done
+  +       Stage-gate + supervisor flows · RL trajectory export · web console ✓ done
   +       Conversation runtime — streaming multi-turn dialog, per-step         ✓ done
           checkpoints, single-session turn continuation (conv_ timeline)
 Phase 6   Multi-tenant platform (API / auth / audit / namespace isolation)
@@ -556,7 +560,7 @@ Phase 8   Natural-language → spec compiler
 ## Design principles
 
 1. **The trace is the spine.** Every cross-boundary interaction is an event; nothing runs without being recorded.
-2. **Recorded-response replay.** Supported sequential runs can be re-executed from recorded responses. Full failure, streaming, multi-turn and environment replay remain work in progress; comparisons cover selected event fields, not byte-for-byte identity.
+2. **Path-aware recorded-response replay.** Explicit invocation graphs isolate child agents, tools, retries, streaming and turns. Strict replay checks pinned manifests and path-local event structures; fixture/semantic modes are explicit and never claim identical. See [invocation replay and GRPO export](docs/invocation-replay.md) for APIs, tests and production restrictions.
 3. **Trace-derived state as the target.** UI and evaluation consume the event log. Some runtime paths still build model context separately; a canonical trace-derived runtime is a hardening milestone.
 4. **Composable control flow.** A single-loop is one pluggable driver. Router, orchestrator, evaluator-loop, and chain modes plug into the same seam and trace model.
 5. **Explicit failure.** Denied, blocked, and failed stages return explicit results and emit explicit events — nothing is silently swallowed.

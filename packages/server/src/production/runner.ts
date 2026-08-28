@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { LLMGateway, type LLMProvider, type LLMRequest, type LLMResponse } from '@veridical/llm';
-import { Recorder, Session } from '@veridical/runtime';
-import { AgentSpecSchema, type AgentSpec } from '@veridical/spec';
+import { InvocationRecorder, Session, type InvocationInterceptor } from '@veridical/runtime';
+import { AgentSpecSchema, artifactHash, type AgentSpec } from '@veridical/spec';
 import type { TraceEvent } from '@veridical/schema';
 import { Ledger, TenantTraceStore } from './database';
 import { canonical, digest, Fault, Key, type Job } from './contracts';
@@ -28,6 +28,20 @@ export const safeTools: ProductionTool[] = ['echo', 'finish'].map((name) => ({
   schema: z.unknown(),
   execute: async (args) => args,
 }));
+function schemaSnapshot(value: unknown): unknown {
+  if (value instanceof z.ZodType) return schemaSnapshot(value._def);
+  if (Array.isArray(value)) return value.map(schemaSnapshot);
+  if (value && typeof value === 'object')
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        key === 'shape' && typeof item === 'function'
+          ? schemaSnapshot(item())
+          : schemaSnapshot(item),
+      ]),
+    );
+  return typeof value === 'function' ? String(value) : value;
+}
 export function runtimeEnvironment(
   spec: AgentSpec,
   config: ProductionConfig,
@@ -42,6 +56,8 @@ export function runtimeEnvironment(
     tools: spec.tools.map((t) => ({
       name: t.name,
       version: tools.find((x) => x.name === t.name)?.version,
+      schema_hash: digest(schemaSnapshot(tools.find((x) => x.name === t.name)?.schema)),
+      implementation_hash: digest(String(tools.find((x) => x.name === t.name)?.execute)),
     })),
   });
 }
@@ -80,6 +96,10 @@ export function validateSpec(
   )
     throw new Fault(422, 'spec_limits_exceeded');
   if (spec.schema_version !== 1) throw new Fault(422, 'unsupported_schema');
+  if (spec.flow.loop && spec.flow.loop.engine !== 'direct')
+    throw new Fault(422, 'loop_not_enabled_in_production');
+  if (spec.skills.some((skill) => skill.status !== 'approved'))
+    throw new Fault(422, 'skill_not_approved');
   if (spec.llm.fallback.length) throw new Fault(422, 'fallback_requires_separate_release');
   const provider = config.providers.find(
     (p) => p.name === spec.llm.provider && p.model === spec.llm.model,
@@ -121,6 +141,7 @@ export class SecureProvider implements LLMProvider {
     private baseUrl: string,
     private apiKey: string,
     private model: string,
+    private options: { enableThinking?: boolean } = {},
   ) {}
   async complete(req: LLMRequest): Promise<LLMResponse> {
     if (req.model !== this.model) throw new Error('model configuration mismatch');
@@ -136,6 +157,7 @@ export class SecureProvider implements LLMProvider {
         model: this.model,
         messages: req.messages,
         max_tokens: req.maxOutputTokens ?? 1024,
+        enable_thinking: this.options.enableThinking,
       }),
     });
     if (!response.ok || !response.body) {
@@ -157,8 +179,9 @@ export class SecureProvider implements LLMProvider {
       await reader.cancel().catch(() => {});
     }
     const data = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    if (data.choices?.[0]?.finish_reason === 'length') throw new Error('provider_output_truncated');
     const text = data.choices?.[0]?.message?.content;
-    if (typeof text !== 'string' || text.length > 32000)
+    if (typeof text !== 'string' || !text.trim() || text.length > 32000)
       throw new Error('invalid_provider_response');
     const input = data.usage?.prompt_tokens;
     const output = data.usage?.completion_tokens;
@@ -196,7 +219,7 @@ export function messagesFrom(
   return messages;
 }
 
-export async function executeTurn(options: {
+export interface ExecuteTurnOptions {
   ledger: Ledger;
   job: Job;
   session: string;
@@ -207,16 +230,47 @@ export async function executeTurn(options: {
   signal: AbortSignal;
   input: string;
   checkRelease: () => void;
-}) {
-  const { ledger, job, session, spec, config, tools, signal } = options;
+  invocationInterceptor?: InvocationInterceptor;
+}
+
+export async function executeTurn(options: ExecuteTurnOptions) {
+  const { ledger, job, session, spec } = options;
   const store = new TenantTraceStore(ledger, job.tenant, job.actor, {
     id: job.id,
     owner: job.owner!,
   });
-  const recorder = new Recorder(
+  const roots = ledger
+    .read(job.tenant, session)
+    .filter((e) => e.type === 'invocation.start' && !e.parent_invocation_id);
+  const recorder = InvocationRecorder.root(
     store,
     new Session({ session_id: session, tenant_id: job.tenant, spec_version: spec.version }),
+    { prompt: options.input, spec_hash: digest(spec) },
+    {
+      path: roots.length ? `root/turn#${roots.length + 1}` : 'root',
+      agent: spec.name,
+      runId: roots[0]?.run_id,
+      interceptor: options.invocationInterceptor,
+    },
   );
+  await recorder.start();
+  try {
+    const result = await executeTurnInternal(options, recorder);
+    await recorder.end(result);
+    return result;
+  } catch (error) {
+    await recorder
+      .end(null, options.signal.aborted ? 'cancelled' : 'failed', {
+        code: error instanceof Fault ? error.code : 'execution_failed',
+        message: error instanceof Error ? error.message : String(error),
+      })
+      .catch(() => {});
+    throw error;
+  }
+}
+
+async function executeTurnInternal(options: ExecuteTurnOptions, recorder: InvocationRecorder) {
+  const { ledger, job, session, spec, config, tools, signal } = options;
   const record = (
     type: string,
     payload: unknown,
@@ -253,12 +307,34 @@ export async function executeTurn(options: {
     version: tools.find((x) => x.name === t.name)!.version,
     access: t.access,
   }));
+  const releaseArtifactHash = artifactHash({
+    kind: 'release',
+    name: spec.name,
+    version: spec.version,
+    status: 'approved',
+    spec,
+    skills: spec.skills,
+    tools: toolVersions.map((tool) => ({
+      name: tool.name,
+      version: tool.version,
+      side_effect: 'read' as const,
+    })),
+    model: {
+      provider: spec.llm.provider,
+      model: spec.llm.model,
+      version: config.providers.find((p) => p.name === spec.llm.provider)?.version,
+    },
+  });
   await record('run.provenance', {
     spec_digest: digest(spec),
+    release_artifact_hash: releaseArtifactHash,
     environment: runtimeEnvironment(spec, config, tools),
     build_id: BUILD_ID,
     release_id: config.releaseId,
     provider: config.providers.find((p) => p.name === spec.llm.provider)?.version,
+    provider_parameters: {
+      enable_thinking: config.providers.find((p) => p.name === spec.llm.provider)?.enableThinking,
+    },
     tools: toolVersions,
     job_id: job.id,
   });
@@ -310,67 +386,120 @@ export async function executeTurn(options: {
       await record('assistant.message', { text: decision.text ?? '', model_text: response.text });
       if (decision.tool) {
         const tool = tools.find((t) => t.name === decision.tool!.name);
-        const callId = randomUUID();
-        const allowed = spec.tools.some(
-          (t) => t.name === decision.tool!.name && t.access === 'allow',
-        );
-        const futureGate =
-          stage &&
-          stages.some((s) => s.gate?.tool_called === decision.tool!.name) &&
-          stage.gate?.tool_called !== decision.tool.name;
-        await record(
-          'tool.called',
-          { name: decision.tool.name, args: decision.tool.args },
-          'request',
-          callId,
-        );
-        await record(
-          'policy.decision',
+        outcome = await recorder.invoke(
+          'tool',
+          decision.tool.name,
+          `tool:${encodeURIComponent(decision.tool.name)}`,
           {
-            tool: decision.tool.name,
-            allowed: !!tool && allowed && !futureGate,
-            spec_digest: digest(spec),
+            name: decision.tool.name,
+            args: decision.tool.args,
+            schema_version: tool?.version ?? null,
+            side_effect: 'read',
           },
-          'response',
-          callId,
+          async (scope) => {
+            const callId = randomUUID();
+            const toolRecord = (
+              type: string,
+              payload: unknown,
+              verb: 'request' | 'response' | 'error' = 'response',
+            ) =>
+              scope.record({
+                type,
+                payload,
+                verb,
+                call_id: callId,
+                span_id: scope.invocation.path,
+                parent_span_id: scope.invocation.parent_invocation_id ?? null,
+                attempt: 1,
+                duration_ms: 0,
+              });
+            const allowed = spec.tools.some(
+              (t) => t.name === decision.tool!.name && t.access === 'allow',
+            );
+            const futureGate =
+              stage &&
+              stages.some((s) => s.gate?.tool_called === decision.tool!.name) &&
+              stage.gate?.tool_called !== decision.tool!.name;
+            await toolRecord(
+              'tool.called',
+              { name: decision.tool!.name, args: decision.tool!.args },
+              'request',
+            );
+            await toolRecord('policy.decision', {
+              tool: decision.tool!.name,
+              allowed: !!tool && allowed && !futureGate,
+              spec_digest: digest(spec),
+            });
+            if (!tool || !allowed || futureGate) {
+              await toolRecord(
+                'tool.result',
+                {
+                  name: decision.tool!.name,
+                  result: { ok: false, reason: 'denied' },
+                  blocked: true,
+                },
+                'error',
+              );
+              throw new Fault(403, 'tool_denied');
+            }
+            try {
+              const args = tool.schema.parse(decision.tool!.args);
+              check();
+              const result = await abortable(
+                tool.execute(args, { tenant: job.tenant, actor: job.actor, signal }),
+                signal,
+              );
+              if (Buffer.byteLength(canonical(result)) > 32000) {
+                await toolRecord(
+                  'tool.output_rejected',
+                  {
+                    reason: 'tool_result_too_large',
+                    bytes: Buffer.byteLength(canonical(result)),
+                    hash: digest(result),
+                    retained: false,
+                  },
+                  'error',
+                );
+                throw new Error('tool_result_too_large');
+              }
+              if (result && typeof result === 'object' && 'ok' in result && result.ok === false)
+                throw new Fault(422, 'tool_reported_failure');
+              check();
+              await toolRecord('tool.result', { name: tool.name, result });
+              return result;
+            } catch (error) {
+              await toolRecord(
+                'tool.result',
+                {
+                  name: tool.name,
+                  result: { ok: false, reason: 'execution_failed' },
+                  error: {
+                    code: error instanceof Fault ? error.code : 'execution_failed',
+                    message: error instanceof Error ? error.message : String(error),
+                  },
+                },
+                'error',
+              );
+              throw error;
+            }
+          },
         );
-        if (!tool || !allowed || futureGate) {
-          await record(
-            'tool.result',
-            { name: decision.tool.name, result: { ok: false, reason: 'denied' }, blocked: true },
-            'error',
-            callId,
-          );
-          throw new Fault(403, 'tool_denied');
-        }
-        try {
-          const args = tool.schema.parse(decision.tool.args);
-          check();
-          outcome = await abortable(
-            tool.execute(args, { tenant: job.tenant, actor: job.actor, signal }),
-            signal,
-          );
-          if (Buffer.byteLength(canonical(outcome)) > 32000)
-            throw new Error('tool_result_too_large');
-          if (outcome && typeof outcome === 'object' && 'ok' in outcome && outcome.ok === false)
-            throw new Fault(422, 'tool_reported_failure');
-          check();
-          await record('tool.result', { name: tool.name, result: outcome }, 'response', callId);
-        } catch (error) {
-          await record(
-            'tool.result',
-            { name: tool.name, result: { ok: false, reason: 'execution_failed' } },
-            'error',
-            callId,
-          );
-          throw error;
-        }
-        if (stage?.gate?.tool_called === tool.name) {
+        if (stage?.gate?.tool_called === decision.tool.name) {
           await record('stage/end', { stage: stage.id });
           completed.add(stage.id);
         }
       } else outcome = decision.text ?? '';
       await record('step/end', { step, stage: stage?.id });
+      await recorder.invoke(
+        'loop',
+        'checkpoint',
+        'checkpoint',
+        { step, stage: stage?.id, outcome },
+        async (scope) => {
+          await scope.event('state.checkpoint', 'response', { step, stage: stage?.id, outcome });
+          return { step, stage: stage?.id, outcome };
+        },
+      );
       const done =
         spec.flow.mode === 'stage-gate'
           ? stages.every((s) => completed.has(s.id))

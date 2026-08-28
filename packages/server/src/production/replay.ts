@@ -1,4 +1,5 @@
-import { ReplayLLMProvider, ReplayToolProvider } from '@veridical/replay';
+import { ReplayCursor, comparableGraph } from '@veridical/replay';
+import type { InvocationInterceptor } from '@veridical/runtime';
 import type { TraceEvent } from '@veridical/schema';
 import type { AgentSpec } from '@veridical/spec';
 import { digest, Fault, type Job } from './contracts';
@@ -39,31 +40,47 @@ export async function replayRecorded(options: {
       .some((e) => (e.payload as any).environment !== runtimeEnvironment(spec, config, tools))
   )
     throw new Fault(409, 'replay_requires_original_runtime');
-  const model = new ReplayLLMProvider(source),
-    tool = new ReplayToolProvider(source);
-  const replayTools = tools.map((t) => ({
-    ...t,
-    execute: (args: unknown) => tool.execute(t.name, args),
-  }));
+  const cursor = new ReplayCursor(source);
+  if (!cursor.invocations.length) throw new Fault(422, 'replay_legacy_trace');
+  const interceptor: InvocationInterceptor = async (scope, input, execute) => {
+    const i = scope.invocation;
+    const hit = cursor.nextInvocation(i.path, i.operation, input, i.attempt, i.ordinal);
+    if (i.actor === 'llm' || i.actor === 'tool') return cursor.playback(scope, hit);
+    return execute();
+  };
+  const model = {
+    complete: async (): Promise<never> => {
+      throw new Fault(409, 'replay_live_forbidden');
+    },
+  };
+  let turn = 0;
   for (const event of source.filter((e) => e.type === 'user.message')) {
+    cursor.markRoot(turn++ === 0 ? 'root' : `root/turn#${turn}`);
     await executeTurn({
       ledger: db,
       job,
       session: job.session,
       spec,
       config,
-      tools: replayTools,
+      tools,
+      invocationInterceptor: interceptor,
       signal,
       input: (event.payload as any).text,
       checkRelease: options.check,
       providers: new Map([[spec.llm.provider, model]]),
     });
   }
-  const expected = digest(semantic(source)),
-    actual = digest(semantic(db.read(job.tenant, job.session)));
+  cursor.assertConsumed();
+  const clean = (events: TraceEvent[]) =>
+    events.filter((e) => !e.type.startsWith('job.') && e.type !== 'run.provenance');
+  const expected = digest(comparableGraph(clean(source))),
+    actual = digest(comparableGraph(clean(db.read(job.tenant, job.session))));
   if (expected !== actual) throw new Fault(409, 'replay_semantics_diverged');
   return {
     matched: true,
+    mode: 'strict',
+    identical: true,
+    degraded: false,
     source: job.args.source,
     checkpoint,
     semantic_digest: actual,

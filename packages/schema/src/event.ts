@@ -31,6 +31,12 @@ export const TraceEventSchema = z.object({
   event_schema_version: z.number().int().positive().optional(),
   actor_id: z.string().optional(),
   run_id: z.string().optional(),
+  invocation_id: z.string().optional(),
+  parent_invocation_id: z.string().optional(),
+  path: z.string().optional(),
+  replay_key: z.string().optional(),
+  ordinal: z.number().int().positive().optional(),
+  path_source: z.enum(['explicit', 'legacy']).optional(),
 });
 
 export type TraceEvent = z.infer<typeof TraceEventSchema>;

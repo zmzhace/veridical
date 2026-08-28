@@ -199,6 +199,7 @@ agents:
       tenant_id: 't1',
       session_id: 'hub_s1',
       runStep: async () => ({ delegate: 'claims-agent', task: '查理赔' }),
+      childRunStep: async () => ({ text: '', tool: { name: 'query_claims', args: { task: '查理赔' } } }),
     };
     const result = await runSpec(deps, hub, '客户问理赔');
     const events = await store.readBySession('hub_s1');
@@ -207,8 +208,10 @@ agents:
     expect(types).toContain('agent.result');
     // expert events nested under the dispatch
     const dispatchEvt = events.find(e => e.type === 'agent.dispatch')!;
-    const expertEvt = events.find(e => e.type === 'spec/run/start' && e.span_id === 'claims-agent')!;
-    expect(expertEvt.parent_span_id).toBe(dispatchEvt.id);
+    const expertEvt = events.find(e => e.type === 'invocation.start' && e.path === 'root/delegate:claims-agent')!;
+    const root = events.find(e => e.type === 'invocation.start' && e.path === 'root')!;
+    expect(expertEvt.parent_invocation_id).toBe(root.invocation_id);
+    expect(dispatchEvt.invocation_id).toBe(expertEvt.invocation_id);
     expect(result.events.length).toBe(events.length);
     // expert acts on the task via its declared tool
     expect(types).toContain('tool.called');
@@ -242,7 +245,7 @@ agents:
     await expect(runSpec(deps, hub, 'hi')).rejects.toThrow(SpecRunError);
   });
 
-  it('throws SpecRunError when dispatching to an expert with no tools', async () => {
+  it('allows a model-only expert without forcing a first-tool call', async () => {
     const store = new InMemoryTraceStore();
     const registry = new InMemorySpecRegistry();
     await registry.register(parseSpecYaml(`
@@ -274,9 +277,11 @@ agents:
       session_id: 'hub_no_tool',
       runStep: async () => ({ delegate: 'no-tool-agent', task: 'x' }),
     };
-    await expect(runSpec(deps, hub, 'hi')).rejects.toThrow(SpecRunError);
+    await runSpec(deps, hub, 'hi');
     const events = await store.readBySession('hub_no_tool');
-    expect(events.filter(e => e.type === 'agent.dispatch' && e.verb === 'request').length).toBe(0);
+    expect(events.filter(e => e.type === 'agent.dispatch' && e.verb === 'request').length).toBe(2);
+    expect(events.some(e => e.type === 'llm.request' && e.path?.startsWith('root/delegate:no-tool-agent'))).toBe(true);
+    expect(events.some(e => e.type === 'tool.called')).toBe(false);
   });
 });
 

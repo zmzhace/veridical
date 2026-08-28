@@ -70,3 +70,40 @@ test('abortable handles already-aborted and non-cooperative work', async () => {
 test('configuration fails closed without credentials and database settings', () => {
   expect(() => ProductionConfigSchema.parse({})).toThrow();
 });
+test('explicit thinking mode is forwarded but is absent by default', async () => {
+  const fetch = vi.fn(
+    async () =>
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: 'OK' } }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
+      ),
+  );
+  vi.stubGlobal('fetch', fetch);
+  await provider.complete(req);
+  expect(JSON.parse((fetch.mock.calls[0] as any)[1].body)).not.toHaveProperty('enable_thinking');
+  await new SecureProvider('https://provider.invalid/v1', 'test-credential', 'pinned', {
+    enableThinking: false,
+  }).complete(req);
+  expect(JSON.parse((fetch.mock.calls[1] as any)[1].body).enable_thinking).toBe(false);
+});
+test.each([
+  [
+    {
+      choices: [{ message: { content: 'partial' }, finish_reason: 'length' }],
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+    },
+    'provider_output_truncated',
+  ],
+  [
+    {
+      choices: [{ message: { content: '  ' } }],
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+    },
+    'invalid_provider_response',
+  ],
+])('rejects truncated and empty output %#', async (body, code) => {
+  vi.stubGlobal('fetch', async () => new Response(JSON.stringify(body)));
+  await expect(provider.complete(req)).rejects.toThrow(code);
+});

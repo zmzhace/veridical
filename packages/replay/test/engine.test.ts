@@ -3,7 +3,7 @@ import { InMemoryTraceStore } from '@veridical/store';
 import { InMemorySpecRegistry, parseSpecYaml, runSpec, type SpecRunnerDeps } from '@veridical/spec';
 import { MockProvider, fingerprint } from '@veridical/llm';
 import type { ToolDef } from '@veridical/tools';
-import { ReplayEngine, ReplayError, ReplayMissError, TraceDivergenceError } from '../src/index';
+import { ReplayEngine, ReplayError } from '../src/index';
 
 const SPEC = `
 name: replay-test
@@ -70,7 +70,7 @@ describe('ReplayEngine', () => {
     expect(again.events).toHaveLength(result.events.length);
   });
 
-  it('throws TraceDivergenceError when the recorded response changed', async () => {
+  it('rejects fixtures in strict mode before any replay execution', async () => {
     const store = new InMemoryTraceStore();
     await recordRun(store, 'hello');
     const registry = new InMemorySpecRegistry();
@@ -80,7 +80,7 @@ describe('ReplayEngine', () => {
     const fp = fingerprint({ provider: 'mock', model: 'm', messages: [{ role: 'system', content: 'You are a test agent.' }, { role: 'user', content: 'hello' }] });
     await expect(
       engine.replay('s1', { spec: { name: 'replay-test' }, llm: { mock: 'fixture' }, fixtures: { llm: [{ provider: 'mock', responses: [{ fingerprint: fp, text: 'DIFFERENT', usage }] }] } }, [echo]),
-    ).rejects.toThrow(TraceDivergenceError);
+    ).rejects.toMatchObject({ code: 'replay_mode_conflict' });
   });
 
   it('throws ReplayError when the spec is not registered', async () => {
@@ -90,18 +90,17 @@ describe('ReplayEngine', () => {
     await expect(engine.replay('s1', { spec: { name: 'missing' } }, [echo])).rejects.toThrow(ReplayError);
   });
 
-  it('returns not identical when assertion disabled and responses differ', async () => {
+  it('does not allow disabling strict identity checks', async () => {
     const store = new InMemoryTraceStore();
     await recordRun(store, 'hello');
     const registry = new InMemorySpecRegistry();
     await registry.register(parseSpecYaml(SPEC));
     const engine = new ReplayEngine(store, registry);
     const fp = fingerprint({ provider: 'mock', model: 'm', messages: [{ role: 'system', content: 'You are a test agent.' }, { role: 'user', content: 'hello' }] });
-    const result = await engine.replay('s1', {
+    await expect(engine.replay('s1', {
       spec: { name: 'replay-test' }, assert_trace_identical: false,
       llm: { mock: 'fixture' }, fixtures: { llm: [{ provider: 'mock', responses: [{ fingerprint: fp, text: 'DIFFERENT', usage }] }] },
-    }, [echo]);
-    expect(result.identical).toBe(false);
+    }, [echo])).rejects.toMatchObject({ code: 'replay_mode_conflict' });
   });
 
   it('rejects a live llm strategy with a clear ReplayError', async () => {
@@ -128,7 +127,7 @@ describe('ReplayEngine', () => {
     expect(result.outcome).toEqual({ x: 1 });
   });
 
-  it('throws ReplayMissError when a tool fixture has no responses on replay', async () => {
+  it('rejects unbound legacy tool fixtures instead of silently consuming a queue', async () => {
     const store = new InMemoryTraceStore();
     await recordRun(store, 'hello', toolRunStep());
     const registry = new InMemorySpecRegistry();
@@ -142,6 +141,6 @@ describe('ReplayEngine', () => {
         { spec: { name: 'replay-test' }, tools: { echo: 'fixture' }, fixtures: { tools: [{ name: 'echo', responses: [] }] } },
         [echo],
       ),
-    ).rejects.toThrow(ReplayMissError);
+    ).rejects.toMatchObject({ code: 'replay_mode_conflict' });
   });
 });

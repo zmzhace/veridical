@@ -3,9 +3,16 @@ import { randomUUID } from 'node:crypto';
 import type { TraceEvent } from '@veridical/schema';
 import type { LLMProvider, LLMRequest } from '@veridical/llm';
 import { LLMGateway } from '@veridical/llm';
-import { runSpec, runSpecTurn, type RunnerStepCtx, type SpecRunnerDeps } from '@veridical/spec';
+import {
+  AgentSpecSchema,
+  runSpec,
+  runSpecTurn,
+  type RunnerStepCtx,
+  type SpecRunnerDeps,
+} from '@veridical/spec';
 import { OpenAICompatibleProvider, MockScriptedProvider, resolveTools } from '../providers.js';
 import { parseDecision } from '../runStep.js';
+import { createLocalModel } from '../local-model.js';
 
 interface TurnBody {
   specName: string;
@@ -20,8 +27,14 @@ interface TurnBody {
 }
 
 /** 按 turn 去重历史消息：每 turn 一条 user（首个 user.message）+ 最后一条 assistant。截断最近 maxTurns 轮。 */
-export function buildHistory(events: TraceEvent[], sessionId: string, maxTurns = 10): { role: 'user' | 'assistant'; content: string }[] {
-  const sorted = [...events].filter(e => e.session_id === sessionId).sort((a, b) => a.seq - b.seq);
+export function buildHistory(
+  events: TraceEvent[],
+  sessionId: string,
+  maxTurns = 10,
+): { role: 'user' | 'assistant'; content: string }[] {
+  const sorted = [...events]
+    .filter((e) => e.session_id === sessionId)
+    .sort((a, b) => a.seq - b.seq);
   const turns: { user?: string; assistant?: string }[] = [];
   let cur: { user?: string; assistant?: string } | undefined;
   for (const e of sorted) {
@@ -52,32 +65,99 @@ export async function registerTurnRoutes(app: FastifyInstance) {
 
   app.post<{ Body: TurnBody }>('/api/run/turn', async (req, reply) => {
     const b = req.body;
-    if (!b?.specName) return reply.code(400).send({ error: { code: 'bad_request', message: 'specName required' } });
-    const spec = await registry.resolve(b.specName, b.version);
-    if (!spec) return reply.code(400).send({ error: { code: 'invalid_spec', message: `spec not found: ${b.specName}${b.version ? '@' + b.version : ''}` } });
+    if (!b?.specName)
+      return reply.code(400).send({ error: { code: 'bad_request', message: 'specName required' } });
+    let spec = await registry.resolve(b.specName, b.version);
+    if (!spec)
+      return reply.code(400).send({
+        error: {
+          code: 'invalid_spec',
+          message: `spec not found: ${b.specName}${b.version ? '@' + b.version : ''}`,
+        },
+      });
 
     const isNew = !b.conversationId;
     const session_id = isNew ? `conv_${randomUUID()}` : b.conversationId!;
+    let past: TraceEvent[] = [];
+    let mode = b.mode ?? 'mock';
     if (!isNew) {
-      const existing = await store.readBySession(session_id).catch(() => []);
-      if (existing.length === 0) return reply.code(404).send({ error: { code: 'not_found', message: `conversation not found: ${session_id}` } });
+      if (!session_id.startsWith('conv_'))
+        return reply.code(400).send({
+          error: {
+            code: 'not_a_conversation',
+            message: 'Single runs cannot be continued as conversations',
+          },
+        });
+      past = await store.readBySession(session_id).catch(() => []);
+      if (past.length === 0)
+        return reply
+          .code(404)
+          .send({ error: { code: 'not_found', message: `conversation not found: ${session_id}` } });
+      const snapshot = past.find((e) => e.type === 'run.provenance');
+      const pinned = (snapshot?.payload as any)?.spec;
+      if (pinned) {
+        spec = AgentSpecSchema.parse(pinned);
+        if (spec.name !== b.specName || (b.version && b.version !== spec.version))
+          return reply.code(409).send({
+            error: { code: 'conversation_spec_mismatch', message: '请使用此会话原始规格' },
+          });
+        mode = spec.llm.provider === 'local' ? 'live' : (b.mode ?? 'mock');
+        if (spec.llm.provider === 'local' && b.mode === 'mock')
+          return reply.code(409).send({
+            error: { code: 'conversation_mode_mismatch', message: '真实会话不能切换为模拟运行' },
+          });
+      }
     }
+
+    // Build context before selecting the provider so mock replies also explain
+    // which conversation turn they represent.
+    const history = isNew ? [] : buildHistory(past, session_id);
 
     // 校验必须在 hijack 之前完成——以上分支返回普通 JSON。
     // Providers（mock 缺省；live 需 apiKey+model）
     const providers = new Map<string, LLMProvider>();
-    if (b.mode === 'live') {
-      if (!b.apiKey || !b.model) return reply.code(400).send({ error: { code: 'bad_request', message: 'live mode requires apiKey and model' } });
-      providers.set(spec.llm.provider, new OpenAICompatibleProvider('https://api.openai.com/v1', b.apiKey, b.model));
+    if (mode === 'live') {
+      try {
+        if (b.apiKey && b.model) {
+          spec = { ...spec, llm: { ...spec.llm, model: b.model } };
+          providers.set(
+            spec.llm.provider,
+            new OpenAICompatibleProvider('https://api.openai.com/v1', b.apiKey, b.model),
+          );
+        } else {
+          const local = createLocalModel();
+          if (!isNew && spec.llm.provider === 'local' && spec.llm.model !== local.model)
+            return reply.code(409).send({
+              error: {
+                code: 'conversation_model_changed',
+                message: '服务端模型已变更，请创建新对话',
+              },
+            });
+          spec = {
+            ...spec,
+            llm: { ...spec.llm, provider: 'local', model: local.model, fallback: [] },
+          };
+          providers.set('local', local.provider);
+        }
+      } catch {
+        return reply.code(400).send({
+          error: {
+            code: 'model_not_configured',
+            message: '请检查服务端 .env.local 模型配置并重启研究服务',
+          },
+        });
+      }
     } else {
       const mock = new MockScriptedProvider();
-      (b.script && b.script.length ? b.script : [JSON.stringify({ text: 'done', done: true })]).forEach((s) => mock.enqueue(s));
+      const defaultMock = history.length
+        ? JSON.stringify({
+            text: `已收到第 ${history.length / 2 + 1} 轮消息。当前为模拟响应。`,
+            done: true,
+          })
+        : JSON.stringify({ text: '已收到你的消息。当前为模拟响应。', done: true });
+      (b.script && b.script.length ? b.script : [defaultMock]).forEach((s) => mock.enqueue(s));
       providers.set(spec.llm.provider, mock);
     }
-
-    // 历史注入：续轮时从 store 读、按 turn 去重，供 runStep 与 buildRequest
-    const past = isNew ? [] : await store.readBySession(session_id);
-    const history = isNew ? [] : buildHistory(past, session_id);
 
     // SSE hijack（token + event 双通道）
     reply.hijack();
@@ -117,13 +197,18 @@ export async function registerTurnRoutes(app: FastifyInstance) {
 
     // 流式 runStep：gateway.stream 经 onToken 回灌 {type:'token'}，事件经轮询回灌 {type:'event'}
     const gateway = new LLMGateway(providers);
-    const runStep = async ({ recorder, prompt }: RunnerStepCtx) => {
+    const runStep = async ({
+      recorder,
+      prompt,
+      spec: activeSpec,
+      history: stepHistory,
+    }: RunnerStepCtx) => {
       const req: LLMRequest = {
-        provider: spec.llm.provider,
-        model: spec.llm.model,
+        provider: activeSpec.llm.provider,
+        model: activeSpec.llm.model,
         messages: [
-          { role: 'system', content: spec.instruction.system },
-          ...history.map(h => ({ role: h.role, content: h.content })),
+          { role: 'system', content: activeSpec.instruction.system },
+          ...(stepHistory ?? history).map((h) => ({ role: h.role, content: h.content })),
           { role: 'user', content: prompt },
         ],
       };
@@ -131,7 +216,15 @@ export async function registerTurnRoutes(app: FastifyInstance) {
         if (!doneSending.value) send({ type: 'token', session_id, text: chunk });
       });
       const d = parseDecision(res.text);
-      return { text: d.text ?? res.text, tool: d.tool };
+      return {
+        text: d.text ?? res.text,
+        tool: d.tool,
+        // A natural-language response completes one conversation turn.
+        // Continue only when the model explicitly requests a tool/delegation.
+        done: d.done ?? (!d.tool && !d.delegate),
+        delegate: d.delegate,
+        task: d.task,
+      };
     };
 
     // 事件轮询：唯一的 seq-delta interval，推送已落 store 的事件（tool/checkpoint/turn…）
@@ -145,7 +238,10 @@ export async function registerTurnRoutes(app: FastifyInstance) {
           const evs = await store.readBySession(session_id);
           for (const ev of evs) {
             const seq = ev.seq ?? 0;
-            if (seq > lastSeq) { send({ type: 'event', event: ev }); lastSeq = seq; }
+            if (seq > lastSeq) {
+              send({ type: 'event', event: ev });
+              lastSeq = seq;
+            }
           }
         } catch {
           // 忽略 poll 错误
@@ -160,6 +256,8 @@ export async function registerTurnRoutes(app: FastifyInstance) {
         session_id,
         historyMessages: history,
         runStep,
+        childRunStep: runStep,
+        registry,
         // 未传 stepBoundary：turn 连续执行，每步不暂停（断连时靠 clearPoll/abort 收尾）
       };
       const prompt = b.prompt ?? 'hello';
@@ -171,7 +269,10 @@ export async function registerTurnRoutes(app: FastifyInstance) {
       const evs = await store.readBySession(session_id);
       for (const ev of evs) {
         const seq = ev.seq ?? 0;
-        if (seq > lastSeq) { send({ type: 'event', event: ev }); lastSeq = seq; }
+        if (seq > lastSeq) {
+          send({ type: 'event', event: ev });
+          lastSeq = seq;
+        }
       }
       send({ type: 'turn_end', session_id });
       send({ type: 'done', session_id, event_count: evs.length, outcome: result.outcome });

@@ -1,7 +1,8 @@
 export interface FallbackRow { provider: string; model: string }
 export interface StageRow { id: string; tool: string }
-export interface AgentRow { name: string; specRef: string; when: string }
+export interface AgentRow { name: string; specRef: string; when: string; system?: string; provider?: string; model?: string }
 export interface ToolRow { name: string; access: 'allow' | 'deny' | 'ask'; deterministic: boolean }
+export interface SkillRow { name: string; description: string; procedure: string; tags: string[]; version?: string; status?: 'draft' | 'approved' | 'deprecated'; source?: string; content_hash?: string }
 
 export interface SpecFormState {
   name: string;
@@ -13,10 +14,13 @@ export interface SpecFormState {
   llmModel: string;
   fallbacks: FallbackRow[];
   mode: 'single-loop' | 'supervisor' | 'stage-gate';
+  loop?: string;
+  loopStrategy?: string;
   maxSteps: number;
   stages: StageRow[];
   agents: AgentRow[];
   tools: ToolRow[];
+  skills: SkillRow[];
 }
 
 const q = JSON.stringify;
@@ -32,6 +36,11 @@ export function formToYaml(f: SpecFormState): string {
   out.push(`  system: ${q(f.system)}`);
   out.push(`flow:`);
   out.push(`  mode: ${f.mode}`);
+  if (has(f.loop ?? '')) {
+    out.push(`  loop:`);
+    out.push(`    engine: ${q(f.loop)}`);
+    out.push(`    strategy: ${q(f.loopStrategy ?? 'direct')}`);
+  }
   out.push(`  max_steps: ${f.maxSteps || 1}`);
   if (f.mode === 'stage-gate') {
     const rows = f.stages.filter(r => has(r.id));
@@ -65,6 +74,20 @@ export function formToYaml(f: SpecFormState): string {
     }
   } else {
     out.push(`tools: []`);
+  }
+  const skills = (f.skills ?? []).filter(r => has(r.name));
+  if (skills.length) {
+    out.push(`skills:`);
+    for (const s of skills) {
+      out.push(`  - name: ${q(s.name)}`);
+      out.push(`    version: ${q(s.version ?? '1.0.0')}`);
+      out.push(`    status: ${s.status ?? 'draft'}`);
+      out.push(`    source: ${q(s.source ?? 'spec')}`);
+      if (s.content_hash) out.push(`    content_hash: ${q(s.content_hash)}`);
+      if (has(s.description)) out.push(`    description: ${q(s.description)}`);
+      if (has(s.procedure)) out.push(`    procedure: ${q(s.procedure)}`);
+      if (s.tags.length) out.push(`    tags: [${s.tags.map((tag) => q(tag)).join(', ')}]`);
+    }
   }
   const agents = f.agents.filter(r => has(r.name));
   if (agents.length) {

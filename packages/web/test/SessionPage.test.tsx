@@ -73,5 +73,5 @@ test('renders empty state for id=new', async () => {
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  expect(await screen.findByText(/demo/)).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'demo' })).toBeInTheDocument();
 });

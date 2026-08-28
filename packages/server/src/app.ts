@@ -10,9 +10,9 @@ import { registerRunRoutes } from './routes/run.js';
 import { registerSpecRoutes } from './routes/specs.js';
 import { registerEvalRoutes } from './routes/eval.js';
 import { registerCompareRoutes } from './routes/compare.js';
-import { registerRlRoutes } from './routes/rl.js';
 import { registerStepRoutes } from './routes/step.js';
 import { registerTurnRoutes } from './routes/turn.js';
+import { registerSkillRoutes } from './routes/skills.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -23,6 +23,16 @@ declare module 'fastify' {
 
 export async function buildApp(tracesDir?: string, specsDir?: string) {
   const app = Fastify({ logger: false });
+  // Local credentials must not be spendable by an arbitrary website via CORS.
+  app.addHook('onRequest', async (request, reply) => {
+    const origin = request.headers.origin;
+    if (!origin) return;
+    try {
+      const url = new URL(origin);
+      if (['http:', 'https:'].includes(url.protocol) && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) return;
+    } catch { /* reject malformed and opaque origins */ }
+    return reply.code(403).send({ error: { code: 'origin_not_allowed', message: 'Local research console only' } });
+  });
   await app.register(cors);
   app.decorate('store', new JsonlTraceStore(tracesDir ?? CONFIG.tracesDir));
   app.decorate('specRegistry', new JsonlSpecRegistry(specsDir ?? CONFIG.specsDir));
@@ -31,9 +41,9 @@ export async function buildApp(tracesDir?: string, specsDir?: string) {
   await app.register(registerSpecRoutes);
   await app.register(registerEvalRoutes);
   await app.register(registerCompareRoutes);
-  await app.register(registerRlRoutes);
   await app.register(registerStepRoutes);
   await app.register(registerTurnRoutes);
+  await app.register(registerSkillRoutes);
   app.get('/api/health', async () => ({ ok: true }));
   return app;
 }

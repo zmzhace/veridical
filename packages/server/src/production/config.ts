@@ -42,6 +42,7 @@ export const ProductionConfigSchema = z
                 );
               }, 'HTTPS provider URL required'),
             apiKeyEnv: Key,
+            enableThinking: z.boolean().optional(),
           })
           .strict(),
       )

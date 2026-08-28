@@ -35,7 +35,7 @@ export async function runOrchestrationDemo(dir: string) {
   const deps: SpecRunnerDeps = {
     store,
     registry,
-    providers: new Map([['mock', { complete: async () => ({ text: '', usage: { input: 1, output: 1, cached: 0, total: 2 } }) }]]),
+    providers: new Map([['mock', { complete: async () => ({ text: JSON.stringify({ text: '对比保单', tool: { name: 'compare_policy', args: { task: '对比张女士新旧保单' } } }), usage: { input: 1, output: 1, cached: 0, total: 2 } }) }]]),
     tools: [{ id: 'compare_policy', name: 'compare_policy', description: '', deterministic: true, execute: async (a) => a }],
     tenant_id: 't1',
     session_id: 'orch_s1',

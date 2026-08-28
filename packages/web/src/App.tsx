@@ -5,20 +5,36 @@ import { SessionPage } from './pages/SessionPage';
 import { RunPage } from './pages/RunPage';
 import { ComparePage } from './pages/ComparePage';
 import { AuditPage } from './pages/AuditPage';
-import { SpecsPage } from './pages/SpecsPage';
-import { RlPage } from './pages/RlPage';
+import { ReplayPage } from './pages/ReplayPage';
 
 const router = createBrowserRouter([
-  { path: '/', element: <AppShell />, children: [
-    { index: true, element: <SessionsPage /> },
-    { path: 'sessions/:id', element: <SessionPage /> },
-    { path: 'run', element: <RunPage /> },
-    { path: 'compare', element: <ComparePage /> },
-    { path: 'audit', element: <AuditPage /> },
-    { path: 'specs', element: <SpecsPage /> },
-    { path: 'rl', element: <RlPage /> },
-    { path: '*', element: <Navigate to="/" replace /> },
-  ] },
+  {
+    path: '/',
+    element: <AppShell />,
+    hydrateFallbackElement: (
+      <p role="status" className="p-8">
+        正在加载工作区…
+      </p>
+    ),
+    children: [
+      { index: true, element: <SessionsPage /> },
+      { path: 'sessions/:id', element: <SessionPage /> },
+      { path: 'run', element: <RunPage /> },
+      { path: 'compare', element: <ComparePage /> },
+      { path: 'audit', element: <AuditPage /> },
+      { path: 'replay', element: <ReplayPage /> },
+      {
+        path: 'specs',
+        lazy: async () => {
+          const { SpecsPage } = await import('./pages/SpecsPage');
+          return { Component: SpecsPage };
+        },
+      },
+      { path: '*', element: <Navigate to="/" replace /> },
+    ],
+  },
 ]);
 
-export function App() { return <RouterProvider router={router} />; }
+export function App() {
+  return <RouterProvider router={router} />;
+}

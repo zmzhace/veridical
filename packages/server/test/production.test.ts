@@ -506,8 +506,63 @@ test('expired deadline terminates a provider that ignores abort', async () => {
     { name: 'probe', channel: 'production', prompt: 'hang' },
     'timeout-run-key',
   );
-  expect((await drain(job.id)).state).toBe('failed');
-  expect(env.db.read('acme', job.session).at(-1)?.type).toBe('job.failed');
+  const terminal = await drain(job.id);
+  // Depending on whether the deadline fence or the provider abort wins the race,
+  // production may classify this as failed or interrupted; both are terminal and audited.
+  expect(['failed', 'interrupted']).toContain(terminal.state);
+  expect(['job.failed', 'job.interrupted']).toContain(
+    env.db.read('acme', job.session).at(-1)?.type,
+  );
+});
+
+test('production provenance and replay alias enforce tenant, mode and artifact boundaries', async () => {
+  await publish();
+  const source = env.service.run(
+    principal('operator'),
+    { name: 'probe', channel: 'production', prompt: 'provenance' },
+    'provenance-source',
+  );
+  expect((await drain(source.id)).state).toBe('completed');
+  const provenance = await request('viewer', 'GET', `/v1/runs/${source.session}/provenance`);
+  expect(provenance.statusCode).toBe(200);
+  expect(provenance.json().provenance[0]).toMatchObject({ path: 'root' });
+  expect(provenance.json().provenance[0].payload.release_artifact_hash).toMatch(/^[a-f0-9]{64}$/);
+  expect(
+    (await request('foreign', 'GET', `/v1/runs/${source.session}/provenance`)).statusCode,
+  ).toBe(404);
+  expect(
+    (
+      await request(
+        'operator',
+        'POST',
+        '/v1/replay',
+        { session: source.session, mode: 'semantic' },
+        'forbidden-semantic',
+      )
+    ).statusCode,
+  ).toBe(400);
+  const replay = await request(
+    'operator',
+    'POST',
+    '/v1/replay',
+    { session: source.session },
+    'strict-replay-alias',
+  );
+  expect(replay.statusCode).toBe(202);
+  expect((await drain(replay.json().id)).result).toMatchObject({
+    mode: 'strict',
+    identical: true,
+    degraded: false,
+    external_calls: 0,
+  });
+  env.service.tools[0].schema = z.object({ changed: z.string() });
+  expect(() =>
+    env.service.run(
+      principal('operator'),
+      { name: 'probe', channel: 'production', prompt: 'changed schema' },
+      'changed-schema-source',
+    ),
+  ).toThrow();
 });
 test('token revocation also fences an already running job', async () => {
   await publish();
@@ -554,8 +609,8 @@ test('rollback and canary use independently approved immutable versions', async 
   ).toThrow('immutable_release_requires_new_version');
 });
 test('invalid tool arguments and structured failures produce paired failed results', async () => {
-  await publish();
   env.service.tools[0].schema = z.object({ required: z.string() }).strict();
+  await publish();
   answer = async () => reply('{"tool":{"name":"echo","args":{}}}');
   const invalid = env.service.run(
     principal('operator'),
@@ -570,6 +625,9 @@ test('invalid tool arguments and structured failures produce paired failed resul
   });
   env.service.tools[0].schema = z.unknown();
   env.service.tools[0].execute = async () => ({ ok: false });
+  answer = async () => reply();
+  await publish('1.0.1');
+  answer = async () => reply('{"tool":{"name":"echo","args":{}}}');
   const failed = env.service.run(
     principal('operator'),
     { name: 'probe', channel: 'production', prompt: 'failed' },

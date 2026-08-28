@@ -14,59 +14,130 @@ export type Stage = z.infer<typeof StageSchema>;
 
 const FallbackSchema = z.object({ provider: z.string().min(1), model: z.string().min(1) });
 
-const AgentRefSchema = z.object({
-  name: z.string().min(1),
-  spec_ref: z.string().min(1),
-  when: z.string().optional(),
+/** A reusable, auditable capability pack. Skills add instructions only; tools remain governed by spec.tools. */
+export const SkillSchema = z.object({
+  name: z.string().min(1).max(80),
+  version: z.string().min(1).max(40).default('1.0.0'),
+  status: z.enum(['draft', 'approved', 'deprecated']).default('approved'),
+  source: z.string().min(1).max(120).default('spec'),
+  content_hash: z.string().regex(/^[a-f0-9]{16,128}$/).optional(),
+  description: z.string().max(240).optional(),
+  procedure: z.string().max(8_000).optional(),
+  tags: z.array(z.string().min(1).max(32)).max(12).default([]),
 });
+export type Skill = z.infer<typeof SkillSchema>;
+
+const InlineAgentSchema = z.object({
+  instruction: z.object({ system: z.string().min(1) }),
+  llm: z.object({ provider: z.string().min(1), model: z.string().min(1) }),
+  tools: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        access: AccessSchema,
+        deterministic: z.boolean().optional(),
+      }),
+    )
+    .default([{ name: 'finish', access: 'allow', deterministic: true }]),
+});
+
+const AgentRefSchema = z
+  .object({
+    name: z.string().min(1),
+    spec_ref: z.string().min(1).optional(),
+    inline: InlineAgentSchema.optional(),
+    when: z.string().optional(),
+  })
+  .superRefine((agent, ctx) => {
+    if (!agent.spec_ref && !agent.inline)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'agent requires spec_ref or inline configuration',
+      });
+    if (agent.spec_ref && agent.inline)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'agent cannot have both spec_ref and inline configuration',
+      });
+  });
 export type AgentRef = z.infer<typeof AgentRefSchema>;
 
-export const AgentSpecSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().optional(),
-  version: z.string().min(1),
-  schema_version: z.number().int().positive(),
-  instruction: z.object({ system: z.string() }),
-  flow: z.object({
-    mode: FlowModeSchema,
-    max_steps: z.number().int().positive(),
-    stages: z.array(StageSchema).optional(),
-  }),
-  llm: z.object({
-    provider: z.string().min(1),
-    model: z.string().min(1),
-    fallback: z.array(FallbackSchema).default([]),
-  }),
-  tools: z.array(z.object({
+export const AgentSpecSchema = z
+  .object({
     name: z.string().min(1),
-    access: AccessSchema,
-    deterministic: z.boolean().optional(),
-  })),
-  agents: z.array(AgentRefSchema).default([]),
-}).superRefine((spec, ctx) => {
-  if (!valid(spec.version)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['version'], message: `invalid semver: ${spec.version}` });
-  }
-  const names = spec.tools.map(t => t.name);
-  if (new Set(names).size !== names.length) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['tools'], message: 'duplicate tool name' });
-  }
-  if (spec.flow.mode === 'supervisor' && spec.agents.length === 0) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['agents'], message: 'supervisor mode requires at least one agent' });
-  }
-  if (spec.flow.mode === 'stage-gate') {
-    if (!spec.flow.stages || spec.flow.stages.length === 0) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['flow', 'stages'], message: 'stage-gate mode requires at least one stage' });
-    } else {
-      const toolNames = new Set(spec.tools.map(t => t.name));
-      for (const s of spec.flow.stages) {
-        if (s.gate && !toolNames.has(s.gate.tool_called)) {
-          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['flow', 'stages'], message: `stage ${s.id} gate tool not in spec.tools: ${s.gate.tool_called}` });
+    description: z.string().optional(),
+    version: z.string().min(1),
+    schema_version: z.number().int().positive(),
+    instruction: z.object({ system: z.string() }),
+    flow: z.object({
+      // `mode` is retained for backwards compatibility; new specs should use loop.
+      mode: FlowModeSchema.default('single-loop'),
+      loop: z.object({
+        engine: z.string().min(1).max(80),
+        strategy: z.string().min(1).max(80).default('direct'),
+      }).optional(),
+      max_steps: z.number().int().positive(),
+      stages: z.array(StageSchema).optional(),
+    }),
+    llm: z.object({
+      provider: z.string().min(1),
+      model: z.string().min(1),
+      fallback: z.array(FallbackSchema).default([]),
+    }),
+    tools: z.array(
+      z.object({
+        name: z.string().min(1),
+        access: AccessSchema,
+        deterministic: z.boolean().optional(),
+      }),
+    ),
+    skills: z.array(SkillSchema).max(24).default([]),
+    agents: z.array(AgentRefSchema).default([]),
+  })
+  .superRefine((spec, ctx) => {
+    if (!valid(spec.version)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['version'],
+        message: `invalid semver: ${spec.version}`,
+      });
+    }
+    const names = spec.tools.map((t) => t.name);
+    if (new Set(names).size !== names.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['tools'],
+        message: 'duplicate tool name',
+      });
+    }
+    if (spec.flow.mode === 'supervisor' && spec.agents.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['agents'],
+        message: 'supervisor mode requires at least one agent',
+      });
+    }
+    if (spec.flow.mode === 'stage-gate') {
+      if (!spec.flow.stages || spec.flow.stages.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['flow', 'stages'],
+          message: 'stage-gate mode requires at least one stage',
+        });
+      } else {
+        const toolNames = new Set(spec.tools.map((t) => t.name));
+        for (const s of spec.flow.stages) {
+          if (s.gate && !toolNames.has(s.gate.tool_called)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['flow', 'stages'],
+              message: `stage ${s.id} gate tool not in spec.tools: ${s.gate.tool_called}`,
+            });
+          }
         }
       }
     }
-  }
-});
+  });
 
 export type AgentSpec = z.infer<typeof AgentSpecSchema>;
 

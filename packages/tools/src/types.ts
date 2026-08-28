@@ -3,6 +3,11 @@ export interface ToolDef {
   name: string;
   description: string;
   deterministic: boolean;
+  version?: string;
+  input_schema?: unknown;
+  output_schema?: unknown;
+  side_effect?: 'none' | 'read' | 'write';
+  timeout_ms?: number;
   execute(args: unknown): Promise<unknown>;
   guard?(args: unknown): Promise<boolean>;
   verify?(result: unknown): boolean | Promise<boolean>;

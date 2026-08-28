@@ -32,7 +32,7 @@ describe('parseSpecYaml', () => {
     expect(spec.flow.mode).toBe('single-loop');
     expect(spec.flow.max_steps).toBe(8);
     expect(spec.llm.provider).toBe('mock');
-    expect(spec.tools.map(t => t.name)).toEqual(['get_map', 'send_notice']);
+    expect(spec.tools.map((t) => t.name)).toEqual(['get_map', 'send_notice']);
     expect(spec.tools[1].access).toBe('ask');
     expect(spec.tools[1].deterministic).toBe(false);
   });
@@ -99,7 +99,8 @@ tools: []
   });
 
   it('rejects supervisor mode without agents', () => {
-    expect(() => parseSpecYaml(`
+    expect(() =>
+      parseSpecYaml(`
 name: hub
 version: 1.0.0
 schema_version: 1
@@ -107,7 +108,27 @@ instruction: { system: you are a hub }
 flow: { mode: supervisor, max_steps: 2 }
 llm: { provider: mock, model: m, fallback: [] }
 tools: []
-`)).toThrow();
+`),
+    ).toThrow();
+  });
+
+  it('accepts an inline child agent without a separate spec file', () => {
+    const spec = parseSpecYaml(`
+name: inline-hub
+version: 1.0.0
+schema_version: 1
+instruction: { system: you are a hub }
+flow: { mode: supervisor, max_steps: 2 }
+llm: { provider: mock, model: m, fallback: [] }
+tools: []
+agents:
+  - name: order-helper
+    inline:
+      instruction: { system: check the order and explain the result }
+      llm: { provider: mock, model: m }
+`);
+    expect(spec.agents[0].spec_ref).toBeUndefined();
+    expect(spec.agents[0].inline?.tools[0].name).toBe('finish');
   });
 });
 
@@ -141,7 +162,8 @@ tools:
   });
 
   it('rejects stage-gate without stages', () => {
-    expect(() => parseSpecYaml(`
+    expect(() =>
+      parseSpecYaml(`
 name: bad
 version: 1.0.0
 schema_version: 1
@@ -149,11 +171,13 @@ instruction: { system: hi }
 flow: { mode: stage-gate, max_steps: 3 }
 llm: { provider: mock, model: m, fallback: [] }
 tools: []
-`)).toThrow();
+`),
+    ).toThrow();
   });
 
   it('rejects stage-gate gate tool not in tools', () => {
-    expect(() => parseSpecYaml(`
+    expect(() =>
+      parseSpecYaml(`
 name: bad2
 version: 1.0.0
 schema_version: 1
@@ -166,7 +190,8 @@ flow:
       gate: { tool_called: ghost_tool }
 llm: { provider: mock, model: m, fallback: [] }
 tools: []
-`)).toThrow();
+`),
+    ).toThrow();
   });
 
   it('single-loop without stages still parses (compat)', () => {

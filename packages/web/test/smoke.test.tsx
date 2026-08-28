@@ -8,5 +8,6 @@ test('renders shell with nav and sessions heading', async () => {
   const qc = new QueryClient();
   render(<QueryClientProvider client={qc}><App /></QueryClientProvider>);
   expect(await screen.findByText('Veridical')).toBeInTheDocument();
-  expect(await screen.findByText('会话')).toBeInTheDocument();
+  expect(await screen.findByRole('link', { name: '会话', exact: true })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /RL 训练/ })).not.toBeInTheDocument();
 });

@@ -6,6 +6,8 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
+    "test:regression": "pnpm -r test && pnpm build && node packages/server/scripts/smoke-production.mjs",
+    "test:llm:live": "pnpm -F @veridical/server test:llm:live",
     "dev": "pnpm -r --parallel -F @veridical/server -F @veridical/web dev",
     "dev:server": "pnpm -F @veridical/server dev",
     "dev:web": "pnpm -F @veridical/web dev",

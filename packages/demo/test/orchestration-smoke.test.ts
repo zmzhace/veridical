@@ -13,8 +13,12 @@ describe('orchestration demo', () => {
     expect(types).toContain('agent.dispatch');
     expect(types).toContain('agent.result');
     const dispatchEvt = events.find(e => e.type === 'agent.dispatch')!;
-    const expertStart = events.find(e => e.type === 'spec/run/start' && e.span_id === 'compare-agent')!;
-    expect(expertStart.parent_span_id).toBe(dispatchEvt.id);
+    const expertStart = events.find(e => e.type === 'invocation.start' && e.path === 'root/delegate:compare-agent')!;
+    const root = events.find(e => e.type === 'invocation.start' && e.path === 'root')!;
+    expect(expertStart.parent_invocation_id).toBe(root.invocation_id);
+    expect(dispatchEvt.invocation_id).toBe(expertStart.invocation_id);
+    expect(events.some(e => e.type === 'llm.request' && e.path?.startsWith('root/delegate:compare-agent'))).toBe(true);
+    expect(events.some(e => e.type === 'tool.called' && e.path === 'root/delegate:compare-agent')).toBe(true);
     expect(result.events.length).toBe(events.length);
     expect(new Set(events.map(e => e.id)).size).toBe(events.length);
   });

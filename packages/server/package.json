@@ -5,9 +5,13 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit && node scripts/build.mjs",
-    "dev": "VERIDICAL_MODE=development tsx watch src/index.ts",
+    "dev": "VERIDICAL_MODE=development node --env-file-if-exists=../../.env.local --watch --import tsx src/index.ts",
+    "dev:production": "VERIDICAL_MODE=production tsx watch src/index.ts",
     "start": "node dist/server.cjs",
+    "start:research": "VERIDICAL_MODE=development node --env-file-if-exists=../../.env.local dist/server.cjs",
+    "start:production": "VERIDICAL_MODE=production node dist/server.cjs",
     "test": "vitest run",
+    "test:llm:live": "node --env-file=../../.env.local --import tsx scripts/live-llm.mjs",
     "test:production": "pnpm build && node scripts/smoke-production.mjs"
   },
   "dependencies": {
@@ -19,7 +23,6 @@
     "@veridical/eval": "workspace:*",
     "@veridical/memory": "workspace:*",
     "@veridical/runtime": "workspace:*",
-    "@veridical/rl": "workspace:*",
     "@veridical/tools": "workspace:*",
     "fastify": "5.12.1",
     "@fastify/cors": "11.3.0",

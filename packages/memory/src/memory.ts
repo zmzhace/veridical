@@ -51,7 +51,7 @@ export class Memory {
     return snap.entries.filter(e => e.scope === 'skill');
   }
 
-  async recall(query: string, opts?: { tags?: string[]; limit?: number }): Promise<MemoryEntry[]> {
+  async recall(query: string, opts?: { tags?: string[]; limit?: number; recorder?: Recorder }): Promise<MemoryEntry[]> {
     const limit = opts?.limit ?? 5;
     const keywords = tokenize(query);
     const byKey = new Map<string, MemoryEntry>();
@@ -79,7 +79,7 @@ export class Memory {
     matches.sort((a, b) => (lastSeq.get(b.key) ?? 0) - (lastSeq.get(a.key) ?? 0));
     matches = matches.slice(0, limit);
 
-    await this.recorder.record({
+    await (opts?.recorder ?? this.recorder).record({
       span_id: 'memory', parent_span_id: null, type: 'memory.recalled', verb: 'response', attempt: 1, duration_ms: 0,
       payload: { action: 'recall', query, scope: 'semantic', hits: matches.map(m => ({ key: m.key })) },
     });

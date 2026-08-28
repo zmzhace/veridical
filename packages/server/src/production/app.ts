@@ -49,7 +49,10 @@ export async function buildProductionApp(options: {
       config.providers.map((p) => {
         const key = process.env[p.apiKeyEnv];
         if (!key) throw new Error(`provider credential required in ${p.apiKeyEnv}`);
-        return [p.name, new SecureProvider(p.baseUrl, key, p.model)];
+        return [
+          p.name,
+          new SecureProvider(p.baseUrl, key, p.model, { enableThinking: p.enableThinking }),
+        ];
       }),
     );
   for (const provider of config.providers)
@@ -246,6 +249,15 @@ export async function buildProductionApp(options: {
       .code(202)
       .send(jobView(service.replay(req.principal, body.session, idem(req.headers))));
   });
+  app.post('/v1/replay', async (req, reply) => {
+    const body = z
+      .object({ session: Key, mode: z.literal('strict').default('strict') })
+      .strict()
+      .parse(req.body);
+    return reply
+      .code(202)
+      .send(jobView(service.replay(req.principal, body.session, idem(req.headers))));
+  });
   app.get('/v1/jobs/:id', async (req) => {
     requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer');
     const { id } = z.object({ id: Key }).parse(req.params);
@@ -294,6 +306,20 @@ export async function buildProductionApp(options: {
     const { id } = z.object({ id: Key }).parse(req.params);
     visibleSession(req.principal, id);
     return db.verify(req.principal.tenant, id);
+  });
+  app.get('/v1/runs/:id/provenance', async (req) => {
+    const { id } = z.object({ id: Key }).parse(req.params);
+    visibleSession(req.principal, id);
+    const events = db.read(req.principal.tenant, id).filter((e) => e.type === 'run.provenance');
+    db.audit(req.principal.tenant, req.principal.actor, 'provenance.read', {
+      session: id,
+      request_id: req.id,
+    });
+    return {
+      session: id,
+      checkpoint: db.verify(req.principal.tenant, id),
+      provenance: events.map((e) => ({ path: e.path, seq: e.seq, payload: e.payload })),
+    };
   });
   app.post('/v1/sessions/:id/integrity', async (req) => {
     const { id } = z.object({ id: Key }).parse(req.params);

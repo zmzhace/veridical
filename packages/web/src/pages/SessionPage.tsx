@@ -10,6 +10,7 @@ import { EventDetail } from '../components/EventDetail';
 import { ReplayControls } from '../components/ReplayControls';
 import { eventMeta, toolHuman, sessionHuman, stageHuman } from '../lib/events';
 import type { TraceEvent } from '@veridical/schema';
+import '../session-workspace.css';
 
 export interface ChatItem {
   kind: 'bubble' | 'stage';
@@ -26,24 +27,45 @@ const textOf = (e: TraceEvent) => {
 };
 
 // 工具胶囊行：assistant/user 气泡共用（tool-first 轮次的胶囊挂在 user 气泡上）
-const ToolPills = ({ tools, onSelect }: { tools: TraceEvent[]; onSelect: (e: TraceEvent) => void }) => (
+const ToolPills = ({
+  tools,
+  onSelect,
+}: {
+  tools: TraceEvent[];
+  onSelect: (e: TraceEvent) => void;
+}) => (
   <div className="flex flex-wrap gap-1.5 pt-1">
     {tools.map((t) => (
-      <button key={t.id} onClick={() => onSelect(t)}
-        className="text-[11px] px-2 py-0.5 rounded-full border bg-white text-[#44403C] border-[#E7E5E4] hover:border-[#4338CA] hover:text-[#4338CA] transition-colors">
-        ⚙ {toolHuman(String((t.payload as any)?.name ?? ''))}{t.type === 'tool.result' ? (t.verb === 'error' ? ' ✕' : ' ✓') : ''}
+      <button
+        key={t.id}
+        onClick={() => onSelect(t)}
+        className="text-[11px] px-2 py-0.5 rounded-full border bg-white text-[#44403C] border-[#E7E5E4] hover:border-[#4338CA] hover:text-[#4338CA] transition-colors"
+      >
+        ⚙ {toolHuman(String((t.payload as any)?.name ?? ''))}
+        {t.type === 'tool.result' ? (t.verb === 'error' ? ' ✕' : ' ✓') : ''}
       </button>
     ))}
   </div>
 );
 
 // 检查点"回看"锚点行：靠左（assistant 侧）或靠右（user 侧）
-const CheckpointRow = ({ checkpoints, align, onSelect }: { checkpoints: TraceEvent[]; align: 'left' | 'right'; onSelect: (e: TraceEvent) => void }) => (
+const CheckpointRow = ({
+  checkpoints,
+  align,
+  onSelect,
+}: {
+  checkpoints: TraceEvent[];
+  align: 'left' | 'right';
+  onSelect: (e: TraceEvent) => void;
+}) => (
   <div className={`flex flex-wrap gap-2 ${align === 'left' ? 'pl-11' : 'pr-11 justify-end'}`}>
     {checkpoints.map((cp) => (
-      <button key={cp.id} onClick={() => onSelect(cp)}
-        className="text-[11px] px-2 py-0.5 rounded-full border border-[#C7D2FE] bg-[#EEF2FF] text-[#3730A3] hover:bg-[#E0E7FF] transition-colors">
-        ↺ 回看
+      <button
+        key={cp.id}
+        onClick={() => onSelect(cp)}
+        className="text-[11px] px-2 py-0.5 rounded-full border border-[#C7D2FE] bg-[#EEF2FF] text-[#3730A3] hover:bg-[#E0E7FF] transition-colors"
+      >
+        查看检查点
       </button>
     ))}
   </div>
@@ -52,9 +74,14 @@ const CheckpointRow = ({ checkpoints, align, onSelect }: { checkpoints: TraceEve
 export function buildChat(events: TraceEvent[], checkpoints: TraceEvent[]): ChatItem[] {
   const items: ChatItem[] = [];
   const seen = new Set<string>();
-  const pushed = new Set<string>();           // 已在 events 流里挂到某气泡的 cp id
+  const pushed = new Set<string>(); // 已在 events 流里挂到某气泡的 cp id
   const extra: TraceEvent[] = [];
-  for (const cp of checkpoints) { if (!seen.has(cp.id)) { seen.add(cp.id); extra.push(cp); } }
+  for (const cp of checkpoints) {
+    if (!seen.has(cp.id)) {
+      seen.add(cp.id);
+      extra.push(cp);
+    }
+  }
 
   let turn = -1;
   let bufTools: TraceEvent[] = [];
@@ -65,38 +92,99 @@ export function buildChat(events: TraceEvent[], checkpoints: TraceEvent[]): Chat
     // 轮末统一挂载：该轮最后一个 assistant 气泡；无 assistant 则挂该轮 user 气泡（仍无则不挂）——不跨轮
     const target = lastAssistantInTurn ?? userBubbleInTurn;
     if (target) {
-      for (const t of bufTools) target.tools.push(t);
-      for (const c of bufCps) { target.checkpoints.push(c); pushed.add(c.id); }
+      // tool.called + tool.result describe one logical tool call. Keep the
+      // result as the display row, while retaining both events for timeline.
+      const toolsByName = new Map<string, TraceEvent>();
+      for (const t of bufTools) {
+        const name = String((t.payload as any)?.name ?? (t.payload as any)?.tool ?? t.id);
+        const previous = toolsByName.get(name);
+        if (!previous || t.type === 'tool.result') toolsByName.set(name, t);
+      }
+      for (const t of toolsByName.values()) target.tools.push(t);
+      const checkpointsByKey = new Map<string, TraceEvent>();
+      for (const c of bufCps) checkpointsByKey.set(`${c.type}:${c.seq}`, c);
+      for (const c of checkpointsByKey.values()) {
+        target.checkpoints.push(c);
+        pushed.add(c.id);
+        pushed.add(`${c.type}:${c.seq}`);
+      }
     }
-    bufTools = []; bufCps = []; lastAssistantInTurn = null; userBubbleInTurn = null;
+    bufTools = [];
+    bufCps = [];
+    lastAssistantInTurn = null;
+    userBubbleInTurn = null;
   };
-  const openTurn = () => { turn += 1; closeTurn(); };
+  const openTurn = () => {
+    turn += 1;
+    closeTurn();
+  };
   openTurn(); // 默认 turn 0，兼容无 turn/start 的旧数据
 
   for (const e of events) {
-    if (e.type === 'turn/start') { openTurn(); items.push({ kind: 'stage', event: e, tools: [], checkpoints: [], turn }); continue; }
-    if (e.type === 'turn/end') { closeTurn(); items.push({ kind: 'stage', event: e, tools: [], checkpoints: [], turn }); continue; }
+    if (e.type === 'turn/start') {
+      openTurn();
+      items.push({ kind: 'stage', event: e, tools: [], checkpoints: [], turn });
+      continue;
+    }
+    if (e.type === 'turn/end') {
+      closeTurn();
+      items.push({ kind: 'stage', event: e, tools: [], checkpoints: [], turn });
+      continue;
+    }
     if (e.type === 'user.message') {
       if (userBubbleInTurn) continue; // 同轮重复 user.message 只保留一条
-      const b: ChatItem = { kind: 'bubble', role: 'user', event: e, tools: [], checkpoints: [], turn };
-      userBubbleInTurn = b; items.push(b); continue;
+      const b: ChatItem = {
+        kind: 'bubble',
+        role: 'user',
+        event: e,
+        tools: [],
+        checkpoints: [],
+        turn,
+      };
+      userBubbleInTurn = b;
+      items.push(b);
+      continue;
     }
     if (e.type === 'assistant.message') {
-      const b: ChatItem = { kind: 'bubble', role: 'assistant', event: e, tools: [], checkpoints: [], turn };
-      lastAssistantInTurn = b; items.push(b); continue;
+      const b: ChatItem = {
+        kind: 'bubble',
+        role: 'assistant',
+        event: e,
+        tools: [],
+        checkpoints: [],
+        turn,
+      };
+      lastAssistantInTurn = b;
+      items.push(b);
+      continue;
     }
-    if (e.type === 'tool.called' || e.type === 'tool.result') { bufTools.push(e); continue; }
-    if (e.type === 'state.checkpoint') { bufCps.push(e); continue; }
-    if (e.type === 'stage/start' || e.type === 'stage/end') { items.push({ kind: 'stage', event: e, tools: [], checkpoints: [], turn }); continue; }
+    if (e.type === 'tool.called' || e.type === 'tool.result') {
+      bufTools.push(e);
+      continue;
+    }
+    if (e.type === 'state.checkpoint') {
+      bufCps.push(e);
+      continue;
+    }
+    if (e.type === 'stage/start' || e.type === 'stage/end') {
+      items.push({ kind: 'stage', event: e, tools: [], checkpoints: [], turn });
+      continue;
+    }
   }
   closeTurn();
 
   // 列表独有的 cp：未被 events 流挂载的，按"最近 assistant（seq<=cp.seq）"补挂（保留既有 test 语义）
   for (const cp of extra) {
-    if (pushed.has(cp.id)) continue;
+    const cpKey = `${cp.type}:${cp.seq}`;
+    if (pushed.has(cp.id) || pushed.has(cpKey)) continue;
     let best: ChatItem | null = null;
-    for (const it of items) if (it.kind === 'bubble' && it.role === 'assistant' && it.event.seq <= cp.seq) best = it;
-    if (best) { best.checkpoints.push(cp); pushed.add(cp.id); }
+    for (const it of items)
+      if (it.kind === 'bubble' && it.role === 'assistant' && it.event.seq <= cp.seq) best = it;
+    if (best) {
+      best.checkpoints.push(cp);
+      pushed.add(cp.id);
+      pushed.add(cpKey);
+    }
   }
   return items;
 }
@@ -110,11 +198,13 @@ export function SessionPage() {
   // 只有新会话与对话（conv_*）允许继续发轮次；run_/step_ 轨迹会话禁止追加，保护 'conv_ 前缀 = 对话' 的分组不变量
   const canChat = isNew || id.startsWith('conv_');
   const newSpec = params.get('spec') ?? '';
-  // 对话页 mock-only：旧链接里的 ?mode= 仍可安全打开，但一律按 mock 运行（真实模型请到运行页）
-  const newMode = 'mock' as const;
 
   // isNew 时 id 传 '' → useSession/useCheckpoints/useReplay 的 enabled:!!id 为 false，不查询
-  const { data, isLoading } = useSession(isNew ? '' : id);
+  const { data, isLoading, error: sessionError, refetch } = useSession(isNew ? '' : id);
+  const pinnedSpec = ((data ?? []).find((e) => e.type === 'run.provenance')?.payload as any)?.spec;
+  const newMode = (isNew ? params.get('mode') === 'live' : pinnedSpec?.llm?.provider === 'local')
+    ? 'live'
+    : 'mock';
   const cps = useCheckpoints(isNew ? '' : id);
   const [view, setView] = useState<'chat' | 'timeline'>('chat');
   const [seq, setSeq] = useState(0);
@@ -138,7 +228,7 @@ export function SessionPage() {
 
   const events = data ?? [];
   const checkpoints = cps.data ?? [];
-  const maxSeq = events.length;
+  const maxSeq = Math.max(0, ...events.map((e) => e.seq));
   const shown = seq > 0 && replay.data ? replay.data.events : events;
   const merged = useMemo(() => [...events, ...liveEvents], [events, liveEvents]);
   const items = useMemo(() => buildChat(merged, checkpoints), [merged, checkpoints]);
@@ -157,25 +247,36 @@ export function SessionPage() {
     liveEventsRef.current = [];
     let convId = isNew ? '' : id;
     try {
-      await runTurn({ specName, prompt, mode: newMode, conversationId: convId || undefined }, (f: TurnFrame) => {
-        if (f.type === 'token') { setLiveText((t) => t + (f.text ?? '')); scrollToBottom(); }
-        else if (f.type === 'event') {
-          // 按 id 去重：防 poll interval 与 done 前收尾 flush 竞态重复推送（M-3）
-          if (liveEventsRef.current.some((x) => x.id === f.event.id)) return;
-          // 累积事件（含 checkpoint/assistant.message）——既是流式渲染源，也是 done 后缓存种子
-          const evs = [...liveEventsRef.current, f.event];
-          liveEventsRef.current = evs;
-          setLiveEvents(evs);
-          scrollToBottom();
-        }
-        else if (f.type === 'done') { convId = f.session_id; }
-        else if (f.type === 'error') {
-          // error 帧若带 session_id 且尚未拿到（新会话首轮就失败），捕获之——
-          // 避免 done 后 setQueryData(['session','']) 污染缓存（M-2）
-          if (!convId && f.session_id) convId = f.session_id;
-          setTurnError(f.message);
-        }
-      });
+      await runTurn(
+        {
+          specName,
+          version: pinnedSpec?.version,
+          prompt,
+          mode: newMode,
+          conversationId: convId || undefined,
+        },
+        (f: TurnFrame) => {
+          if (f.type === 'token') {
+            setLiveText((t) => t + (f.text ?? ''));
+            scrollToBottom();
+          } else if (f.type === 'event') {
+            // 按 id 去重：防 poll interval 与 done 前收尾 flush 竞态重复推送（M-3）
+            if (liveEventsRef.current.some((x) => x.id === f.event.id)) return;
+            // 累积事件（含 checkpoint/assistant.message）——既是流式渲染源，也是 done 后缓存种子
+            const evs = [...liveEventsRef.current, f.event];
+            liveEventsRef.current = evs;
+            setLiveEvents(evs);
+            scrollToBottom();
+          } else if (f.type === 'done') {
+            convId = f.session_id;
+          } else if (f.type === 'error') {
+            // error 帧若带 session_id 且尚未拿到（新会话首轮就失败），捕获之——
+            // 避免 done 后 setQueryData(['session','']) 污染缓存（M-2）
+            if (!convId && f.session_id) convId = f.session_id;
+            setTurnError(f.message);
+          }
+        },
+      );
       // done 后把流式累积事件原子落进 react-query 缓存（setQueryData，不 refetch），并清空流式态
       const finalEvents = liveEventsRef.current;
       const newCps = finalEvents.filter((e) => e.type === 'state.checkpoint');
@@ -192,100 +293,238 @@ export function SessionPage() {
     }
   }
 
-  if (isLoading) return <p className="text-[var(--muted)]">加载中…</p>;
+  if (isLoading)
+    return (
+      <p className="loading-state" role="status">
+        正在加载会话与调用轨迹…
+      </p>
+    );
+  if (sessionError)
+    return (
+      <div className="console-error" role="alert">
+        加载会话失败。
+        <button className="btn btn-ghost" onClick={() => refetch()}>
+          重试
+        </button>
+      </div>
+    );
   return (
-    <div className="relative">
-      <div className="mb-4">
-        <h2 className="page-title">{isNew ? newSpec : sessionHuman(id)}</h2>
-        <p className="page-desc mono text-[12px]">{isNew ? '新对话' : `${id} · ${view === 'chat' ? '对话视图' : '点击任意事件查看详情'}`}</p>
+    <div className="session-workbench">
+      <div className="session-titlebar">
+        <div>
+          <h2 className="page-title">{isNew ? newSpec : sessionHuman(id)}</h2>
+          <p className="page-desc mono text-[12px]">
+            {isNew ? '新对话' : `${id} · ${view === 'chat' ? '对话视图' : '点击任意事件查看详情'}`}
+          </p>
+        </div>
+        <span className={`session-mode ${sending ? 'is-running' : ''}`}>
+          {sending
+            ? '正在执行'
+            : canChat
+              ? newMode === 'live'
+                ? '真实模型对话'
+                : '模拟对话'
+              : '单次运行'}
+        </span>
       </div>
 
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="flex gap-1 bg-[#f1efe9] rounded-lg p-1">
-          <button className={`btn ${view === 'chat' ? 'btn-primary' : 'btn-ghost'} px-3 py-1.5 text-[13px]`} onClick={() => setView('chat')}>对话</button>
-          <button className={`btn ${view === 'timeline' ? 'btn-primary' : 'btn-ghost'} px-3 py-1.5 text-[13px]`} onClick={() => setView('timeline')}>时间线</button>
+      <div className="session-viewbar">
+        <div className="session-view-tabs">
+          <button aria-pressed={view === 'chat'} onClick={() => setView('chat')}>
+            对话
+          </button>
+          <button aria-pressed={view === 'timeline'} onClick={() => setView('timeline')}>
+            时间线 <span>{merged.length}</span>
+          </button>
         </div>
-        <div className="flex items-center gap-2" title="逐步执行控制即将上线">
-          <button className="btn btn-ghost px-3 py-1.5 text-[13px]" disabled>▶ 继续</button>
-          <button className="btn btn-ghost px-3 py-1.5 text-[13px]" disabled>⏸</button>
-          <button className="btn btn-ghost px-3 py-1.5 text-[13px]" disabled>⏹</button>
-        </div>
+        <span className="session-view-hint">
+          {merged.filter((e) => e.type === 'turn/start').length} 轮对话 /{' '}
+          {merged.filter((e) => e.type === 'llm.request').length} 次模型调用
+        </span>
       </div>
 
       {view === 'chat' ? (
-        <div className="h-[calc(100vh-15rem)] flex flex-col rounded-2xl border border-[var(--line)] bg-white overflow-hidden">
-          <div className="flex-1 min-h-0 overflow-auto p-6">
-            {items.length || liveText ? (
-              <div className="space-y-4">
-                {items.map((it, i) => {
-                  if (it.kind === 'stage') {
-                    // 对话轮边界：turn/start 渲染为轮分隔条，turn/end 不渲染（下一条 turn/start 提供分隔）
-                    if (it.event.type === 'turn/start') {
+        <div className="conversation-layout">
+          <div className="conversation-panel">
+            <div className="conversation-panel-heading">
+              <strong>对话记录</strong>
+              <span>{canChat ? '上下文连续保留' : '只读轨迹'}</span>
+            </div>
+            <div className="conversation-scroll">
+              {items.length || liveText ? (
+                <div className="space-y-4">
+                  {items.map((it, i) => {
+                    if (it.kind === 'stage') {
+                      // 对话轮边界：turn/start 渲染为轮分隔条，turn/end 不渲染（下一条 turn/start 提供分隔）
+                      if (it.event.type === 'turn/start') {
+                        return (
+                          <div key={it.event.id ?? i} className="flex justify-center">
+                            <span className="conversation-turn-label">第 {it.turn} 轮</span>
+                          </div>
+                        );
+                      }
+                      if (it.event.type === 'turn/end') return null;
+                      const meta = eventMeta(it.event);
                       return (
                         <div key={it.event.id ?? i} className="flex justify-center">
-                          <span className="text-[11px] text-[var(--muted)] px-2 py-0.5">— 新对话轮次 —</span>
+                          <button
+                            onClick={() => setSelected(it.event)}
+                            className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-[#EDE9FE] text-[#4338CA] border border-[#C7D2FE] hover:bg-[#DDD6FE] transition-colors"
+                          >
+                            {meta.icon} {it.event.type === 'stage/start' ? '进入阶段' : '结束阶段'}{' '}
+                            · {stageHuman(String((it.event.payload as any)?.stage ?? ''))}
+                          </button>
                         </div>
                       );
                     }
-                    if (it.event.type === 'turn/end') return null;
-                    const meta = eventMeta(it.event);
-                    return (
-                      <div key={it.event.id ?? i} className="flex justify-center">
-                        <button onClick={() => setSelected(it.event)} className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-[#EDE9FE] text-[#4338CA] border border-[#C7D2FE] hover:bg-[#DDD6FE] transition-colors">
-                          {meta.icon} {it.event.type === 'stage/start' ? '进入阶段' : '结束阶段'} · {stageHuman(String((it.event.payload as any)?.stage ?? ''))}
-                        </button>
-                      </div>
-                    );
-                  }
-                  if (it.role === 'user') {
-                    // tool-first 轮次（如 stage-gate）：本轮无 assistant 气泡，胶囊挂在 user 气泡上，也要渲染
-                    if (!it.tools.length && !it.checkpoints.length) {
-                      return <ChatBubble key={it.event.id ?? i} role="user" content={textOf(it.event)} />;
+                    if (it.role === 'user') {
+                      // tool-first 轮次（如 stage-gate）：本轮无 assistant 气泡，胶囊挂在 user 气泡上，也要渲染
+                      if (!it.tools.length && !it.checkpoints.length) {
+                        return (
+                          <ChatBubble
+                            key={it.event.id ?? i}
+                            role="user"
+                            content={textOf(it.event)}
+                          />
+                        );
+                      }
+                      return (
+                        <div key={it.event.id ?? i} className="space-y-1.5">
+                          <ChatBubble role="user" content={textOf(it.event)}>
+                            {it.tools.length > 0 && (
+                              <ToolPills tools={it.tools} onSelect={setSelected} />
+                            )}
+                          </ChatBubble>
+                          {it.checkpoints.length > 0 && (
+                            <CheckpointRow
+                              checkpoints={it.checkpoints}
+                              align="right"
+                              onSelect={setSelected}
+                            />
+                          )}
+                        </div>
+                      );
                     }
                     return (
                       <div key={it.event.id ?? i} className="space-y-1.5">
-                        <ChatBubble role="user" content={textOf(it.event)}>
-                          {it.tools.length > 0 && <ToolPills tools={it.tools} onSelect={setSelected} />}
+                        <ChatBubble role="assistant" content={textOf(it.event)}>
+                          {it.tools.length > 0 && (
+                            <ToolPills tools={it.tools} onSelect={setSelected} />
+                          )}
                         </ChatBubble>
-                        {it.checkpoints.length > 0 && <CheckpointRow checkpoints={it.checkpoints} align="right" onSelect={setSelected} />}
+                        {it.checkpoints.length > 0 && (
+                          <CheckpointRow
+                            checkpoints={it.checkpoints}
+                            align="left"
+                            onSelect={setSelected}
+                          />
+                        )}
                       </div>
                     );
-                  }
-                  return (
-                    <div key={it.event.id ?? i} className="space-y-1.5">
-                      <ChatBubble role="assistant" content={textOf(it.event)}>
-                        {it.tools.length > 0 && <ToolPills tools={it.tools} onSelect={setSelected} />}
-                      </ChatBubble>
-                      {it.checkpoints.length > 0 && <CheckpointRow checkpoints={it.checkpoints} align="left" onSelect={setSelected} />}
+                  })}
+                  {sending && liveText && (
+                    <ChatBubble role="assistant" content={liveText} streaming />
+                  )}
+                  <div ref={bottomRef} />
+                </div>
+              ) : (
+                <div className="h-full flex items-center justify-center">
+                  {isNew ? (
+                    <div className="conversation-welcome">
+                      <span className="conversation-monogram">V</span>
+                      <h3>开始新对话</h3>
+                      <p>
+                        描述你的任务，或先问一个问题。
+                        <br />
+                        后续消息会沿用此会话的上下文。
+                      </p>
+                      <small>
+                        {newMode === 'live'
+                          ? '已选择服务端真实模型，发送将消耗额度。'
+                          : '当前是模拟模式，用于验证流程。'}
+                      </small>
                     </div>
-                  );
-                })}
-                {sending && liveText && (
-                  <ChatBubble role="assistant" content={liveText} streaming />
-                )}
-                <div ref={bottomRef} />
-              </div>
-            ) : (
-              <div className="h-full flex items-center justify-center">
-                {isNew ? (
-                  <div className="empty"><div className="empty-title">开始新对话</div><div className="empty-desc">输入消息即可运行，回复将实时流式显示在这里。</div></div>
-                ) : (
-                  <div className="empty"><div className="empty-title">该会话没有对话内容</div><div className="empty-desc">切换到时间线视图查看事件轨迹。</div></div>
-                )}
+                  ) : (
+                    <div className="empty">
+                      <div className="empty-title">该会话没有对话内容</div>
+                      <div className="empty-desc">切换到时间线视图查看事件轨迹。</div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            {turnError && (
+              <div className="mx-4 mt-2 px-3 py-2 rounded-lg text-[12px] bg-[#FEF2F2] text-[#B91C1C] border border-[#FECACA]">
+                本轮执行失败：{turnError}
               </div>
             )}
+            <ChatInput
+              onSend={onSend}
+              disabled={!canChat || sending}
+              loading={sending}
+              placeholder={canChat ? '输入消息…' : '单次运行轨迹不支持继续对话'}
+            />
           </div>
-          {turnError && <div className="mx-4 mt-2 px-3 py-2 rounded-lg text-[12px] bg-[#FEF2F2] text-[#B91C1C] border border-[#FECACA]">本轮执行失败：{turnError}</div>}
-          <ChatInput onSend={onSend} disabled={!canChat || sending} loading={sending} placeholder={canChat ? '输入消息…' : '单次运行轨迹不支持继续对话'} />
+          <aside className="conversation-context">
+            <h3>会话上下文</h3>
+            <dl>
+              <div>
+                <dt>Agent 规格</dt>
+                <dd>{specName || '未关联'}</dd>
+              </div>
+              <div>
+                <dt>模型</dt>
+                <dd>
+                  {pinnedSpec?.llm?.model ?? (newMode === 'live' ? '服务端已配置模型' : 'Mock')}
+                </dd>
+              </div>
+              <div>
+                <dt>检查点</dt>
+                <dd>{merged.filter((e) => e.type === 'state.checkpoint').length} 个</dd>
+              </div>
+            </dl>
+            <div className="conversation-recent-heading">
+              <h3>最近活动</h3>
+              <button onClick={() => setView('timeline')}>查看全部</button>
+            </div>
+            {merged
+              .filter((e) =>
+                ['llm.response', 'tool.result', 'agent.dispatch', 'turn/end'].includes(e.type),
+              )
+              .slice(-6)
+              .map((e) => (
+                <button className="conversation-activity" key={e.id} onClick={() => setSelected(e)}>
+                  <span>{eventMeta(e).label}</span>
+                  <small>{eventMeta(e).desc(e)}</small>
+                  <span className="mono">#{e.seq}</span>
+                </button>
+              ))}
+            {!merged.length && (
+              <p className="conversation-context-empty">
+                发送消息后，模型决策和工具调用会显示在这里。
+              </p>
+            )}
+            <p className="conversation-context-note">
+              上下文带入最近 10 轮消息。完整历史仍保留在轨迹中。
+            </p>
+          </aside>
         </div>
       ) : (
         <div>
           <ReplayControls maxSeq={maxSeq} value={seq} onScrub={setSeq} />
-          {shown.length ? <TraceTimeline events={shown} onSelect={setSelected} /> : <div className="empty"><div className="empty-title">该会话没有事件</div></div>}
+          {shown.length ? (
+            <TraceTimeline events={seq > 0 ? shown : merged} onSelect={() => {}} />
+          ) : (
+            <div className="empty">
+              <div className="empty-title">该会话没有事件</div>
+            </div>
+          )}
         </div>
       )}
 
-      {selected && <EventDetail event={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <EventDetail event={selected} events={merged} onClose={() => setSelected(null)} />
+      )}
     </div>
   );
 }

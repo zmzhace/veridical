@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { parseSpecYaml, runSpec, type SpecRunnerDeps } from '@veridical/spec';
 import { OpenAICompatibleProvider, MockScriptedProvider, resolveTools } from '../providers.js';
 import { makeDecisionRunStep } from '../runStep.js';
+import { createLocalModel, localModelMetadata } from '../local-model.js';
 
 interface RunBody {
   specYaml: string;
@@ -16,6 +17,7 @@ interface RunBody {
 
 export async function registerRunRoutes(app: FastifyInstance) {
   const store = app.store;
+  app.get('/api/model-profile', async () => localModelMetadata());
   app.post<{ Body: RunBody }>('/api/run', async (req, reply) => {
     const body = req.body;
     if (!body?.specYaml) return reply.code(400).send({ error: { code: 'bad_request', message: 'specYaml required' } });
@@ -28,8 +30,20 @@ export async function registerRunRoutes(app: FastifyInstance) {
     const sessionId = `run_${randomUUID()}`;
     const providers = new Map<string, any>();
     if (body.mode === 'live') {
-      if (!body.apiKey || !body.model) return reply.code(400).send({ error: { code: 'bad_request', message: 'live mode requires apiKey and model' } });
-      providers.set(spec.llm.provider, new OpenAICompatibleProvider('https://api.openai.com/v1', body.apiKey, body.model));
+      if (body.apiKey && body.model) {
+        spec.llm.model = body.model;
+        providers.set(spec.llm.provider, new OpenAICompatibleProvider('https://api.openai.com/v1', body.apiKey, body.model));
+      } else {
+        try {
+          const local = createLocalModel();
+          spec.llm.model = local.model;
+          spec.llm.provider = 'local';
+          spec.llm.fallback = [];
+          providers.set('local', local.provider);
+        } catch {
+          return reply.code(400).send({ error: { code: 'model_not_configured', message: '请检查服务端 .env.local 模型配置并重启研究服务' } });
+        }
+      }
     } else {
       const mock = new MockScriptedProvider();
       (body.script ?? [`${JSON.stringify({ text: 'done', done: true })}`]).forEach((s) => mock.enqueue(s));
@@ -84,6 +98,8 @@ export async function registerRunRoutes(app: FastifyInstance) {
       tenant_id: 't1',
       session_id: sessionId,
       runStep: makeDecisionRunStep(),
+      childRunStep: makeDecisionRunStep(),
+      registry: app.specRegistry,
     };
 
     try {

@@ -1,50 +1,83 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import '../spec/spec-editor.css';
+import '../workspace.css';
 
-const links: { to: string; label: string; icon: string; desc: string }[] = [
-  { to: '/', label: '会话', icon: '⊞', desc: '查看所有运行记录' },
-  { to: '/run', label: '运行', icon: '▶', desc: '运行一个 agent' },
-  { to: '/rl', label: 'RL 训练', icon: '⌁', desc: '训练决策策略' },
-  { to: '/compare', label: '对比', icon: '⧉', desc: '比对两次运行' },
-  { to: '/audit', label: '审计', icon: '✓', desc: '评估合规性' },
-  { to: '/specs', label: '规格', icon: '≡', desc: '已注册的规格' },
+const links = [
+  { to: '/', label: '会话', icon: 'M4 4h16v12H8l-4 4V4Z M8 8h8 M8 12h5' },
+  { to: '/run', label: '运行', icon: 'm8 4 12 8-12 8V4Z' },
+  { to: '/specs', label: '规格', icon: 'M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6' },
+  { to: '/compare', label: '对比', icon: 'M4 4h6v16H4z M14 4h6v16h-6z' },
+  { to: '/audit', label: '审计', icon: 'm12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z m-4 9 3 3 5-6' },
+  { to: '/replay', label: '回放', icon: 'M4 5v6h6 M4.5 11A8 8 0 1 0 7 5.5' },
 ];
 
 export function AppShell() {
+  const { pathname } = useLocation();
+  const current = links.find((l) => l.to === pathname)?.label ?? '会话详情';
   return (
-    <div className="flex min-h-screen">
-      <nav className="w-60 shrink-0 border-r border-[var(--line)] bg-[var(--surface)] flex flex-col sticky top-0 h-screen">
-        <div className="px-5 pt-6 pb-5 border-b border-[var(--line)]">
-          <h1 className="text-lg font-extrabold tracking-tight">Veridical</h1>
-          <p className="text-xs text-[var(--muted)] mt-0.5">Agent 运行观察台</p>
+    <div className="workspace-shell">
+      <a className="skip-link" href="#workspace-main">
+        跳转到主要内容
+      </a>
+      <aside className="workspace-sidebar">
+        <NavLink to="/" className="workspace-brand" aria-label="Veridical 首页">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+            <path d="M4 6h7l5 12 5-12h7L16 28 4 6Z" fill="currentColor" />
+          </svg>
+          <span>
+            Veridical<small>Agent 运行观察台</small>
+          </span>
+        </NavLink>
+        <div className="workspace-identity">
+          <span>V</span>
+          <div>
+            本地工作区<small>Local workspace</small>
+          </div>
         </div>
-        <div className="flex-1 p-3 space-y-1 overflow-auto">
+        <nav className="workspace-nav" aria-label="主导航">
           {links.map((l) => (
-            <NavLink key={l.to} to={l.to} end={l.to === '/'}
-              className={({ isActive }) =>
-                `group flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors ${
-                  isActive ? 'bg-[var(--accent-soft)]' : 'hover:bg-[#f1efe9]'
-                }`}>
-              {({ isActive }) => (
-                <>
-                  <span className={`mt-0.5 w-6 text-center rounded-md py-0.5 text-xs font-bold ${isActive ? 'bg-[var(--accent)] text-white' : 'bg-[#f1efe9] text-[var(--muted)]'}`}>
-                    {l.icon}
-                  </span>
-                  <span className="min-w-0">
-                    <span className={`block text-[13px] font-semibold ${isActive ? 'text-[var(--accent)]' : 'text-[var(--ink)]'}`}>{l.label}</span>
-                    <span className="block text-[11px] text-[var(--muted)] truncate">{l.desc}</span>
-                  </span>
-                </>
-              )}
+            <NavLink
+              key={l.to}
+              to={l.to}
+              end={l.to === '/'}
+              className={({ isActive }) => `workspace-nav-item${isActive ? ' is-active' : ''}`}
+            >
+              <svg
+                width="19"
+                height="19"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d={l.icon} />
+              </svg>
+              <span>{l.label}</span>
             </NavLink>
           ))}
+        </nav>
+        <div className="workspace-sidebar-note">
+          每一次决策，都有迹可循。<p>运行、回放与评测，在同一条轨迹中连接。</p>
         </div>
-        <div className="p-4 border-t border-[var(--line)] text-[11px] text-[var(--muted)]">
-          trace · replay · rl · stage-gate
-        </div>
-      </nav>
-      <main className="flex-1 overflow-auto p-8">
-        <div className="max-w-6xl mx-auto"><Outlet /></div>
-      </main>
+        <footer className="workspace-sidebar-footer">
+          研究环境<span className="mono">/api</span>
+        </footer>
+      </aside>
+      <div className="workspace-body">
+        <header className="workspace-topbar">
+          <div>
+            工作区<span aria-hidden="true">/</span>
+            <strong>{current}</strong>
+          </div>
+          <span className="workspace-environment">本地研究 · 非生产</span>
+        </header>
+        <main id="workspace-main" className="workspace-content" tabIndex={-1}>
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }

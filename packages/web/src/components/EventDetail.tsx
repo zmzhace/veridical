@@ -1,41 +1,143 @@
+import { useEffect, useState } from 'react';
 import type { TraceEvent } from '@veridical/schema';
 import { eventMeta } from '../lib/events';
+import { statusLabel } from '../lib/traceGraph';
 
-export function EventDetail({ event, onClose }: { event: TraceEvent; onClose: () => void }) {
+export function EventDetail({
+  event,
+  events = [],
+  onClose,
+  embedded = false,
+}: {
+  event: TraceEvent;
+  events?: TraceEvent[];
+  onClose: () => void;
+  embedded?: boolean;
+}) {
+  const [tab, setTab] = useState<'io' | 'raw'>('io');
+  const [copied, setCopied] = useState('');
+  useEffect(() => {
+    setCopied('');
+  }, [event.id]);
+  useEffect(() => {
+    if (embedded) return;
+    const close = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', close);
+    return () => document.removeEventListener('keydown', close);
+  }, [embedded, onClose]);
+  const invocation = event.type.startsWith('invocation.');
+  const start = invocation
+    ? (events.find(
+        (e) => e.type === 'invocation.start' && e.invocation_id === event.invocation_id,
+      ) ?? event)
+    : event;
+  const end = invocation
+    ? events.find((e) => e.type === 'invocation.end' && e.invocation_id === event.invocation_id)
+    : undefined;
+  const p = start.payload as any;
+  const result = end?.payload as any;
   const meta = eventMeta(event);
-  const rows: [string, string][] = [
-    ['序号', String(event.seq)],
-    ['所属环节', event.span_id],
-    ['尝试次数', String(event.attempt)],
-    ['调用 ID', event.call_id ?? '-'],
-    ['耗时', `${event.duration_ms}ms`],
+  const input = invocation
+    ? p?.input
+    : event.type.endsWith('request') || event.type === 'tool.called'
+      ? event.payload
+      : undefined;
+  const output = invocation ? result?.output : input === undefined ? event.payload : undefined;
+  const title = invocation ? p?.operation : meta.label;
+  const rows = [
+    ['路径', event.path ?? p?.path ?? 'legacy · 未记录路径'],
+    ['调用 ID', event.invocation_id ?? '未记录'],
+    ['父调用', event.parent_invocation_id ?? p?.parent_invocation_id ?? '根节点'],
+    ['事件序号', end ? `${start.seq} → ${end.seq}` : String(event.seq)],
+    ['尝试', String(event.attempt)],
+    ['耗时', `${end?.duration_ms ?? event.duration_ms} ms`],
   ];
-  if (event.tokens) rows.push(['Token', `${event.tokens.input}入 / ${event.tokens.output}出`]);
-
+  const raw = invocation ? { start, end: end ?? null } : event;
   return (
-    <div className="fixed right-0 top-0 h-full w-[420px] bg-[var(--surface)] border-l border-[var(--line)] p-5 overflow-auto shadow-xl flex flex-col">
-      <div className="flex items-start justify-between mb-1">
-        <div className="flex items-center gap-2.5">
-          <span className={`w-8 h-7 flex items-center justify-center rounded-md text-xs font-bold border ${meta.tone === 'bad' ? 'text-red-700 bg-red-50 border-red-200' : meta.tone === 'good' ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-indigo-700 bg-indigo-50 border-indigo-200'}`}>{meta.icon}</span>
-          <div>
-            <h3 className="font-semibold">{meta.label}</h3>
-            <p className="text-xs text-[var(--muted)]">{meta.desc(event)}</p>
-          </div>
+    <aside
+      className={`trace-inspector ${embedded ? 'is-embedded' : 'is-drawer'}`}
+      aria-label="调用详情"
+    >
+      <header className="trace-inspector-heading">
+        <div>
+          <h3>{title}</h3>
+          <span className="trace-detail-status">
+            {invocation
+              ? (statusLabel[result?.status ?? 'started'] ?? result?.status)
+              : meta.desc(event)}
+          </span>
         </div>
-        <button onClick={onClose} className="btn btn-ghost px-2 py-1 text-xs">关闭</button>
+        {!embedded && (
+          <button className="btn btn-ghost" onClick={onClose}>
+            关闭
+          </button>
+        )}
+      </header>
+      <div className="trace-detail-tabs">
+        <button aria-pressed={tab === 'io'} onClick={() => setTab('io')}>
+          输入 / 输出
+        </button>
+        <button aria-pressed={tab === 'raw'} onClick={() => setTab('raw')}>
+          原始事件
+        </button>
+        <button
+          className="trace-copy"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(JSON.stringify(raw, null, 2));
+              setCopied('已复制');
+            } catch {
+              setCopied('复制失败');
+            }
+          }}
+        >
+          {copied || '复制 JSON'}
+        </button>
       </div>
-      <dl className="mt-4 text-[13px] space-y-1.5 border-t border-[var(--line)] pt-3">
-        {rows.map(([k, v]) => (
-          <div key={k} className="flex justify-between gap-4">
-            <dt className="text-[var(--muted)] shrink-0">{k}</dt>
-            <dd className="mono text-right break-all">{v}</dd>
-          </div>
-        ))}
-      </dl>
-      <div className="mt-4 flex-1 min-h-0 flex flex-col">
-        <div className="text-xs font-semibold text-[var(--muted)] mb-2">内容</div>
-        <pre className="flex-1 text-[11px] mono bg-[#faf9f7] border border-[var(--line)] rounded-lg p-3 overflow-auto">{JSON.stringify(event.payload, null, 2)}</pre>
+      <div className="trace-inspector-body">
+        {tab === 'io' ? (
+          <>
+            <section className="trace-payload">
+              <h4>
+                输入 <span>INPUT</span>
+              </h4>
+              <pre>{input === undefined ? '此事件未记录输入' : JSON.stringify(input, null, 2)}</pre>
+            </section>
+            <section className="trace-payload">
+              <h4>
+                输出 <span>OUTPUT</span>
+              </h4>
+              <pre>
+                {output === undefined
+                  ? invocation && !end
+                    ? '尚未收到结束事件'
+                    : '此事件未记录输出'
+                  : JSON.stringify(output, null, 2)}
+              </pre>
+            </section>
+            {result?.error && (
+              <section className="trace-payload trace-failure">
+                <h4>错误</h4>
+                <pre>{JSON.stringify(result.error, null, 2)}</pre>
+              </section>
+            )}
+            <dl className="trace-metadata">
+              {rows.map(([key, value]) => (
+                <div key={key}>
+                  <dt>{key}</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </>
+        ) : (
+          <section className="trace-payload">
+            <pre>{JSON.stringify(raw, null, 2)}</pre>
+          </section>
+        )}
       </div>
-    </div>
+    </aside>
   );
 }

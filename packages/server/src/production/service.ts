@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { LLMGateway, type LLMProvider } from '@veridical/llm';
 import { Recorder, Session } from '@veridical/runtime';
-import { type AgentSpec } from '@veridical/spec';
+import { artifactHash, type AgentSpec } from '@veridical/spec';
 import { parse as parseYaml } from 'yaml';
 import { ruleNoErrors } from '@veridical/eval';
 import { z } from 'zod';
@@ -64,6 +64,27 @@ export class ProductionService {
     if (!artifact) throw new Fault(404, 'spec_not_found');
     return artifact;
   }
+  private releaseArtifactHash(spec: AgentSpec) {
+    return artifactHash({
+      kind: 'release',
+      name: spec.name,
+      version: spec.version,
+      status: 'approved',
+      spec,
+      skills: spec.skills,
+      tools: spec.tools.map((entry) => ({
+        name: entry.name,
+        version: this.tools.find((tool) => tool.name === entry.name)?.version ?? 'unknown',
+        side_effect: 'read' as const,
+      })),
+      model: {
+        provider: spec.llm.provider,
+        model: spec.llm.model,
+        version: this.config.providers.find((provider) => provider.name === spec.llm.provider)
+          ?.version,
+      },
+    });
+  }
   createSpec(p: Principal, yaml: string) {
     requireRole(p, 'developer');
     this.checkCapacity();
@@ -74,7 +95,9 @@ export class ProductionService {
       throw new Fault(400, 'invalid_spec_yaml');
     }
     const spec = validateSpec(raw, this.config, this.tools);
-    return this.db.put(p.tenant, 'spec', `${spec.name}@${spec.version}`, spec, p.actor);
+    return this.db.put(p.tenant, 'spec', `${spec.name}@${spec.version}`, spec, p.actor, 'draft', {
+      release_artifact_hash: this.releaseArtifactHash(spec),
+    });
   }
   setSuite(p: Principal, specName: string, raw: unknown) {
     requireRole(p, 'reviewer');
@@ -116,7 +139,8 @@ export class ProductionService {
         !evidence?.body.passed ||
         evidence.body.candidate_digest !== spec.digest ||
         evidence.body.suite !== suite ||
-        evidence.body.environment !== this.environment(spec.body)
+        evidence.body.environment !== this.environment(spec.body) ||
+        spec.meta.release_artifact_hash !== this.releaseArtifactHash(spec.body)
       )
         throw new Fault(409, 'current_passing_evaluation_required');
       return this.db.transition(
@@ -131,7 +155,11 @@ export class ProductionService {
   }
   assertApproved(tenant: string, ref: string) {
     const spec = this.spec(tenant, ref);
-    if (spec.status !== 'approved' || spec.meta.environment !== this.environment(spec.body))
+    if (
+      spec.status !== 'approved' ||
+      spec.meta.environment !== this.environment(spec.body) ||
+      spec.meta.release_artifact_hash !== this.releaseArtifactHash(spec.body)
+    )
       throw new Fault(409, 'release_not_approved_for_environment');
     const evidence = this.db.get(tenant, 'evaluation', spec.meta.evaluation ?? '');
     if (
@@ -510,6 +538,7 @@ export class ProductionService {
       this.assertApproved(job.tenant, baseline.key);
       const ref = `${spec.name}@${spec.version}`;
       this.db.put(job.tenant, 'spec', ref, spec, job.actor, 'draft', {
+        release_artifact_hash: this.releaseArtifactHash(spec),
         baseline: baseline.key,
         baseline_digest: baseline.digest,
         generation_job: job.id,
