@@ -6,6 +6,7 @@ import { RunPage } from './pages/RunPage';
 import { ComparePage } from './pages/ComparePage';
 import { AuditPage } from './pages/AuditPage';
 import { ReplayPage } from './pages/ReplayPage';
+import { WorkspacePage } from './pages/WorkspacePage';
 
 const router = createBrowserRouter([
   {
@@ -23,6 +24,7 @@ const router = createBrowserRouter([
       { path: 'compare', element: <ComparePage /> },
       { path: 'audit', element: <AuditPage /> },
       { path: 'replay', element: <ReplayPage /> },
+      { path: 'workspace', element: <WorkspacePage /> },
       {
         path: 'specs',
         lazy: async () => {
