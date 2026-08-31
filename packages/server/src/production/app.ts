@@ -349,9 +349,9 @@ export async function buildProductionApp(options: {
     const page = Page.parse(req.query);
     return db.listSessions(req.principal.tenant, page.limit, page.offset);
   });
-  const visibleSession = (p: Principal, id: string) => {
+  const visibleSession = async (p: Principal, id: string) => {
     requireRole(p, 'viewer', 'operator', 'reviewer');
-    const session = db.session(p.tenant, id);
+    const session = await db.session(p.tenant, id);
     if (
       !session ||
       session.kind === 'audit' ||
@@ -361,7 +361,7 @@ export async function buildProductionApp(options: {
   };
   app.get('/v1/sessions/:id/events', async (req) => {
     const { id } = z.object({ id: Key }).parse(req.params);
-    visibleSession(req.principal, id);
+    await visibleSession(req.principal, id);
     const query = z
       .object({
         after: z.coerce.number().int().min(0).default(0),
@@ -379,12 +379,12 @@ export async function buildProductionApp(options: {
   });
   app.get('/v1/sessions/:id/integrity', async (req) => {
     const { id } = z.object({ id: Key }).parse(req.params);
-    visibleSession(req.principal, id);
+    await visibleSession(req.principal, id);
     return db.verify(req.principal.tenant, id);
   });
   app.get('/v1/runs/:id/provenance', async (req) => {
     const { id } = z.object({ id: Key }).parse(req.params);
-    visibleSession(req.principal, id);
+    await visibleSession(req.principal, id);
     const events = (await db.read(req.principal.tenant, id)).filter((e: any) => e.type === 'run.provenance');
     db.audit(req.principal.tenant, req.principal.actor, 'provenance.read', {
       session: id,
@@ -398,7 +398,7 @@ export async function buildProductionApp(options: {
   });
   app.post('/v1/sessions/:id/integrity', async (req) => {
     const { id } = z.object({ id: Key }).parse(req.params);
-    visibleSession(req.principal, id);
+    await visibleSession(req.principal, id);
     const checkpoint = z
       .object({
         seq: z.number().int().nonnegative(),
@@ -444,7 +444,7 @@ export async function buildProductionApp(options: {
     await service.close();
     if (managedQueue && managedQueue !== options.asyncJobs && 'close' in managedQueue)
       await (managedQueue as { close: () => Promise<void> }).close();
-    db.close();
+    await db.close();
   });
   if (options.worker !== false) service.start();
   return { app, db, service, objectStore };

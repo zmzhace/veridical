@@ -60,6 +60,72 @@ export class ProductionService {
     )
       throw new Error('only uniquely named read-only tools are supported');
   }
+  /**
+   * Compatibility transaction boundary for the development adapter. Production
+   * requests never enter this path: PostgreSQL methods own their async
+   * transactions and are selected before any synchronous operation is used.
+   */
+  private legacyAtomic<T>(fn: () => T): T {
+    const atomic = (this.db as any).transaction ?? (this.db as any).tx;
+    if (typeof atomic !== 'function') throw new Error('ledger_transaction_unavailable');
+    return atomic.call(this.db, fn);
+  }
+  private get managed() { return Boolean((this.db as any).pool); }
+  private async checkCapacityManaged() {
+    const capacity = await (this.db as any).capacity();
+    if (capacity.database_bytes >= this.config.maxDatabaseBytes || capacity.free_disk_bytes < this.config.minFreeDiskBytes)
+      throw new Fault(507, 'storage_capacity_exceeded');
+    return capacity;
+  }
+  private async specManaged(tenant: string, ref: string): Promise<Artifact<AgentSpec>> {
+    const artifact = await (this.db as any).get(tenant, 'spec', ref) as Artifact<AgentSpec> | undefined;
+    if (!artifact) throw new Fault(404, 'spec_not_found');
+    return artifact;
+  }
+  private async assertApprovedManaged(tenant: string, ref: string) {
+    const spec = await this.specManaged(tenant, ref);
+    if (spec.status !== 'approved' || spec.meta.environment !== this.environment(spec.body) || spec.meta.release_artifact_hash !== this.releaseArtifactHash(spec.body))
+      throw new Fault(409, 'release_not_approved_for_environment');
+    const evidence = spec.meta.evaluation ? await (this.db as any).get(tenant, 'evaluation', spec.meta.evaluation) : undefined;
+    const suite = await (this.db as any).pointer(tenant, 'suite', spec.body.name);
+    if (!evidence?.body.passed || evidence.body.candidate_digest !== spec.digest || evidence.body.environment !== this.environment(spec.body) || evidence.body.suite !== suite)
+      throw new Fault(409, 'release_acceptance_suite_changed');
+    return spec;
+  }
+  private async checkCredentialManaged(job: Job) {
+    await this.checkCapacityManaged();
+    const token = this.config.tokens.find((t) => t.hash === job.args.credential && t.tenant === job.tenant && t.actor === job.actor);
+    if (!token || Date.parse(token.expires) <= Date.now() || await (this.db as any).isRevoked(token.hash))
+      throw new Fault(401, 'execution_credential_revoked_or_expired');
+  }
+  private async enqueueManaged(
+    tenant: string,
+    actor: string,
+    kind: Job['kind'],
+    idempotencyKey: string,
+    args: unknown,
+    session?: string,
+  ): Promise<Job> {
+    const job = typeof (this.jobs as any).create === 'function'
+      ? await (this.jobs as any).create(tenant, actor, kind, idempotencyKey, args, session) as Job
+      : await (this.db as any).enqueue(tenant, actor, kind, idempotencyKey, args, session) as Job;
+    if (!this.asyncJobs) {
+      this.healthy = false;
+      throw new Fault(503, 'production_queue_unavailable');
+    }
+    try {
+      await this.asyncJobs.enqueue({ id: job.id, tenant: job.tenant, actor: job.actor, kind: job.kind, args: job.args, created: job.created, session: job.session, deadline: job.deadline ?? undefined }, idempotencyKey);
+    } catch (error) {
+      this.healthy = false;
+      throw new Fault(503, 'async_queue_unavailable', error instanceof Error ? error.message : 'async_queue_unavailable');
+    }
+    return job;
+  }
+  private async persistArtifactObject(tenant: string, artifact: Artifact) {
+    if (!this.objectStore) return;
+    const body = Buffer.from(JSON.stringify(artifact.body));
+    await this.objectStore.put(`tenants/${tenant}/artifacts/${artifact.key}/${artifact.digest}.json`, body, 'application/json');
+  }
   environment(spec: AgentSpec) {
     return runtimeEnvironment(spec, this.config, this.tools);
   }
@@ -146,13 +212,13 @@ export class ProductionService {
     });
   }
   private async createSpecManaged(p: Principal, yaml: string) {
-    this.checkCapacity();
+    await this.checkCapacityManaged();
     let raw: unknown;
     try { raw = parseYaml(yaml, { maxAliasCount: 20 }); } catch { throw new Fault(400, 'invalid_spec_yaml'); }
     const spec = validateSpec(raw, this.config, this.tools);
     const ref = `${spec.name}@${spec.version}`;
     const artifact = await (this.db as any).put(p.tenant, 'spec', ref, spec, p.actor, 'draft', { release_artifact_hash: this.releaseArtifactHash(spec) });
-    if (this.objectStore) await this.objectStore.put(`tenants/${p.tenant}/artifacts/spec/${artifact.digest}.json`, Buffer.from(JSON.stringify(spec)), 'application/json');
+    await this.persistArtifactObject(p.tenant, artifact);
     return artifact;
   }
   setSuite(p: Principal, specName: string, raw: unknown) {
@@ -160,7 +226,7 @@ export class ProductionService {
     if ((this.db as any).pool) return this.setSuiteManaged(p, specName, raw);
     const suite = SuiteSchema.parse(raw);
     this.checkCapacity();
-    return this.db.transaction(() => {
+    return this.legacyAtomic(() => {
       const key = `${specName}_${randomUUID()}`;
       const artifact = this.db.put(p.tenant, 'suite', key, suite, p.actor, 'active');
       this.db.point(p.tenant, 'suite', specName, key, p.actor, 'new immutable acceptance suite');
@@ -168,9 +234,10 @@ export class ProductionService {
     });
   }
   private async setSuiteManaged(p: Principal, specName: string, raw: unknown) {
-    const suite = SuiteSchema.parse(raw); this.checkCapacity();
+    const suite = SuiteSchema.parse(raw); await this.checkCapacityManaged();
     const key = `${specName}_${randomUUID()}`;
     const artifact = await (this.db as any).put(p.tenant, 'suite', key, suite, p.actor, 'active');
+    await this.persistArtifactObject(p.tenant, artifact);
     await (this.db as any).point(p.tenant, 'suite', specName, key, p.actor, 'new immutable acceptance suite');
     return artifact;
   }
@@ -193,19 +260,18 @@ export class ProductionService {
     return job;
   }
   private async evaluateManaged(p: Principal, ref: string, idem: string) {
+    await this.checkCapacityManaged();
     const spec = await (this.db as any).get(p.tenant, 'spec', ref);
     if (!spec) throw new Fault(404, 'spec_not_found');
     if (spec.status === 'revoked' || spec.status === 'approved') throw new Fault(409, 'immutable_release_requires_new_version');
     const suite = await (this.db as any).pointer(p.tenant, 'suite', spec.body.name);
     if (!suite) throw new Fault(409, 'acceptance_suite_required');
-    const job = await (this.db as any).enqueue(p.tenant, p.actor, 'evaluate', idem, { ref, suite, environment: this.environment(spec.body), credential: p.tokenHash });
-    this.kick();
-    return job;
+    return this.enqueueManaged(p.tenant, p.actor, 'evaluate', idem, { ref, suite, environment: this.environment(spec.body), credential: p.tokenHash });
   }
   approve(p: Principal, ref: string, reason: string) {
     requireRole(p, 'reviewer');
     if ((this.db as any).pool) return this.approveManaged(p, ref, reason);
-    return this.db.transaction(() => {
+    return this.legacyAtomic(() => {
       const spec = this.spec(p.tenant, ref);
       if (spec.author === p.actor) throw new Fault(403, 'independent_reviewer_required');
       if (spec.status !== 'evaluated') throw new Fault(409, 'evaluated_release_required');
@@ -260,7 +326,7 @@ export class ProductionService {
   deploy(p: Principal, name: string, ref: string, channel: string, reason: string) {
     requireRole(p, 'publisher');
     if ((this.db as any).pool) return this.deployManaged(p, name, ref, channel, reason);
-    return this.db.transaction(() => {
+    return this.legacyAtomic(() => {
       const spec = this.assertApproved(p.tenant, ref);
       if (spec.body.name !== name) throw new Fault(422, 'release_name_mismatch');
       this.db.point(p.tenant, 'deployment', `${channel}.${name}`, ref, p.actor, reason);
@@ -278,7 +344,7 @@ export class ProductionService {
   revoke(p: Principal, ref: string, reason: string) {
     requireRole(p, 'reviewer');
     if ((this.db as any).pool) return this.revokeManaged(p, ref, reason);
-    return this.db.transaction(() => {
+    return this.legacyAtomic(() => {
       const spec = this.spec(p.tenant, ref);
       return this.db.transition(
         p.tenant,
@@ -323,13 +389,12 @@ export class ProductionService {
     return job;
   }
   private async runManaged(p: Principal, input: { name: string; channel: string; prompt: string; session?: string }, idem: string) {
+    await this.checkCapacityManaged();
     const ref = await (this.db as any).pointer(p.tenant, 'deployment', `${input.channel}.${input.name}`);
     if (!ref) throw new Fault(404, 'deployment_not_found');
     const spec = await (this.db as any).get(p.tenant, 'spec', ref);
     if (!spec || spec.status !== 'approved') throw new Fault(409, 'release_not_approved_for_environment');
-    const job = await (this.db as any).enqueue(p.tenant, p.actor, 'run', idem, { ref, prompt: input.prompt, credential: p.tokenHash }, input.session);
-    this.kick();
-    return job;
+    return this.enqueueManaged(p.tenant, p.actor, 'run', idem, { ref, prompt: input.prompt, credential: p.tokenHash }, input.session);
   }
   improve(p: Principal, name: string, version: string, feedback: string, idem: string) {
     requireRole(p, 'developer');
@@ -358,6 +423,7 @@ export class ProductionService {
     return job;
   }
   private async improveManaged(p: Principal, name: string, version: string, feedback: string, idem: string) {
+    await this.checkCapacityManaged();
     const ref = await (this.db as any).pointer(p.tenant, 'deployment', `production.${name}`);
     if (!ref) throw new Fault(404, 'deployment_not_found');
     const baseline = await (this.db as any).get(p.tenant, 'spec', ref);
@@ -365,9 +431,7 @@ export class ProductionService {
     validateSpec({ ...baseline.body, version }, this.config, this.tools);
     const existing = await (this.db as any).get(p.tenant, 'spec', `${name}@${version}`);
     if (existing) throw new Fault(409, 'artifact_exists');
-    const job = await (this.db as any).enqueue(p.tenant, p.actor, 'improve', idem, { ref, version, feedback, credential: p.tokenHash });
-    this.kick();
-    return job;
+    return this.enqueueManaged(p.tenant, p.actor, 'improve', idem, { ref, version, feedback, credential: p.tokenHash });
   }
   replay(p: Principal, source: string, idem: string) {
     requireRole(p, 'operator', 'reviewer');
@@ -388,13 +452,12 @@ export class ProductionService {
     return job;
   }
   private async replayManaged(p: Principal, source: string, idem: string) {
+    await this.checkCapacityManaged();
     const session = await (this.db as any).session(p.tenant, source);
     if (!session || session.kind !== 'run') throw new Fault(404, 'session_not_found');
     if (await (this.db as any).activeJob(p.tenant, source)) throw new Fault(409, 'session_busy');
     const checkpoint = await (this.db as any).verify(p.tenant, source);
-    const job = await (this.db as any).enqueue(p.tenant, p.actor, 'replay', idem, { ref: session.ref, source, checkpoint, credential: p.tokenHash });
-    this.kick();
-    return job;
+    return this.enqueueManaged(p.tenant, p.actor, 'replay', idem, { ref: session.ref, source, checkpoint, credential: p.tokenHash });
   }
   private checkCredential(job: Job) {
     this.checkCapacity();
@@ -450,6 +513,7 @@ export class ProductionService {
     }
   }
   cancel(p: Principal, id: string) {
+    if (this.managed) return this.cancelManaged(p, id);
     const job = this.jobs.job(p.tenant, id);
     if (!job) throw new Fault(404, 'job_not_found');
     requireRole(
@@ -459,6 +523,14 @@ export class ProductionService {
         : ['developer' as const, 'reviewer' as const]),
     );
     const cancelled = this.jobs.cancel(p.tenant, id, p.actor);
+    this.tasks.get(id)?.controller.abort(new Fault(409, 'cancelled'));
+    return cancelled;
+  }
+  private async cancelManaged(p: Principal, id: string) {
+    const job = await (this.jobs as any).job(p.tenant, id) as Job | undefined;
+    if (!job) throw new Fault(404, 'job_not_found');
+    requireRole(p, ...(job.kind === 'run' || job.kind === 'replay' ? ['operator' as const] : ['developer' as const, 'reviewer' as const]));
+    const cancelled = await (this.jobs as any).cancel(p.tenant, id, p.actor);
     this.tasks.get(id)?.controller.abort(new Fault(409, 'cancelled'));
     return cancelled;
   }
@@ -497,6 +569,7 @@ export class ProductionService {
     }
   }
   private async execute(job: Job, signal: AbortSignal) {
+    if (this.managed) return this.executeManaged(job, signal);
     this.checkCredential(job);
     let result: unknown;
     if (job.kind === 'run') {
@@ -517,30 +590,63 @@ export class ProductionService {
     if (job.kind === 'run') this.assertApproved(job.tenant, job.args.ref);
     return result;
   }
+  private async executeManaged(job: Job, signal: AbortSignal) {
+    await this.checkCredentialManaged(job);
+    let result: unknown;
+    if (job.kind === 'run') {
+      const spec = await this.assertApprovedManaged(job.tenant, job.args.ref);
+      result = await this.turn(job, job.session, spec.body, job.args.prompt, signal, () => {
+        void this.assertApprovedManaged(job.tenant, job.args.ref);
+      });
+    } else if (job.kind === 'replay') {
+      const spec = await this.specManaged(job.tenant, job.args.ref);
+      result = await replayRecorded({
+        db: this.db as any,
+        job,
+        spec: spec.body,
+        config: this.config,
+        tools: this.tools,
+        signal,
+        check: () => { void this.checkCredentialManaged(job); },
+      });
+    } else if (job.kind === 'evaluate') result = await this.evaluateJobManaged(job, signal);
+    else result = await this.improveJobManaged(job, signal);
+    signal.throwIfAborted();
+    await this.checkCredentialManaged(job);
+    if (job.kind === 'run') await this.assertApprovedManaged(job.tenant, job.args.ref);
+    return result;
+  }
   private executeAsync(item: AsyncWorkItem, signal: AbortSignal) {
-    const job = {
-      ...item,
-      state: 'running' as const,
-      session: item.session ?? String((item.args as any)?.session ?? `run_${item.id}`),
-      owner: item.owner,
-      deadline: item.deadline ?? null,
-      lease_until: item.leaseUntil,
-      result: undefined,
-    } as unknown as Job;
-    return this.execute(job, signal).then(
+    const claim = this.managed
+      ? (typeof (this.jobs as any).claimById === 'function'
+        ? (this.jobs as any).claimById(item.tenant, item.id, item.owner, this.config.timeoutMs)
+        : (this.db as any).claimById(item.tenant, item.id, item.owner, this.config.timeoutMs))
+      : Promise.resolve({
+          ...item,
+          state: 'running' as const,
+          session: item.session ?? String((item.args as any)?.session ?? `run_${item.id}`),
+          owner: item.owner,
+          deadline: item.deadline ?? null,
+          lease_until: item.leaseUntil,
+          result: undefined,
+        } as unknown as Job);
+    return claim.then((job: Job | undefined) => {
+      if (!job) throw new Fault(409, 'execution_fenced');
+      return this.execute(job, signal).then(
       async (result) => {
-        if ((this.db as any).pool) await (this.db as any).finish(job, 'completed', result);
+        if (this.managed) await (this.db as any).finish(job, 'completed', result);
         else this.jobs.finish(job, 'completed', result);
         return result;
       },
       async (error) => {
         const state = this.stopped ? 'interrupted' : 'failed';
         const result = { code: error instanceof Fault ? error.code : 'execution_failed' };
-        if ((this.db as any).pool) await (this.db as any).finish(job, state, result);
+        if (this.managed) await (this.db as any).finish(job, state, result);
         else this.jobs.finish(job, state, result);
         throw error;
       },
-    );
+      );
+    });
   }
   private turn(
     job: Job,
@@ -605,7 +711,7 @@ export class ProductionService {
       checks.push({ index, passed, session });
     }
     signal.throwIfAborted();
-    return this.db.transaction(() => {
+    return this.legacyAtomic(() => {
       this.db.assertFence(job.tenant, { id: job.id, owner: job.owner! });
       const evidence = {
         ref: artifact.key,
@@ -629,6 +735,63 @@ export class ProductionService {
         );
       return { evaluation: job.id, passed: evidence.passed };
     });
+  }
+  private async evaluateJobManaged(job: Job, signal: AbortSignal) {
+    const artifact = await this.specManaged(job.tenant, job.args.ref);
+    const suite = await (this.db as any).get(job.tenant, 'suite', job.args.suite) as Artifact<Suite> | undefined;
+    if (!suite || job.args.environment !== this.environment(artifact.body)) throw new Fault(409, 'evaluation_environment_changed');
+    const checks: { index: number; passed: boolean; session: string }[] = [];
+    for (const [index, test] of suite.body.cases.entries()) {
+      signal.throwIfAborted();
+      const session = `eval_${job.id}_${index}`;
+      await (this.db as any).createSession(job.tenant, session, 'evaluation', artifact.key);
+      let completed = false;
+      try {
+        await this.turn(job, session, artifact.body, test.input, signal, async () => {
+          const current = await this.specManaged(job.tenant, artifact.key);
+          if (current.status === 'revoked') throw new Fault(409, 'spec_revoked');
+        });
+        completed = true;
+      } catch { signal.throwIfAborted(); }
+      const events = await (this.db as any).read(job.tenant, session);
+      const texts = events.filter((e: any) => e.type === 'assistant.message').map((e: any) => e.payload.text).join('\n');
+      const passed = completed && ruleNoErrors().check(events).passed && test.contains.every((s: string) => texts.includes(s)) && test.excludes.every((s: string) => !texts.includes(s)) && test.requiredTools.every((name: string) => events.some((e: any) => e.type === 'tool.result' && e.verb === 'response' && e.payload.name === name));
+      checks.push({ index, passed, session });
+    }
+    signal.throwIfAborted();
+    await (this.db as any).assertFence(job.tenant, { id: job.id, owner: job.owner! });
+    const evidence = { ref: artifact.key, candidate_digest: artifact.digest, suite: job.args.suite, suite_digest: suite.digest, environment: job.args.environment, checks, passed: checks.every((c) => c.passed) };
+    const evidenceArtifact = await (this.db as any).put(job.tenant, 'evaluation', job.id, evidence, job.actor, 'completed');
+    await this.persistArtifactObject(job.tenant, evidenceArtifact);
+    const current = await this.specManaged(job.tenant, artifact.key);
+    if (current.status !== 'revoked' && current.status !== 'approved') await (this.db as any).transition(job.tenant, 'spec', artifact.key, 'evaluated', { ...current.meta, evaluation: job.id }, job.actor);
+    return { evaluation: job.id, passed: evidence.passed };
+  }
+
+  private async improveJobManaged(job: Job, signal: AbortSignal) {
+    // Improvement uses the same provider and recorder as the SQLite path, but
+    // every ledger operation is awaited so a PostgreSQL pool is never blocked.
+    const baseline = await this.assertApprovedManaged(job.tenant, job.args.ref);
+    const sessions = (await (this.db as any).listSessions(job.tenant, 5)).filter((s: any) => s.ref === baseline.key);
+    const examples = [];
+    for (const s of sessions) examples.push({ session: s.id, events: (await (this.db as any).read(job.tenant, s.id)).filter((e: any) => ['user.message', 'assistant.message', 'tool.result'].includes(e.type)).slice(-6).map((e: any) => ({ type: e.type, payload: e.payload })) });
+    const store = new TenantTraceStore(this.db as any, job.tenant, job.actor, { id: job.id, owner: job.owner! });
+    const recorder = new Recorder(store, new Session({ session_id: job.session, tenant_id: job.tenant, spec_version: baseline.body.version }));
+    const providers = new Map([...this.providers].map(([name, p]) => [name, { complete: (req: any) => abortable(p.complete({ ...req, signal }), signal) }]));
+    const response = await new LLMGateway(providers).complete({ provider: baseline.body.llm.provider, model: baseline.body.llm.model, maxOutputTokens: this.config.maxOutputTokens, signal, messages: [{ role: 'system', content: 'Propose an improved system instruction. Return JSON only: {"system":"..."}. Preserve task and safety requirements. Do not change tools, permissions, models or evaluation criteria.' }, { role: 'user', content: JSON.stringify({ instruction: baseline.body.instruction.system, feedback: job.args.feedback, examples }).slice(0, 48000) }] }, recorder);
+    signal.throwIfAborted();
+    const proposal = z.object({ system: z.string().min(1).max(16000) }).strict().parse(JSON.parse(response.text));
+    const spec = validateSpec({ ...baseline.body, version: job.args.version, instruction: { system: proposal.system } }, this.config, this.tools);
+    await (this.db as any).assertFence(job.tenant, { id: job.id, owner: job.owner! });
+    await this.assertApprovedManaged(job.tenant, baseline.key);
+    const ref = `${spec.name}@${spec.version}`;
+    const candidateArtifact = await (this.db as any).put(job.tenant, 'spec', ref, spec, job.actor, 'draft', { release_artifact_hash: this.releaseArtifactHash(spec), baseline: baseline.key, baseline_digest: baseline.digest, generation_job: job.id, source_sessions: sessions.map((s: any) => s.id) });
+    await this.persistArtifactObject(job.tenant, candidateArtifact);
+    const suite = await (this.db as any).pointer(job.tenant, 'suite', spec.name);
+    if (!suite) throw new Fault(409, 'acceptance_suite_required');
+    await this.checkCredentialManaged(job);
+    const evaluation = await this.enqueueManaged(job.tenant, job.actor, 'evaluate', `generated_${job.id}`, { ref, suite, environment: this.environment(spec), credential: job.args.credential });
+    return { candidate: ref, evaluation_job: evaluation.id, status: 'requires_independent_review' };
   }
   private async improveJob(job: Job, signal: AbortSignal) {
     const baseline = this.assertApproved(job.tenant, job.args.ref);
@@ -694,7 +857,7 @@ export class ProductionService {
       this.config,
       this.tools,
     );
-    return this.db.transaction(() => {
+    return this.legacyAtomic(() => {
       this.db.assertFence(job.tenant, { id: job.id, owner: job.owner! });
       this.assertApproved(job.tenant, baseline.key);
       const ref = `${spec.name}@${spec.version}`;

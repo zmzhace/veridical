@@ -121,10 +121,23 @@ export class PostgresTraceLedger implements TraceLedger {
   }
   async getArtifact<T = any>(tenant: string, kind: string, key: string) { return this.get<T>(tenant,kind,key); }
   async transition(tenant: string, kind: string, key: string, status: string, meta: unknown, actor: string): Promise<Artifact> {
-    const current = await this.get(tenant,kind,key); if (!current) throw new Fault(404,'artifact_not_found');
-    await this.pool.query('UPDATE artifacts SET status=$1,meta=$2::jsonb WHERE tenant=$3 AND kind=$4 AND key=$5', [status, JSON.stringify(this.encrypt(meta, canonical([tenant,kind,key,'meta']))), tenant,kind,key]);
-    const result = await this.get(tenant,kind,key); if (!result) throw new Error('artifact_transition_lost');
-    await this.audit(tenant, actor, `${kind}.transitioned`, { key, status }); return result;
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query<any>('SELECT * FROM artifacts WHERE tenant=$1 AND kind=$2 AND key=$3 FOR UPDATE', [tenant, kind, key]);
+      const row = result.rows[0];
+      if (!row) throw new Fault(404, 'artifact_not_found');
+      const metadata = this.encrypt(meta, canonical([tenant, kind, key, 'meta']));
+      const created = row.created instanceof Date ? row.created.toISOString() : new Date(row.created).toISOString();
+      const seal = this.mac(canonical([tenant, kind, key, row.author, status, row.digest, row.blob, metadata, created]));
+      await client.query('UPDATE artifacts SET status=$1,meta=$2::jsonb,seal=$3 WHERE tenant=$4 AND kind=$5 AND key=$6', [status, JSON.stringify(metadata), seal, tenant, kind, key]);
+      await this.appendAuditInTransaction(client, tenant, actor, `${kind}.transitioned`, { key, status });
+      await client.query('COMMIT');
+      const updated = await this.get(tenant, kind, key);
+      if (!updated) throw new Error('artifact_transition_lost');
+      return updated;
+    } catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error; }
+    finally { client.release(); }
   }
   async list(tenant: string, kind: string, limit = 50, offset = 0) {
     const r = await this.pool.query('SELECT key,author,status,digest,blob,meta,created FROM artifacts WHERE tenant=$1 AND kind=$2 ORDER BY created DESC LIMIT $3 OFFSET $4',[tenant,kind,limit,offset]);
@@ -154,8 +167,8 @@ export class PostgresTraceLedger implements TraceLedger {
       const previous = await this.pointer(tenant, kind, name);
       const seal = this.mac(canonical([tenant, kind, name, ref]));
       await client.query('INSERT INTO pointers(tenant,kind,name,ref,seal) VALUES($1,$2,$3,$4,$5) ON CONFLICT(tenant,kind,name) DO UPDATE SET ref=EXCLUDED.ref,seal=EXCLUDED.seal', [tenant, kind, name, ref, seal]);
+      await this.appendAuditInTransaction(client, tenant, actor, `${kind}.changed`, { name, previous, ref, reason });
       await client.query('COMMIT');
-      await this.audit(tenant, actor, `${kind}.changed`, { name, previous, ref, reason });
     } catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error; }
     finally { client.release(); }
   }
@@ -168,6 +181,18 @@ export class PostgresTraceLedger implements TraceLedger {
   async revoke(hash: string): Promise<void> { await this.pool.query('INSERT INTO revoked_tokens(hash) VALUES($1) ON CONFLICT DO NOTHING',[hash]); }
   async jobCounts(tenant: string) { const r = await this.pool.query('SELECT state,COUNT(*)::int AS count FROM jobs WHERE tenant=$1 GROUP BY state',[tenant]); return r.rows; }
   async capacity() { const r = await this.pool.query<{ size: string }>('SELECT pg_database_size(current_database())::text AS size'); return { database_bytes: Number(r.rows[0]?.size ?? 0), free_disk_bytes: Number.MAX_SAFE_INTEGER }; }
+  async verifyAll() {
+    const sessions = await this.pool.query<{ tenant: string; id: string }>('SELECT tenant,id FROM sessions ORDER BY created');
+    const verified = [];
+    for (const row of sessions.rows) verified.push({ tenant: row.tenant, session: row.id, ...(await this.verify(row.tenant, row.id)) });
+    const artifacts = await this.pool.query<{ tenant: string; kind: string; key: string }>('SELECT tenant,kind,key FROM artifacts');
+    for (const row of artifacts.rows) await this.get(row.tenant, row.kind, row.key);
+    const pointers = await this.pool.query<{ tenant: string; kind: string; name: string }>('SELECT tenant,kind,name FROM pointers');
+    for (const row of pointers.rows) await this.pointer(row.tenant, row.kind, row.name);
+    const jobs = await this.pool.query<{ tenant: string; id: string }>('SELECT tenant,id FROM jobs');
+    for (const row of jobs.rows) await this.job(row.tenant, row.id);
+    return verified;
+  }
   async audit(tenant: string, actor: string, action: string, payload: unknown) {
     const session = '_audit';
     await this.createSession(tenant, session, 'audit', 'platform');
@@ -176,6 +201,18 @@ export class PostgresTraceLedger implements TraceLedger {
       span_id: 'governance', parent_span_id: null, type: action, verb: 'response', attempt: 1,
       duration_ms: 0, spec_version: 'platform-1', payload,
     });
+  }
+
+  private async appendAuditInTransaction(client: PoolClient, tenant: string, actor: string, action: string, payload: unknown) {
+    const session = '_audit';
+    await client.query(`INSERT INTO sessions(tenant,id,kind,ref,created) VALUES($1,$2,'audit','platform',now()) ON CONFLICT DO NOTHING`, [tenant, session]);
+    const row = await client.query<{ seq: number; head: string }>('SELECT seq,head FROM sessions WHERE tenant=$1 AND id=$2 FOR UPDATE', [tenant, session]);
+    const seq = Number(row.rows[0].seq) + 1;
+    const event = parseEvent({ tenant_id: tenant, session_id: session, actor_id: actor, run_id: undefined, span_id: 'governance', parent_span_id: null, type: action, verb: 'response', attempt: 1, duration_ms: 0, spec_version: 'platform-1', payload, id: `evt_${randomUUID()}`, seq, timestamp: new Date().toISOString(), event_schema_version: 1 });
+    const blob = this.encrypt(event, canonical([tenant, session, seq]));
+    const hash = this.mac(canonical([tenant, session, seq, event.id, row.rows[0].head, blob]));
+    await client.query('INSERT INTO events(tenant,session,seq,id,blob,prev,hash) VALUES($1,$2,$3,$4,$5,$6,$7)', [tenant, session, seq, event.id, blob, row.rows[0].head, hash]);
+    await client.query('UPDATE sessions SET seq=$1,head=$2 WHERE tenant=$3 AND id=$4', [seq, hash, tenant, session]);
   }
 
   async enqueue(tenant: string, actor: string, kind: JobKind, idem: string, args: any, session?: string): Promise<Job> {
@@ -235,6 +272,26 @@ export class PostgresTraceLedger implements TraceLedger {
       await client.query('COMMIT');
       const job = await this.job(row.tenant, row.id);
       return job;
+    } catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error; }
+    finally { client.release(); }
+  }
+  /** Claim the exact job delivered by Redis. Redis is only a wake-up channel;
+   * this transition makes PostgreSQL the authoritative owner/fence. */
+  async claimById(tenant: string, id: string, owner: string, timeoutMs: number): Promise<Job | undefined> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const selected = await client.query<any>("SELECT * FROM jobs WHERE tenant=$1 AND id=$2 AND state='queued' FOR UPDATE", [tenant, id]);
+      const row = selected.rows[0];
+      if (!row) { await client.query('ROLLBACK'); return undefined; }
+      const now = Date.now();
+      // Redis heartbeats own delivery, while PostgreSQL remains the fence. Keep
+      // the DB lease through the execution deadline so a healthy long-running
+      // task is not fenced merely because the queue heartbeat is a separate
+      // transport.
+      await client.query("UPDATE jobs SET state='running',owner=$1,deadline=$2,lease_until=$3 WHERE tenant=$4 AND id=$5", [owner, now + timeoutMs, now + timeoutMs, tenant, id]);
+      await client.query('COMMIT');
+      return this.job(tenant, id);
     } catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error; }
     finally { client.release(); }
   }

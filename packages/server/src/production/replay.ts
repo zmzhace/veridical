@@ -23,7 +23,7 @@ export async function replayRecorded(options: {
   config: ProductionConfig;
   tools: ProductionTool[];
   signal: AbortSignal;
-  check: () => void;
+  check: () => void | Promise<void>;
 }) {
   const { db, job, spec, config, tools, signal } = options;
   const checkpoint = await db.verify(job.tenant, job.args.source, job.args.checkpoint);

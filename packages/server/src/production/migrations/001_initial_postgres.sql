@@ -43,4 +43,19 @@ CREATE INDEX IF NOT EXISTS queued_jobs ON jobs(state, created);
 CREATE TABLE IF NOT EXISTS revoked_tokens (hash TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS rate_limits (key TEXT PRIMARY KEY, window_start BIGINT NOT NULL, count INTEGER NOT NULL);
 
+-- A migration checkpoint is deliberately separate from business facts.  It makes
+-- SQLite -> PostgreSQL cutovers auditable and allows the migration command to
+-- prove that a rollback only targets a database that was empty before import.
+CREATE TABLE IF NOT EXISTS migration_checkpoints (
+  id TEXT PRIMARY KEY,
+  source TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('running','completed','rolled_back','failed')),
+  target_was_empty BOOLEAN NOT NULL DEFAULT FALSE,
+  tenants JSONB NOT NULL DEFAULT '[]'::jsonb,
+  counts JSONB NOT NULL DEFAULT '{}'::jsonb,
+  source_hash TEXT,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ
+);
+
 INSERT INTO schema_migrations(version) VALUES (1) ON CONFLICT (version) DO NOTHING;

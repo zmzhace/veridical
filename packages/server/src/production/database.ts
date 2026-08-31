@@ -124,6 +124,8 @@ export class Ledger {
     return this.sql.transaction(fn).immediate();
   }
   transaction<T>(fn: () => T): T { return this.tx(fn); }
+  /** Domain-level atomic boundary used by administration and compatibility paths. */
+  atomic<T>(fn: () => T): T { return this.tx(fn); }
   mac(value: string) {
     return createHmac('sha256', this.auditKey).update(value).digest('hex');
   }
@@ -582,6 +584,23 @@ export class Ledger {
   }
   jobCounts(tenant: string) {
     return this.sql.prepare('SELECT state,COUNT(*) count FROM jobs WHERE tenant=? GROUP BY state').all(tenant);
+  }
+  /** Administrative integrity probe; callers do not need to reach into SQLite. */
+  verifyAll() {
+    if (this.sql.pragma('integrity_check', { simple: true }) !== 'ok')
+      throw new Error('SQLite integrity check failed');
+    const sessions = (this.sql.prepare('SELECT tenant,id FROM sessions').all() as any[]).map((row) => ({
+      tenant: row.tenant,
+      session: row.id,
+      ...this.verify(row.tenant, row.id),
+    }));
+    for (const row of this.sql.prepare('SELECT tenant,kind,key FROM artifacts').all() as any[])
+      this.get(row.tenant, row.kind, row.key);
+    for (const row of this.sql.prepare('SELECT tenant,kind,name FROM pointers').all() as any[])
+      this.pointer(row.tenant, row.kind, row.name);
+    for (const row of this.sql.prepare('SELECT tenant,id FROM jobs').all() as any[])
+      this.job(row.tenant, row.id);
+    return sessions;
   }
   async backup(path: string) {
     await this.sql.backup(path);

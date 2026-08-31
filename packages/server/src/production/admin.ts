@@ -32,9 +32,7 @@ async function main() {
     const db: any = await buildLedger(config, dataKey, auditKey);
     try {
       if (command === 'backup') throw new Error('postgres_backup_requires_pg_dump');
-      const rows = await db.pool.query('SELECT tenant,id FROM sessions ORDER BY created');
-      const sessions = [];
-      for (const row of rows.rows) sessions.push({ tenant: row.tenant, session: row.id, ...(await db.verify(row.tenant, row.id)) });
+      const sessions = await db.verifyAll();
       if (command === 'verify' && argument) {
         const anchors = Manifest.parse(JSON.parse(readFileSync(resolve(argument), 'utf8')));
         for (const anchor of anchors.sessions) await db.verify(anchor.tenant, anchor.session, anchor);
@@ -67,25 +65,12 @@ async function main() {
         build: BUILD_ID,
         sessions: [] as z.infer<typeof Manifest>['sessions'],
       };
-      db.tx(() => {
-        if (db.sql.pragma('integrity_check', { simple: true }) !== 'ok')
-          throw new Error('SQLite integrity check failed');
+      db.atomic(() => {
         if (command === 'verify' && argument) {
           const anchors = Manifest.parse(JSON.parse(readFileSync(resolve(argument), 'utf8')));
           for (const anchor of anchors.sessions) db.verify(anchor.tenant, anchor.session, anchor);
         }
-        for (const row of db.sql.prepare('SELECT tenant,id FROM sessions').all() as any[])
-          manifest.sessions.push({
-            tenant: row.tenant,
-            session: row.id,
-            ...db.verify(row.tenant, row.id),
-          });
-        for (const row of db.sql.prepare('SELECT tenant,kind,key FROM artifacts').all() as any[])
-          db.get(row.tenant, row.kind, row.key);
-        for (const row of db.sql.prepare('SELECT tenant,kind,name FROM pointers').all() as any[])
-          db.pointer(row.tenant, row.kind, row.name);
-        for (const row of db.sql.prepare('SELECT tenant,id FROM jobs').all() as any[])
-          db.job(row.tenant, row.id);
+        manifest.sessions.push(...db.verifyAll());
       });
       if (command === 'checkpoint') {
         if (!argument) throw new Error('new checkpoint file required');

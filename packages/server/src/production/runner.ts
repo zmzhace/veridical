@@ -345,8 +345,7 @@ async function executeTurnInternal(options: ExecuteTurnOptions, recorder: Invoca
   await record('user.message', { text: options.input }, 'request');
   const stages = spec.flow.stages ?? [];
   const completed = new Set(
-    ledger
-      .read(job.tenant, session)
+    (await ledger.read(job.tenant, session))
       .filter((e) => e.type === 'stage/end')
       .map((e) => (e.payload as any).stage),
   );
@@ -367,7 +366,7 @@ async function executeTurnInternal(options: ExecuteTurnOptions, recorder: Invoca
       }
       await record('step/start', { step, stage: stage?.id }, 'request');
       const messages = messagesFrom(
-        ledger.read(job.tenant, session),
+        await ledger.read(job.tenant, session),
         system +
           (stage ? `\nCurrent stage: ${stage.id}. Required tool: ${stage.gate?.tool_called}.` : ''),
       );

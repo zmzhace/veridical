@@ -66,6 +66,9 @@ export interface AsyncJobStore {
 /** PostgreSQL is the source of truth; Redis only delivers wake-up notifications. */
 export class PostgresJobStore implements AsyncJobStore {
   constructor(private readonly ledger: PostgresTraceLedger) {}
+  async create(tenant: string, actor: string, kind: JobKind, idempotencyKey: string, args: unknown, session?: string) {
+    return this.ledger.enqueue(tenant, actor, kind, idempotencyKey, args, session);
+  }
   async enqueue(job: any, idempotencyKey: string) {
     const existing = await this.ledger.job(job.tenant, job.id);
     const created = await this.ledger.enqueue(job.tenant, job.actor, job.kind, idempotencyKey, job.args, job.session);
@@ -77,6 +80,9 @@ export class PostgresJobStore implements AsyncJobStore {
   }
   async heartbeat(id: string, owner: string, leaseMs: number) { const row = await this.find(id); if (!row || row.owner !== owner) return false; await this.ledger.heartbeat(row); return true; }
   async finish(id: string, owner: string, state: 'completed'|'failed'|'cancelled', result?: unknown) { const row = await this.find(id); if (!row || row.owner !== owner) return false; await this.ledger.finish(row, state, result); return true; }
+  async job(tenant: string, id: string) { return this.ledger.job(tenant, id); }
+  async cancel(tenant: string, id: string, actor: string) { return this.ledger.cancel(tenant, id, actor); }
+  async claimById(tenant: string, id: string, owner: string, timeoutMs: number) { return this.ledger.claimById(tenant, id, owner, timeoutMs); }
   private async find(id: string) { const rows = await this.ledger.pool.query<any>('SELECT tenant FROM jobs WHERE id=$1',[id]); const tenant = rows.rows[0]?.tenant; return tenant ? await this.ledger.job(tenant,id) : undefined; }
 }
 
