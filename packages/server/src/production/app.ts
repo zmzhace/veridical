@@ -10,7 +10,7 @@ import { SecureProvider, type ProductionTool } from './runner';
 import { BUILD_ID } from './build';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { resolveCredential } from './credentials';
-import type { AsyncJobStore, JobStore } from './job-store';
+import { PostgresJobStore, type AsyncJobStore, type JobStore } from './job-store';
 import { RedisJobQueue } from './redis-queue';
 import { buildLedger, buildObjectStore } from './storage';
 
@@ -79,12 +79,13 @@ export async function buildProductionApp(options: {
     if (!providers.has(provider.name)) throw new Error('provider not configured');
   const db: any = await buildLedger(config, options.dataKey, options.auditKey);
   const objectStore = buildObjectStore(config);
+  const durableJobs = config.storage.database === 'postgres' ? new PostgresJobStore(db) : options.jobs;
   const service = new ProductionService(
     db as any,
     config,
     providers,
     options.tools,
-    options.jobs,
+    durableJobs as any,
     managedQueue,
     objectStore,
   );
