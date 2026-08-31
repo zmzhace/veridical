@@ -63,6 +63,12 @@ try {
   const contentResponse = await request('GET', `/v1/artifacts/spec/${agentName}@1.0.0/content`, undefined, undefined, 'operator');
   assert.equal(contentResponse.statusCode, 200);
   assert.equal(JSON.parse(contentResponse.body).name, agentName);
+  const fileResponse = await request('POST', '/v1/knowledge/files', { project_id: 'e2e-project', name: 'e2e.txt', mime_type: 'text/plain', content_base64: Buffer.from('PostgreSQL S3 knowledge assertion').toString('base64') }, undefined, 'developer');
+  assert.equal(fileResponse.statusCode, 201);
+  const file = await fileResponse.json();
+  assert.equal((await request('GET', `/v1/knowledge/files/${file.id}/content`, undefined, undefined, 'operator')).body, 'PostgreSQL S3 knowledge assertion');
+  assert.equal((await request('GET', '/v1/knowledge/search?project_id=e2e-project&q=knowledge', undefined, undefined, 'operator')).statusCode, 200);
+  assert.equal((await request('DELETE', `/v1/knowledge/files/${file.id}`, undefined, undefined, 'reviewer')).statusCode, 200);
   console.log(`PostgreSQL business E2E passed: ${events.length} events, job ${result.id}`);
 } finally {
   await env.app.close();
