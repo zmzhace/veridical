@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { Ledger } from './database';
 import { PostgresTraceLedger } from './postgres-ledger';
 import type { ProductionConfig } from './config';
+import { S3ObjectStore } from './object-store';
 
 /** PostgreSQL connectivity primitive used by deployment probes and the future Ledger adapter. */
 export async function probePostgres(
@@ -84,4 +85,13 @@ export async function buildLedger(config: ProductionConfig, dataKey: Buffer, aud
     return ledger;
   }
   return new Ledger(config.database, dataKey, auditKey);
+}
+
+export function buildObjectStore(config: ProductionConfig) {
+  if (config.storage.objectStore !== 's3') return undefined;
+  const accessKey = process.env[config.storage.s3AccessKeyEnv!];
+  const secretKey = process.env[config.storage.s3SecretKeyEnv!];
+  if (!accessKey || !secretKey || !config.storage.s3Endpoint || !config.storage.s3Bucket)
+    throw new Error('s3_credentials_or_config_missing');
+  return new S3ObjectStore({ endpoint: config.storage.s3Endpoint, bucket: config.storage.s3Bucket, accessKey, secretKey });
 }
