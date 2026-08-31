@@ -12,22 +12,58 @@ export interface Fence {
 }
 /** Minimal durable trace boundary shared by SQLite and future PostgreSQL ledgers. */
 export interface TraceLedger {
-  append(tenant: string, session: string, input: NewTraceEvent, fence?: Fence): TraceEvent | Promise<TraceEvent>;
-  read(tenant: string, session: string, after?: number, limit?: number): TraceEvent[] | Promise<TraceEvent[]>;
+  append(
+    tenant: string,
+    session: string,
+    input: NewTraceEvent,
+    fence?: Fence,
+  ): TraceEvent | Promise<TraceEvent>;
+  read(
+    tenant: string,
+    session: string,
+    after?: number,
+    limit?: number,
+  ): TraceEvent[] | Promise<TraceEvent[]>;
 }
 /** Artifact boundary used by release/governance code. Implementations must preserve immutability. */
 export interface ArtifactLedger {
-  put(tenant: string, kind: string, key: string, body: unknown, actor: string, status?: string, meta?: unknown): Artifact;
+  put(
+    tenant: string,
+    kind: string,
+    key: string,
+    body: unknown,
+    actor: string,
+    status?: string,
+    meta?: unknown,
+  ): Artifact;
   get<T = any>(tenant: string, kind: string, key: string): Artifact<T> | undefined;
-  transition(tenant: string, kind: string, key: string, status: string, meta: unknown, actor: string): Artifact;
+  transition(
+    tenant: string,
+    kind: string,
+    key: string,
+    status: string,
+    meta: unknown,
+    actor: string,
+  ): Artifact;
   list(tenant: string, kind: string, limit?: number, offset?: number): Artifact[];
   pointer(tenant: string, kind: string, name: string): string | undefined;
-  point(tenant: string, kind: string, name: string, ref: string, actor: string, reason: string): void;
+  point(
+    tenant: string,
+    kind: string,
+    name: string,
+    ref: string,
+    actor: string,
+    reason: string,
+  ): void;
 }
 /** Async persistence contract used by managed production backends. */
 export interface LedgerPort extends TraceLedger, ArtifactLedger {
   createSession(tenant: string, id: string, kind?: string, ref?: string): Promise<void>;
-  verify(tenant: string, session: string, checkpoint?: Fence & { seq: number; head: string; signature: string }): Promise<unknown>;
+  verify(
+    tenant: string,
+    session: string,
+    checkpoint?: Fence & { seq: number; head: string; signature: string },
+  ): Promise<unknown>;
   enqueue(...args: any[]): Promise<Job>;
   job(tenant: string, id: string): Promise<Job | undefined>;
   claim(owner: string, timeoutMs: number): Promise<Job | undefined>;
@@ -123,9 +159,13 @@ export class Ledger {
   tx<T>(fn: () => T): T {
     return this.sql.transaction(fn).immediate();
   }
-  transaction<T>(fn: () => T): T { return this.tx(fn); }
+  transaction<T>(fn: () => T): T {
+    return this.tx(fn);
+  }
   /** Domain-level atomic boundary used by administration and compatibility paths. */
-  atomic<T>(fn: () => T): T { return this.tx(fn); }
+  atomic<T>(fn: () => T): T {
+    return this.tx(fn);
+  }
   mac(value: string) {
     return createHmac('sha256', this.auditKey).update(value).digest('hex');
   }
@@ -574,7 +614,9 @@ export class Ledger {
     });
   }
   activeJob(tenant: string, session: string) {
-    return this.sql.prepare("SELECT 1 FROM jobs WHERE tenant=? AND session=? AND state IN ('queued','running')").get(tenant, session) as any;
+    return this.sql
+      .prepare("SELECT 1 FROM jobs WHERE tenant=? AND session=? AND state IN ('queued','running')")
+      .get(tenant, session) as any;
   }
   isRevoked(hash: string) {
     return Boolean(this.sql.prepare('SELECT 1 FROM revoked_tokens WHERE hash=?').get(hash));
@@ -583,17 +625,21 @@ export class Ledger {
     this.sql.prepare('INSERT OR IGNORE INTO revoked_tokens VALUES (?)').run(hash);
   }
   jobCounts(tenant: string) {
-    return this.sql.prepare('SELECT state,COUNT(*) count FROM jobs WHERE tenant=? GROUP BY state').all(tenant);
+    return this.sql
+      .prepare('SELECT state,COUNT(*) count FROM jobs WHERE tenant=? GROUP BY state')
+      .all(tenant);
   }
   /** Administrative integrity probe; callers do not need to reach into SQLite. */
   verifyAll() {
     if (this.sql.pragma('integrity_check', { simple: true }) !== 'ok')
       throw new Error('SQLite integrity check failed');
-    const sessions = (this.sql.prepare('SELECT tenant,id FROM sessions').all() as any[]).map((row) => ({
-      tenant: row.tenant,
-      session: row.id,
-      ...this.verify(row.tenant, row.id),
-    }));
+    const sessions = (this.sql.prepare('SELECT tenant,id FROM sessions').all() as any[]).map(
+      (row) => ({
+        tenant: row.tenant,
+        session: row.id,
+        ...this.verify(row.tenant, row.id),
+      }),
+    );
     for (const row of this.sql.prepare('SELECT tenant,kind,key FROM artifacts').all() as any[])
       this.get(row.tenant, row.kind, row.key);
     for (const row of this.sql.prepare('SELECT tenant,kind,name FROM pointers').all() as any[])

@@ -35,15 +35,27 @@ async function main() {
       const sessions = await db.verifyAll();
       if (command === 'verify' && argument) {
         const anchors = Manifest.parse(JSON.parse(readFileSync(resolve(argument), 'utf8')));
-        for (const anchor of anchors.sessions) await db.verify(anchor.tenant, anchor.session, anchor);
+        for (const anchor of anchors.sessions)
+          await db.verify(anchor.tenant, anchor.session, anchor);
       }
       const manifest = { format: 1, created: new Date().toISOString(), build: BUILD_ID, sessions };
       if (command === 'checkpoint') {
         if (!argument) throw new Error('new checkpoint file required');
-        writeFileSync(resolve(argument), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+        writeFileSync(resolve(argument), JSON.stringify(manifest, null, 2) + '\n', {
+          flag: 'wx',
+          mode: 0o600,
+        });
       }
-      console.log(JSON.stringify({ verified: true, sessions: sessions.length, ...(command === 'checkpoint' ? { checkpoint: resolve(argument) } : {}) }));
-    } finally { await db.close(); }
+      console.log(
+        JSON.stringify({
+          verified: true,
+          sessions: sessions.length,
+          ...(command === 'checkpoint' ? { checkpoint: resolve(argument) } : {}),
+        }),
+      );
+    } finally {
+      await db.close();
+    }
     return;
   }
   if (!existsSync(config.database))

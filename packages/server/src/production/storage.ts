@@ -93,5 +93,10 @@ export function buildObjectStore(config: ProductionConfig) {
   const secretKey = process.env[config.storage.s3SecretKeyEnv!];
   if (!accessKey || !secretKey || !config.storage.s3Endpoint || !config.storage.s3Bucket)
     throw new Error('s3_credentials_or_config_missing');
-  return new S3ObjectStore({ endpoint: config.storage.s3Endpoint, bucket: config.storage.s3Bucket, accessKey, secretKey });
+  return new S3ObjectStore({
+    endpoint: config.storage.s3Endpoint,
+    bucket: config.storage.s3Bucket,
+    accessKey,
+    secretKey,
+  });
 }

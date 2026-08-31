@@ -19,28 +19,50 @@ if (!pg.ok) throw new Error(`postgres unavailable: ${pg.error}`);
 const rd = await probeRedis(redis);
 if (!rd.ok) throw new Error(`redis unavailable: ${rd.error}`);
 const trace = new PostgresTraceLedger(postgres, Buffer.alloc(32, 7), Buffer.alloc(32, 9));
+const tenant = `infra_${randomUUID().slice(0, 8)}`;
 const traceSession = `infra_${randomUUID()}`;
-await trace.createSession('infra', traceSession);
-await trace.append('infra', traceSession, {
-  tenant_id: 'infra', session_id: traceSession, actor_id: 'smoke', run_id: 'smoke',
-  span_id: 'smoke', parent_span_id: null, type: 'smoke', verb: 'response', attempt: 1,
-  duration_ms: 0, spec_version: 'smoke', payload: { ok: true },
+await trace.createSession(tenant, traceSession);
+await trace.append(tenant, traceSession, {
+  tenant_id: tenant,
+  session_id: traceSession,
+  actor_id: 'smoke',
+  run_id: 'smoke',
+  span_id: 'smoke',
+  parent_span_id: null,
+  type: 'smoke',
+  verb: 'response',
+  attempt: 1,
+  duration_ms: 0,
+  spec_version: 'smoke',
+  payload: { ok: true },
 });
-if ((await trace.read('infra', traceSession)).length !== 1) throw new Error('postgres trace round trip mismatch');
-const artifact = await trace.put('infra', 'smoke', `artifact_${randomUUID()}`, { ok: true }, 'smoke');
-const artifactCopy = await trace.get('infra', 'smoke', artifact.key);
-if (!artifactCopy || artifactCopy.digest !== artifact.digest) throw new Error('postgres artifact round trip mismatch');
-await trace.point('infra', 'deployment', 'smoke', artifact.key, 'smoke', 'integration');
-if ((await trace.pointer('infra', 'deployment', 'smoke')) !== artifact.key) throw new Error('postgres pointer mismatch');
-await trace.audit('infra', 'smoke', 'smoke.completed', { traceSession, artifact: artifact.key });
-if ((await trace.read('infra', '_audit')).length < 1) throw new Error('postgres audit mismatch');
-const job = await trace.enqueue('infra', 'smoke', 'run', `idem_${randomUUID()}`, { ref: 'smoke@1.0.0' });
-const claimed = await trace.claim('infra-worker', 30_000);
+if ((await trace.read(tenant, traceSession)).length !== 1)
+  throw new Error('postgres trace round trip mismatch');
+const artifact = await trace.put(
+  tenant,
+  'smoke',
+  `artifact_${randomUUID()}`,
+  { ok: true },
+  'smoke',
+);
+const artifactCopy = await trace.get(tenant, 'smoke', artifact.key);
+if (!artifactCopy || artifactCopy.digest !== artifact.digest)
+  throw new Error('postgres artifact round trip mismatch');
+await trace.point(tenant, 'deployment', 'smoke', artifact.key, 'smoke', 'integration');
+if ((await trace.pointer(tenant, 'deployment', 'smoke')) !== artifact.key)
+  throw new Error('postgres pointer mismatch');
+await trace.audit(tenant, 'smoke', 'smoke.completed', { traceSession, artifact: artifact.key });
+if ((await trace.read(tenant, '_audit')).length < 1) throw new Error('postgres audit mismatch');
+const job = await trace.enqueue(tenant, 'smoke', 'run', `idem_${randomUUID()}`, {
+  ref: 'smoke@1.0.0',
+});
+const claimed = await trace.claim('infra-worker', 30_000, 1, tenant);
 if (!claimed || claimed.id !== job.id) throw new Error('postgres job claim mismatch');
 await trace.heartbeat(claimed);
 await trace.finish(claimed, 'completed', { ok: true });
-const finished = await trace.job('infra', job.id);
-if (!finished || finished.state !== 'completed' || finished.result?.ok !== true) throw new Error('postgres job finish mismatch');
+const finished = await trace.job(tenant, job.id);
+if (!finished || finished.state !== 'completed' || finished.result?.ok !== true)
+  throw new Error('postgres job finish mismatch');
 await trace.close();
 const key = `smoke/${randomUUID()}.txt`;
 const body = new TextEncoder().encode('veridical-infrastructure-smoke');

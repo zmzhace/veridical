@@ -134,10 +134,8 @@ export function loadProductionConfig() {
   if (process.env.VERIDICAL_ALLOW_LOCAL_STORAGE !== '1') {
     if (config.storage.database !== 'postgres')
       throw new Error('production_requires_postgres_ledger');
-    if (config.storage.queue !== 'redis')
-      throw new Error('production_requires_redis_queue');
-    if (config.storage.objectStore !== 's3')
-      throw new Error('production_requires_s3_object_store');
+    if (config.storage.queue !== 'redis') throw new Error('production_requires_redis_queue');
+    if (config.storage.objectStore !== 's3') throw new Error('production_requires_s3_object_store');
   }
   config.database = resolve(config.database);
   const key = (name: string) => {

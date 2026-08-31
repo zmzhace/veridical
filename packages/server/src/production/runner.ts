@@ -222,7 +222,12 @@ export function messagesFrom(
 export interface ExecuteTurnOptions {
   ledger: Pick<Ledger, 'assertFence' | 'read' | 'append'> & {
     assertFence(tenant: string, fence: Fence): void | Promise<void>;
-    read(tenant: string, session: string, after?: number, limit?: number): TraceEvent[] | Promise<TraceEvent[]>;
+    read(
+      tenant: string,
+      session: string,
+      after?: number,
+      limit?: number,
+    ): TraceEvent[] | Promise<TraceEvent[]>;
   };
   job: Job;
   session: string;
@@ -242,9 +247,9 @@ export async function executeTurn(options: ExecuteTurnOptions) {
     id: job.id,
     owner: job.owner!,
   });
-  const roots = (await ledger
-    .read(job.tenant, session))
-    .filter((e) => e.type === 'invocation.start' && !e.parent_invocation_id);
+  const roots = (await ledger.read(job.tenant, session)).filter(
+    (e) => e.type === 'invocation.start' && !e.parent_invocation_id,
+  );
   const recorder = InvocationRecorder.root(
     store,
     new Session({ session_id: session, tenant_id: job.tenant, spec_version: spec.version }),

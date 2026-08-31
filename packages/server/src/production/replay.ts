@@ -16,7 +16,12 @@ const semantic = (events: TraceEvent[]) =>
 export async function replayRecorded(options: {
   db: Pick<Ledger, 'verify' | 'read' | 'assertFence' | 'append'> & {
     verify(tenant: string, session: string, checkpoint?: any): any | Promise<any>;
-    read(tenant: string, session: string, after?: number, limit?: number): TraceEvent[] | Promise<TraceEvent[]>;
+    read(
+      tenant: string,
+      session: string,
+      after?: number,
+      limit?: number,
+    ): TraceEvent[] | Promise<TraceEvent[]>;
   };
   job: Job;
   spec: AgentSpec;
