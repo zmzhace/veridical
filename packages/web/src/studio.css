@@ -190,6 +190,17 @@
   box-shadow: 0 0 0 3px var(--accent-soft);
   outline: 0;
 }
+.studio-inspector input,
+.studio-inspector textarea,
+.studio-inspector select {
+  background: #f3f3f5;
+  box-shadow: none;
+}
+.studio-inspector input:focus,
+.studio-inspector textarea:focus,
+.studio-inspector select:focus {
+  background: #fff;
+}
 .inspector-section-title {
   margin-top: 24px;
   padding-top: 17px;
