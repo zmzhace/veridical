@@ -1,5 +1,6 @@
 import type { Job, JobKind } from './contracts';
 import type { Ledger } from './database';
+import type { PostgresTraceLedger } from './postgres-ledger';
 
 /** Stable boundary for durable job delivery. Implementations must preserve tenant/idempotency fencing. */
 export interface JobStore {
@@ -60,6 +61,23 @@ export interface AsyncJobStore {
     state: 'completed' | 'failed' | 'cancelled',
     result?: unknown,
   ): Promise<boolean>;
+}
+
+/** PostgreSQL is the source of truth; Redis only delivers wake-up notifications. */
+export class PostgresJobStore implements AsyncJobStore {
+  constructor(private readonly ledger: PostgresTraceLedger) {}
+  async enqueue(job: any, idempotencyKey: string) {
+    const existing = await this.ledger.job(job.tenant, job.id);
+    const created = await this.ledger.enqueue(job.tenant, job.actor, job.kind, idempotencyKey, job.args, job.session);
+    return { id: created.id, duplicate: Boolean(existing) };
+  }
+  async claim(owner: string, leaseMs: number) {
+    const job = await this.ledger.claim(owner, leaseMs); if (!job) return undefined;
+    return { id: job.id, tenant: job.tenant, actor: job.actor, kind: job.kind, args: job.args, created: job.created, session: job.session, deadline: job.deadline ?? undefined, owner, leaseUntil: job.lease_until ?? Date.now()+leaseMs };
+  }
+  async heartbeat(id: string, owner: string, leaseMs: number) { const row = await this.find(id); if (!row || row.owner !== owner) return false; await this.ledger.heartbeat(row); return true; }
+  async finish(id: string, owner: string, state: 'completed'|'failed'|'cancelled', result?: unknown) { const row = await this.find(id); if (!row || row.owner !== owner) return false; await this.ledger.finish(row, state, result); return true; }
+  private async find(id: string) { const rows = await this.ledger.pool.query<any>('SELECT tenant FROM jobs WHERE id=$1',[id]); const tenant = rows.rows[0]?.tenant; return tenant ? await this.ledger.job(tenant,id) : undefined; }
 }
 
 /** Compatibility adapter while the async Redis implementation is rolled out. */
