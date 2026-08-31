@@ -15,3 +15,12 @@ export function overlayFromEvents(events: TraceEvent[]): RuntimeOverlay {
   }
   return overlay;
 }
+
+export function overlayFromReplayResult(result?: { identical?: boolean; passed?: boolean; differences?: unknown[] }): RuntimeOverlay {
+  if (!result) return {};
+  if (result.identical) return { input: 'success', agent: 'success', tools: 'success', output: 'success' };
+  const overlay: RuntimeOverlay = { agent: 'difference', output: result.passed ? 'success' : 'difference' };
+  const text = JSON.stringify(result.differences ?? []).toLowerCase();
+  if (text.includes('tool')) overlay.tools = 'difference';
+  return overlay;
+}

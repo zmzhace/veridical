@@ -3,7 +3,7 @@ import { useAddSpec, useReplayExecution, useSessions, useSpecs } from '../api/qu
 import { readSseFrames } from '../api/readSse';
 import { stringify } from 'yaml';
 import type { TraceEvent } from '@veridical/schema';
-import { overlayFromEvents } from '../workspace/graph/traceOverlay';
+import { overlayFromEvents, overlayFromReplayResult } from '../workspace/graph/traceOverlay';
 
 type CanvasNode = {
   id: string;
@@ -84,7 +84,7 @@ export function WorkspacePage() {
   const [showSpec, setShowSpec] = useState(false);
   const [panel, setPanel] = useState<'run' | 'replay' | null>(null);
   const [prompt, setPrompt] = useState(''); const [runOutput, setRunOutput] = useState(''); const [running, setRunning] = useState(false); const [replaySession, setReplaySession] = useState('');
-  const [runtimeEvents, setRuntimeEvents] = useState<TraceEvent[]>([]); const runtimeOverlay = overlayFromEvents(runtimeEvents);
+  const [runtimeEvents, setRuntimeEvents] = useState<TraceEvent[]>([]); const runtimeOverlay = overlayFromEvents(runtimeEvents); const replayOverlay = overlayFromReplayResult(replay.data); const visibleOverlay = panel === 'replay' ? replayOverlay : runtimeOverlay;
   async function runCanvas() { setRunning(true); setRunOutput(''); setRuntimeEvents([]); try { const response = await fetch('/api/run/turn', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ specName: agentName.toLowerCase().replace(/[^a-z0-9]+/g,'-') || 'research-agent', mode:'mock', prompt }) }); if (!response.ok) throw new Error((await response.text()) || response.statusText); await readSseFrames(response, (frame) => { if (frame.type === 'token') setRunOutput((v) => v + frame.text); if (frame.type === 'event') setRuntimeEvents((events) => [...events, frame.event]); if (frame.type === 'error') setRunOutput(`错误：${frame.message}`); }); } catch (e) { setRunOutput(e instanceof Error ? `错误：${e.message}` : '运行失败'); } finally { setRunning(false); } }
   const node = nodes.find((n) => n.id === selected) ?? nodes[0];
   function addNode(kind: '工具' | 'Skill' | 'Memory' | '条件' | '输出' = '工具') {
@@ -230,7 +230,7 @@ export function WorkspacePage() {
             {nodes.map((n) => (
               <div
                 key={n.id}
-                className={`canvas-node node-${n.tone} ${selected === n.id ? 'is-selected' : ''} runtime-${runtimeOverlay[n.id] ?? 'idle'}`}
+                className={`canvas-node node-${n.tone} ${selected === n.id ? 'is-selected' : ''} runtime-${visibleOverlay[n.id] ?? 'idle'}`}
                 style={{ left: `${n.x}%`, top: `${n.y}%` }}
                 onPointerDown={(e) => {
                   e.currentTarget.setPointerCapture(e.pointerId);
