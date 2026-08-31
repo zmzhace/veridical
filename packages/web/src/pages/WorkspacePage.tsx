@@ -315,7 +315,7 @@ export function WorkspacePage() {
             {save.isPending ? '保存中…' : '保存'}
           </button>
           <button className="button button-primary" onClick={() => setMode('run')}>
-            运行
+            测试草稿
           </button>
         </div>
       </header>

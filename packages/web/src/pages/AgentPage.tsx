@@ -204,7 +204,13 @@ export function AgentPage() {
             {agent.data.status === 'published' ? `已发布 ${agent.data.version ?? ''}` : '草稿'}
           </span>
         </header>
-        <button className="new-task-button" onClick={() => setParams({})}>
+        <button
+          className="new-task-button"
+          onClick={() => {
+            setTaskQuery('');
+            setParams({});
+          }}
+        >
           ＋ 新建任务
         </button>
         <nav aria-label="任务列表">
