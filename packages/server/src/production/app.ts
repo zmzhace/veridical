@@ -131,7 +131,7 @@ export async function buildProductionApp(options: {
     if (
       found &&
       Date.parse(found.expires) > Date.now() &&
-      !(db.isRevoked ? await db.isRevoked(hash) : !!db.sql.prepare('SELECT hash FROM revoked_tokens WHERE hash=?').get(hash))
+      !(await db.isRevoked(hash))
     ) {
       principal = { tenant: found.tenant, actor: found.actor, roles: found.roles, tokenHash: hash };
     } else if (oidcKeys && config.oidc) {
@@ -423,8 +423,7 @@ export async function buildProductionApp(options: {
       (t) => t.hash === body.hash && t.tenant === req.principal.tenant,
     );
     if (!target) throw new Fault(404, 'token_not_found');
-    if (db.revoke) await db.revoke(body.hash);
-    else db.tx(() => db.sql.prepare('INSERT OR IGNORE INTO revoked_tokens VALUES (?)').run(body.hash));
+    await db.revoke(body.hash);
     await db.audit(req.principal.tenant, req.principal.actor, 'token.revoked', {
       actor: target.actor,
       reason: body.reason,
@@ -434,7 +433,7 @@ export async function buildProductionApp(options: {
   app.get('/v1/metrics', async (req) => {
     requireRole(req.principal, 'admin');
     return {
-      jobs: db.jobCounts ? await db.jobCounts(req.principal.tenant) : db.sql.prepare('SELECT state,COUNT(*) count FROM jobs WHERE tenant=? GROUP BY state').all(req.principal.tenant),
+      jobs: await db.jobCounts(req.principal.tenant),
       storage: await db.capacity(),
       release: config.releaseId,
       build: BUILD_ID,

@@ -576,6 +576,12 @@ export class Ledger {
   isRevoked(hash: string) {
     return Boolean(this.sql.prepare('SELECT 1 FROM revoked_tokens WHERE hash=?').get(hash));
   }
+  revoke(hash: string) {
+    this.sql.prepare('INSERT OR IGNORE INTO revoked_tokens VALUES (?)').run(hash);
+  }
+  jobCounts(tenant: string) {
+    return this.sql.prepare('SELECT state,COUNT(*) count FROM jobs WHERE tenant=? GROUP BY state').all(tenant);
+  }
   async backup(path: string) {
     await this.sql.backup(path);
     chmodSync(path, 0o600);
