@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="590" viewBox="0 0 1200 590" role="img" aria-labelledby="title desc">
+  <title id="title">Veridical replay modes</title>
+  <desc id="desc">Strict, Fixture and Semantic replay are explicit modes with different guarantees.</desc>
+  <rect width="1200" height="590" fill="#f7f7f5"/>
+  <text x="64" y="64" font-family="Arial, sans-serif" font-size="30" font-weight="700" fill="#1f1f1d">Three honest answers to “can we replay it?”</text>
+  <text x="64" y="96" font-family="Arial, sans-serif" font-size="16" fill="#6f6f69">Choose the guarantee you need. Never call a degraded replay identical.</text>
+  <g font-family="Arial, sans-serif">
+    <rect x="64" y="148" width="330" height="300" rx="14" fill="#fff" stroke="#5b5bd6" stroke-width="3"/>
+    <text x="96" y="196" font-size="24" font-weight="700" fill="#5b5bd6">Strict</text>
+    <text x="96" y="232" font-size="15" fill="#6f6f69">生产默认 · 事故 · 合规</text>
+    <path d="M96 258 H350" stroke="#e5e5e0"/>
+    <text x="96" y="294" font-size="15" fill="#1f1f1d">✓ Release Manifest 一致</text>
+    <text x="96" y="326" font-size="15" fill="#1f1f1d">✓ path / ordinal / fingerprint</text>
+    <text x="96" y="358" font-size="15" fill="#1f1f1d">✓ LLM / Tool 响应一致</text>
+    <text x="96" y="408" font-size="14" font-weight="700" fill="#1f1f1d">identical: true</text>
+    <rect x="435" y="148" width="330" height="300" rx="14" fill="#fff" stroke="#e5e5e0"/>
+    <text x="467" y="196" font-size="24" font-weight="700" fill="#1f1f1d">Fixture</text>
+    <text x="467" y="232" font-size="15" fill="#6f6f69">外部依赖不可用 · 测试</text>
+    <path d="M467 258 H721" stroke="#e5e5e0"/>
+    <text x="467" y="294" font-size="15" fill="#1f1f1d">✓ fixture 绑定 path + hash</text>
+    <text x="467" y="326" font-size="15" fill="#1f1f1d">✓ 未命中直接失败</text>
+    <text x="467" y="358" font-size="15" fill="#1f1f1d">✕ 禁止 live fallback</text>
+    <text x="467" y="408" font-size="14" font-weight="700" fill="#1f1f1d">degraded: true</text>
+    <rect x="806" y="148" width="330" height="300" rx="14" fill="#fff" stroke="#e5e5e0"/>
+    <text x="838" y="196" font-size="24" font-weight="700" fill="#1f1f1d">Semantic</text>
+    <text x="838" y="232" font-size="15" fill="#6f6f69">新模型 · 新 Loop · 研究</text>
+    <path d="M838 258 H1092" stroke="#e5e5e0"/>
+    <text x="838" y="294" font-size="15" fill="#1f1f1d">✓ 结果和 Golden Eval</text>
+    <text x="838" y="326" font-size="15" fill="#1f1f1d">✓ 工具权限和必需步骤</text>
+    <text x="838" y="358" font-size="15" fill="#1f1f1d">✓ 成本 / 延迟 / 预算</text>
+    <text x="838" y="408" font-size="14" font-weight="700" fill="#1f1f1d">identical: false</text>
+  </g>
+  <text x="64" y="512" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#1f1f1d">回放输出永远带模式、差异和降级原因。</text>
+  <text x="64" y="542" font-family="Arial, sans-serif" font-size="15" fill="#6f6f69">这让“结果不同但合理”和“系统悄悄变了”成为两件可区分的事。</text>
+</svg>

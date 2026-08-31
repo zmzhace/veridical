@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="640" viewBox="0 0 1200 640" role="img" aria-labelledby="title desc">
+  <title id="title">Veridical platform architecture</title>
+  <desc id="desc">Agent App and Studio feed a unified runtime. PostgreSQL stores facts, Redis delivers jobs, S3 stores objects, and Vault resolves credentials.</desc>
+  <rect width="1200" height="640" fill="#f7f7f5"/>
+  <text x="64" y="66" font-family="Arial, sans-serif" font-size="30" font-weight="700" fill="#1f1f1d">One runtime. Four trustworthy boundaries.</text>
+  <text x="64" y="98" font-family="Arial, sans-serif" font-size="16" fill="#6f6f69">Veridical turns an Agent run into a durable, inspectable product surface.</text>
+  <g font-family="Arial, sans-serif">
+    <rect x="64" y="150" width="230" height="112" rx="10" fill="#fff" stroke="#e5e5e0"/>
+    <text x="88" y="186" font-size="18" font-weight="700" fill="#1f1f1d">Agent App</text>
+    <text x="88" y="216" font-size="14" fill="#6f6f69">Tasks · turns · artifacts</text>
+    <text x="88" y="240" font-size="14" fill="#6f6f69">ChatGPT-like daily use</text>
+    <rect x="64" y="294" width="230" height="112" rx="10" fill="#fff" stroke="#e5e5e0"/>
+    <text x="88" y="330" font-size="18" font-weight="700" fill="#1f1f1d">Agent Studio</text>
+    <text x="88" y="360" font-size="14" fill="#6f6f69">Build · Run · Replay · Publish</text>
+    <text x="88" y="384" font-size="14" fill="#6f6f69">Canvas + diagnostics</text>
+    <rect x="390" y="218" width="350" height="176" rx="14" fill="#5b5bd6"/>
+    <text x="425" y="264" font-size="23" font-weight="700" fill="#fff">Unified Agent Runtime</text>
+    <text x="425" y="300" font-size="15" fill="#eeedff">Loop · LLM · Tools · Memory</text>
+    <text x="425" y="328" font-size="15" fill="#eeedff">Child Agents · Checkpoints · Budgets</text>
+    <text x="425" y="356" font-size="15" fill="#eeedff">Invocation Graph · Replay · Eval</text>
+    <path d="M294 206 H390" stroke="#5b5bd6" stroke-width="3" marker-end="url(#arrow)"/>
+    <path d="M294 350 H390" stroke="#5b5bd6" stroke-width="3" marker-end="url(#arrow)"/>
+    <rect x="836" y="132" width="292" height="84" rx="10" fill="#fff" stroke="#e5e5e0"/>
+    <text x="866" y="168" font-size="17" font-weight="700" fill="#1f1f1d">PostgreSQL</text>
+    <text x="866" y="194" font-size="14" fill="#6f6f69">Ledger · Jobs · Audit · Releases</text>
+    <rect x="836" y="240" width="292" height="84" rx="10" fill="#fff" stroke="#e5e5e0"/>
+    <text x="866" y="276" font-size="17" font-weight="700" fill="#1f1f1d">Redis</text>
+    <text x="866" y="302" font-size="14" fill="#6f6f69">Delivery and worker wake-up only</text>
+    <rect x="836" y="348" width="292" height="84" rx="10" fill="#fff" stroke="#e5e5e0"/>
+    <text x="866" y="384" font-size="17" font-weight="700" fill="#1f1f1d">S3-compatible storage</text>
+    <text x="866" y="410" font-size="14" fill="#6f6f69">Files · artifacts · exports</text>
+    <rect x="836" y="456" width="292" height="84" rx="10" fill="#fff" stroke="#e5e5e0"/>
+    <text x="866" y="492" font-size="17" font-weight="700" fill="#1f1f1d">Vault / KMS</text>
+    <text x="866" y="518" font-size="14" fill="#6f6f69">Provider and tool credentials</text>
+    <path d="M740 250 H836" stroke="#5b5bd6" stroke-width="3" marker-end="url(#arrow)"/>
+    <path d="M740 290 H836" stroke="#5b5bd6" stroke-width="3" marker-end="url(#arrow)"/>
+    <path d="M740 330 H836" stroke="#5b5bd6" stroke-width="3" marker-end="url(#arrow)"/>
+    <path d="M740 370 H836" stroke="#5b5bd6" stroke-width="3" marker-end="url(#arrow)"/>
+    <text x="64" y="496" font-size="16" font-weight="700" fill="#1f1f1d">The rule</text>
+    <text x="64" y="528" font-size="15" fill="#6f6f69">PostgreSQL is the business source of truth. Redis never becomes a second ledger.</text>
+    <text x="64" y="556" font-size="15" fill="#6f6f69">SQLite remains a development adapter, not a production fallback.</text>
+  </g>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#5b5bd6"/></marker></defs>
+</svg>

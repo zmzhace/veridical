@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="430" viewBox="0 0 1200 430" role="img" aria-labelledby="title desc">
+  <title id="title">Veridical release flow</title>
+  <desc id="desc">A draft moves through validation, evaluation and approval before becoming an immutable production release.</desc>
+  <rect width="1200" height="430" fill="#f7f7f5"/>
+  <text x="64" y="62" font-family="Arial, sans-serif" font-size="30" font-weight="700" fill="#1f1f1d">From idea to production without a mystery box</text>
+  <text x="64" y="94" font-family="Arial, sans-serif" font-size="16" fill="#6f6f69">Every release is a visible decision, not a mutable pointer to “whatever is live”.</text>
+  <g font-family="Arial, sans-serif">
+    <g transform="translate(64 156)"><rect width="166" height="116" rx="12" fill="#fff" stroke="#e5e5e0"/><text x="24" y="42" font-size="19" font-weight="700" fill="#1f1f1d">Draft</text><text x="24" y="72" font-size="14" fill="#6f6f69">Canvas + defaults</text><text x="24" y="94" font-size="14" fill="#6f6f69">可随时修改</text></g>
+    <g transform="translate(286 156)"><rect width="166" height="116" rx="12" fill="#fff" stroke="#e5e5e0"/><text x="24" y="42" font-size="19" font-weight="700" fill="#1f1f1d">Validate</text><text x="24" y="72" font-size="14" fill="#6f6f69">Schema · deps</text><text x="24" y="94" font-size="14" fill="#6f6f69">权限 · 安全</text></g>
+    <g transform="translate(508 156)"><rect width="166" height="116" rx="12" fill="#fff" stroke="#e5e5e0"/><text x="24" y="42" font-size="19" font-weight="700" fill="#1f1f1d">Evaluate</text><text x="24" y="72" font-size="14" fill="#6f6f69">Golden · Replay</text><text x="24" y="94" font-size="14" fill="#6f6f69">成本 · 延迟</text></g>
+    <g transform="translate(730 156)"><rect width="166" height="116" rx="12" fill="#fff" stroke="#e5e5e0"/><text x="24" y="42" font-size="19" font-weight="700" fill="#1f1f1d">Approve</text><text x="24" y="72" font-size="14" fill="#6f6f69">Reviewer · Diff</text><text x="24" y="94" font-size="14" fill="#6f6f69">独立审批</text></g>
+    <g transform="translate(952 156)"><rect width="184" height="116" rx="12" fill="#5b5bd6"/><text x="24" y="42" font-size="19" font-weight="700" fill="#fff">Immutable Release</text><text x="24" y="72" font-size="14" fill="#eeedff">固定模型、工具、指令</text><text x="24" y="94" font-size="14" fill="#eeedff">部署后可回滚</text></g>
+    <path d="M230 214 H286" stroke="#5b5bd6" stroke-width="3" marker-end="url(#arrow)"/><path d="M452 214 H508" stroke="#5b5bd6" stroke-width="3" marker-end="url(#arrow)"/><path d="M674 214 H730" stroke="#5b5bd6" stroke-width="3" marker-end="url(#arrow)"/><path d="M896 214 H952" stroke="#5b5bd6" stroke-width="3" marker-end="url(#arrow)"/>
+  </g>
+  <rect x="64" y="326" width="1072" height="42" rx="8" fill="#eeedff"/><text x="88" y="353" font-family="Arial, sans-serif" font-size="14" fill="#3f3f9f">生产只接受 Release ID；草稿、Mock、动态工具和未审批能力不会被执行。</text>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#5b5bd6"/></marker></defs>
+</svg>

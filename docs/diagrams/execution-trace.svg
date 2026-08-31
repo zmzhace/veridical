@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="660" viewBox="0 0 1200 660" role="img" aria-labelledby="title desc">
+  <title id="title">Veridical execution trace</title>
+  <desc id="desc">A supervisor delegates to two child agents. Each invocation records input, output, path and parent identity.</desc>
+  <rect width="1200" height="660" fill="#f7f7f5"/>
+  <text x="64" y="62" font-family="Arial, sans-serif" font-size="30" font-weight="700" fill="#1f1f1d">The timeline is a graph, not a list of guesses.</text>
+  <text x="64" y="94" font-family="Arial, sans-serif" font-size="16" fill="#6f6f69">Every boundary has an identity, a parent, a path, an input and an output.</text>
+  <g font-family="Arial, sans-serif" font-size="14">
+    <path d="M160 160 V570" stroke="#c9c9c2" stroke-width="3"/>
+    <path d="M450 160 V570" stroke="#c9c9c2" stroke-width="3"/>
+    <path d="M740 160 V570" stroke="#c9c9c2" stroke-width="3"/>
+    <path d="M1030 160 V570" stroke="#c9c9c2" stroke-width="3"/>
+    <text x="110" y="140" font-weight="700" fill="#1f1f1d">root</text>
+    <text x="380" y="140" font-weight="700" fill="#1f1f1d">researcher</text>
+    <text x="675" y="140" font-weight="700" fill="#1f1f1d">reviewer</text>
+    <text x="970" y="140" font-weight="700" fill="#1f1f1d">join / output</text>
+    <circle cx="160" cy="194" r="10" fill="#5b5bd6"/><text x="190" y="200" fill="#1f1f1d">root/llm#1 · request → response</text>
+    <circle cx="450" cy="260" r="10" fill="#5b5bd6"/><text x="480" y="266" fill="#1f1f1d">root/delegate:researcher</text>
+    <circle cx="450" cy="324" r="10" fill="#5b5bd6"/><text x="480" y="330" fill="#1f1f1d">tool:web_search#1 · args → result</text>
+    <circle cx="450" cy="388" r="10" fill="#5b5bd6"/><text x="480" y="394" fill="#1f1f1d">tool:fetch_page#1 · args → result</text>
+    <circle cx="450" cy="452" r="10" fill="#5b5bd6"/><text x="480" y="458" fill="#1f1f1d">root/delegate:researcher/result</text>
+    <circle cx="740" cy="260" r="10" fill="#5b5bd6"/><text x="770" y="266" fill="#1f1f1d">root/delegate:reviewer</text>
+    <circle cx="740" cy="324" r="10" fill="#5b5bd6"/><text x="770" y="330" fill="#1f1f1d">tool:database_query#1 · args → result</text>
+    <circle cx="740" cy="388" r="10" fill="#5b5bd6"/><text x="770" y="394" fill="#1f1f1d">root/delegate:reviewer/result</text>
+    <circle cx="1030" cy="500" r="10" fill="#1f1f1d"/><text x="780" y="546" fill="#1f1f1d">root/join#1 → root/llm#2 → final answer</text>
+    <path d="M170 194 C300 194 310 260 440 260" fill="none" stroke="#5b5bd6" stroke-width="2"/>
+    <path d="M460 452 C600 452 600 388 730 388" fill="none" stroke="#5b5bd6" stroke-width="2" stroke-dasharray="6 5"/>
+    <path d="M750 388 C880 388 900 500 1020 500" fill="none" stroke="#5b5bd6" stroke-width="2"/>
+  </g>
+  <rect x="64" y="590" width="1070" height="38" rx="8" fill="#eeedff"/>
+  <text x="86" y="615" font-family="Arial, sans-serif" font-size="14" fill="#3f3f9f">seq 仍保留日志顺序；path + invocation_id 才是回放和责任链的稳定身份。</text>
+</svg>
