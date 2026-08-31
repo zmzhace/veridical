@@ -176,6 +176,7 @@ export class ProductionService {
   }
   evaluate(p: Principal, ref: string, idem: string) {
     requireRole(p, 'developer', 'reviewer');
+    if ((this.db as any).pool) return this.evaluateManaged(p, ref, idem);
     const spec = this.spec(p.tenant, ref);
     this.checkCapacity();
     if (spec.status === 'revoked' || spec.status === 'approved')
@@ -188,6 +189,16 @@ export class ProductionService {
       environment: this.environment(spec.body),
       credential: p.tokenHash,
     });
+    this.kick();
+    return job;
+  }
+  private async evaluateManaged(p: Principal, ref: string, idem: string) {
+    const spec = await (this.db as any).get(p.tenant, 'spec', ref);
+    if (!spec) throw new Fault(404, 'spec_not_found');
+    if (spec.status === 'revoked' || spec.status === 'approved') throw new Fault(409, 'immutable_release_requires_new_version');
+    const suite = await (this.db as any).pointer(p.tenant, 'suite', spec.body.name);
+    if (!suite) throw new Fault(409, 'acceptance_suite_required');
+    const job = await (this.db as any).enqueue(p.tenant, p.actor, 'evaluate', idem, { ref, suite, environment: this.environment(spec.body), credential: p.tokenHash });
     this.kick();
     return job;
   }
