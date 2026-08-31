@@ -248,6 +248,7 @@ export class ProductionService {
   }
   deploy(p: Principal, name: string, ref: string, channel: string, reason: string) {
     requireRole(p, 'publisher');
+    if ((this.db as any).pool) return this.deployManaged(p, name, ref, channel, reason);
     return this.db.tx(() => {
       const spec = this.assertApproved(p.tenant, ref);
       if (spec.body.name !== name) throw new Fault(422, 'release_name_mismatch');
@@ -255,8 +256,17 @@ export class ProductionService {
       return { name, ref, channel };
     });
   }
+  private async deployManaged(p: Principal, name: string, ref: string, channel: string, reason: string) {
+    const spec = await (this.db as any).get(p.tenant, 'spec', ref);
+    if (!spec) throw new Fault(404, 'spec_not_found');
+    if (spec.status !== 'approved') throw new Fault(409, 'release_not_approved');
+    if (spec.body.name !== name) throw new Fault(422, 'release_name_mismatch');
+    await (this.db as any).point(p.tenant, 'deployment', `${channel}.${name}`, ref, p.actor, reason);
+    return { name, ref, channel };
+  }
   revoke(p: Principal, ref: string, reason: string) {
     requireRole(p, 'reviewer');
+    if ((this.db as any).pool) return this.revokeManaged(p, ref, reason);
     return this.db.tx(() => {
       const spec = this.spec(p.tenant, ref);
       return this.db.transition(
@@ -268,6 +278,11 @@ export class ProductionService {
         p.actor,
       );
     });
+  }
+  private async revokeManaged(p: Principal, ref: string, reason: string) {
+    const spec = await (this.db as any).get(p.tenant, 'spec', ref);
+    if (!spec) throw new Fault(404, 'spec_not_found');
+    return (this.db as any).transition(p.tenant, 'spec', ref, 'revoked', { ...spec.meta, reason }, p.actor);
   }
   run(
     p: Principal,
