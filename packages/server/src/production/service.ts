@@ -333,7 +333,7 @@ export class ProductionService {
     if (
       !token ||
       Date.parse(token.expires) <= Date.now() ||
-      this.db.sql.prepare('SELECT 1 FROM revoked_tokens WHERE hash=?').get(token.hash)
+      (!(this.db as any).pool && this.db.sql.prepare('SELECT 1 FROM revoked_tokens WHERE hash=?').get(token.hash))
     )
       throw new Fault(401, 'execution_credential_revoked_or_expired');
   }
@@ -457,14 +457,16 @@ export class ProductionService {
       result: undefined,
     } as unknown as Job;
     return this.execute(job, signal).then(
-      (result) => {
-        this.jobs.finish(job, 'completed', result);
+      async (result) => {
+        if ((this.db as any).pool) await (this.db as any).finish(job, 'completed', result);
+        else this.jobs.finish(job, 'completed', result);
         return result;
       },
-      (error) => {
-        this.jobs.finish(job, this.stopped ? 'interrupted' : 'failed', {
-          code: error instanceof Fault ? error.code : 'execution_failed',
-        });
+      async (error) => {
+        const state = this.stopped ? 'interrupted' : 'failed';
+        const result = { code: error instanceof Fault ? error.code : 'execution_failed' };
+        if ((this.db as any).pool) await (this.db as any).finish(job, state, result);
+        else this.jobs.finish(job, state, result);
         throw error;
       },
     );
