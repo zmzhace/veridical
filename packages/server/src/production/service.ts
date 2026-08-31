@@ -333,6 +333,7 @@ export class ProductionService {
   }
   improve(p: Principal, name: string, version: string, feedback: string, idem: string) {
     requireRole(p, 'developer');
+    if ((this.db as any).pool) return this.improveManaged(p, name, version, feedback, idem);
     this.checkCapacity();
     const ref = this.db.pointer(p.tenant, 'deployment', `production.${name}`);
     if (!ref) throw new Fault(404, 'deployment_not_found');
@@ -353,6 +354,18 @@ export class ProductionService {
       feedback,
       credential: p.tokenHash,
     });
+    this.kick();
+    return job;
+  }
+  private async improveManaged(p: Principal, name: string, version: string, feedback: string, idem: string) {
+    const ref = await (this.db as any).pointer(p.tenant, 'deployment', `production.${name}`);
+    if (!ref) throw new Fault(404, 'deployment_not_found');
+    const baseline = await (this.db as any).get(p.tenant, 'spec', ref);
+    if (!baseline || baseline.status !== 'approved') throw new Fault(409, 'release_not_approved');
+    validateSpec({ ...baseline.body, version }, this.config, this.tools);
+    const existing = await (this.db as any).get(p.tenant, 'spec', `${name}@${version}`);
+    if (existing) throw new Fault(409, 'artifact_exists');
+    const job = await (this.db as any).enqueue(p.tenant, p.actor, 'improve', idem, { ref, version, feedback, credential: p.tokenHash });
     this.kick();
     return job;
   }
