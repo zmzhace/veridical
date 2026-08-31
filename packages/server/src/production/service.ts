@@ -162,6 +162,7 @@ export class ProductionService {
     return job;
   }
   checkCapacity() {
+    if (this.managed) return this.checkCapacityManaged();
     const capacity = this.db.capacity();
     if (
       capacity.database_bytes >= this.config.maxDatabaseBytes ||
