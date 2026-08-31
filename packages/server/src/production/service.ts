@@ -29,6 +29,7 @@ import { replayRecorded } from './replay';
 import { SqliteJobStore, type AsyncJobStore, type JobStore } from './job-store';
 import { AsyncWorker, type AsyncWorkItem } from './async-worker';
 import type { QueueJob } from './redis-queue';
+import type { S3ObjectStore } from './object-store';
 
 export class ProductionService {
   healthy = true;
@@ -48,6 +49,7 @@ export class ProductionService {
     tools = safeTools,
     jobs?: JobStore,
     asyncJobs?: AsyncJobStore,
+    readonly objectStore?: S3ObjectStore,
   ) {
     this.jobs = jobs ?? new SqliteJobStore(db);
     this.asyncJobs = asyncJobs;
@@ -130,6 +132,7 @@ export class ProductionService {
   }
   createSpec(p: Principal, yaml: string) {
     requireRole(p, 'developer');
+    if ((this.db as any).pool) return this.createSpecManaged(p, yaml);
     this.checkCapacity();
     let raw: unknown;
     try {
@@ -141,6 +144,16 @@ export class ProductionService {
     return this.db.put(p.tenant, 'spec', `${spec.name}@${spec.version}`, spec, p.actor, 'draft', {
       release_artifact_hash: this.releaseArtifactHash(spec),
     });
+  }
+  private async createSpecManaged(p: Principal, yaml: string) {
+    this.checkCapacity();
+    let raw: unknown;
+    try { raw = parseYaml(yaml, { maxAliasCount: 20 }); } catch { throw new Fault(400, 'invalid_spec_yaml'); }
+    const spec = validateSpec(raw, this.config, this.tools);
+    const ref = `${spec.name}@${spec.version}`;
+    const artifact = await (this.db as any).put(p.tenant, 'spec', ref, spec, p.actor, 'draft', { release_artifact_hash: this.releaseArtifactHash(spec) });
+    if (this.objectStore) await this.objectStore.put(`tenants/${p.tenant}/artifacts/spec/${artifact.digest}.json`, Buffer.from(JSON.stringify(spec)), 'application/json');
+    return artifact;
   }
   setSuite(p: Principal, specName: string, raw: unknown) {
     requireRole(p, 'reviewer');

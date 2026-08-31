@@ -86,6 +86,7 @@ export async function buildProductionApp(options: {
     options.tools,
     options.jobs,
     managedQueue,
+    objectStore,
   );
   const oidcKeys = config.oidc ? createRemoteJWKSet(new URL(config.oidc.jwksUrl)) : undefined;
   const app = Fastify({
