@@ -1078,6 +1078,13 @@
 .new-task-button { height: 34px; margin: 7px 12px 17px; border-color: #dedee2; border-radius: 6px; background: #fff; color: #353539; }
 .new-task-button:hover { background: #f1f1f3; border-color: #cacacf; }
 .task-rail nav > p, .context-rail section h3 { color: var(--accent); font-size: 9px; letter-spacing: 0.17em; }
+.task-rail-heading { display: flex; align-items: center; justify-content: space-between; padding: 0 10px 8px; }
+.task-rail-heading p { margin: 0; color: var(--accent); font: 650 9px/1.2 'SF Mono', ui-monospace, monospace; letter-spacing: .17em; text-transform: uppercase; }
+.task-rail-heading span { color: #9b9ba0; font: 10px/1 ui-monospace, monospace; }
+.task-search { display: flex; align-items: center; gap: 6px; height: 30px; margin: 0 8px 8px; padding: 0 8px; border: 1px solid #e3e3e6; border-radius: 5px; background: #fff; color: #96969b; }
+.task-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.task-search input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: #4b4b50; font-size: 11px; }
+.task-search input::placeholder { color: #a1a1a6; }
 .task-rail nav button { padding: 10px; border-radius: 6px; }
 .task-rail nav button:hover, .task-rail nav button.is-active { background: #eeeeef; }
 .agent-conversation { background: #fff; }

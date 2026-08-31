@@ -21,7 +21,7 @@ function activityCopy(event: TraceEvent) {
     return { label: '已保存进度', detail: '可以从这里恢复运行' };
   if (event.type === 'llm.request')
     return {
-      label: '正在请求模型',
+      label: '请求模型',
       detail: `${String((event.payload as any)?.model ?? '已配置模型')} · ${String((event.payload as any)?.messages?.length ?? 0)} 条消息`,
     };
   if (event.type === 'llm.response')
@@ -47,6 +47,13 @@ function activityCopy(event: TraceEvent) {
   return { label: meta.label, detail: meta.desc(event) };
 }
 
+function formatDuration(milliseconds: number) {
+  if (!Number.isFinite(milliseconds) || milliseconds <= 0) return '—';
+  if (milliseconds < 1000) return `${Math.round(milliseconds)}ms`;
+  if (milliseconds < 60_000) return `${(milliseconds / 1000).toFixed(1)}s`;
+  return `${Math.floor(milliseconds / 60_000)}m ${Math.round((milliseconds % 60_000) / 1000)}s`;
+}
+
 export function AgentPage() {
   const { agentId = '' } = useParams();
   const [params, setParams] = useSearchParams();
@@ -65,9 +72,17 @@ export function AgentPage() {
   const [liveText, setLiveText] = useState('');
   const [error, setError] = useState('');
   const [rightOpen, setRightOpen] = useState(true);
+  const [taskQuery, setTaskQuery] = useState('');
   const streamRef = useRef<HTMLElement>(null);
   const followOutput = useRef(true);
   const events = session.data ?? [];
+  const visibleTasks = useMemo(
+    () =>
+      (tasks.data ?? []).filter((task) =>
+        (task.first_message || '未命名任务').toLowerCase().includes(taskQuery.toLowerCase()),
+      ),
+    [tasks.data, taskQuery],
+  );
   const merged = useMemo(() => [...events, ...liveEvents], [events, liveEvents]);
   const chat = useMemo(
     () => buildChat(merged, []).filter((item) => item.kind === 'bubble'),
@@ -193,20 +208,33 @@ export function AgentPage() {
           ＋ 新建任务
         </button>
         <nav aria-label="任务列表">
-          <p>最近任务</p>
-          {(tasks.data ?? []).map((task) => (
+          <div className="task-rail-heading">
+            <p>最近任务</p>
+            <span>{tasks.data?.length ?? 0}</span>
+          </div>
+          <label className="task-search">
+            <span aria-hidden="true">⌕</span>
+            <input
+              aria-label="搜索任务"
+              value={taskQuery}
+              onChange={(event) => setTaskQuery(event.target.value)}
+              placeholder="搜索任务"
+            />
+          </label>
+          {visibleTasks.map((task) => (
             <button
               key={task.session_id}
               className={taskId === task.session_id ? 'is-active' : ''}
+              title={`${task.first_message || '未命名任务'} · ${task.session_id}`}
               onClick={() => setParams({ task: task.session_id })}
             >
               <strong>{task.first_message || '未命名任务'}</strong>
               <small>
-                {task.turn_count ?? 0} 轮 · {task.total_duration_ms}ms
+                {task.turn_count ?? 0} 轮 · {formatDuration(task.total_duration_ms)} · #{task.session_id.slice(-6)}
               </small>
             </button>
           ))}
-          {!tasks.isLoading && !(tasks.data ?? []).length && (
+          {!tasks.isLoading && !visibleTasks.length && (
             <span className="rail-empty">任务会在发送第一条消息后出现。</span>
           )}
         </nav>
