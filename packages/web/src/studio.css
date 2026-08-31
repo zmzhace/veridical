@@ -16,6 +16,244 @@
   background: #fff;
   z-index: 5;
 }
+
+/* Studio controls are a resource inspector, not a stack of toy cards. */
+.studio-shell {
+  background: #f5f5f7;
+}
+.studio-header {
+  height: 60px;
+  padding: 0 20px;
+  background: rgba(255, 255, 255, 0.94);
+  border-bottom-color: #e4e4e8;
+}
+.studio-header nav {
+  padding: 2px;
+  background: #f0f0f2;
+  border: 1px solid #e5e5e8;
+  border-radius: 6px;
+}
+.studio-header nav button {
+  min-width: 52px;
+  padding: 6px 12px;
+  border-radius: 4px;
+}
+.studio-header nav button[aria-pressed='true'] {
+  color: #252529;
+  background: #fff;
+  box-shadow: 0 1px 3px #20212312;
+}
+.studio-body {
+  grid-template-columns: 188px minmax(0, 1fr) 340px;
+}
+.studio-palette {
+  padding: 18px 12px;
+  background: #fafafa;
+  border-right-color: #e5e5e8;
+}
+.studio-palette p {
+  padding: 7px 10px 9px;
+  color: #8c8c93;
+  font-size: 9px;
+  letter-spacing: 0.17em;
+}
+.studio-palette button {
+  min-height: 45px;
+  gap: 9px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: #55555b;
+}
+.studio-palette button:hover {
+  border-color: #dedee3;
+  background: #f1f1f3;
+  color: #252529;
+}
+.studio-palette button > span:first-child {
+  flex: 0 0 27px;
+  width: 27px;
+  height: 27px;
+  border: 0;
+  border-radius: 6px;
+  background: #eeeef3;
+  color: #5b5bd6;
+  font:
+    650 8px/1 'SF Mono',
+    ui-monospace,
+    monospace;
+  letter-spacing: 0.02em;
+}
+.palette-icon-tool {
+  color: #9a6b2d !important;
+  background: #faf3e9 !important;
+}
+.palette-icon-skill {
+  color: #7350a1 !important;
+  background: #f3effa !important;
+}
+.palette-icon-memory {
+  color: #397260 !important;
+  background: #eaf5f0 !important;
+}
+.palette-icon-child-agent {
+  color: #4f5b9d !important;
+  background: #eef0fa !important;
+}
+.palette-icon-condition {
+  color: #a06f25 !important;
+  background: #fbf5e8 !important;
+}
+.palette-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  text-align: left;
+}
+.palette-copy strong {
+  font-size: 11px;
+  font-weight: 600;
+}
+.palette-copy small {
+  overflow: hidden;
+  color: #9a9aa1;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-canvas {
+  background-color: #f8f8fa;
+  background-image: radial-gradient(#dfe0e5 0.75px, transparent 0.75px);
+  background-size: 22px 22px;
+}
+.studio-node {
+  width: 182px;
+  min-height: 88px;
+  padding: 14px 15px;
+  border-color: #dedee3;
+  border-radius: 9px;
+  box-shadow: 0 3px 12px #2021230a;
+}
+.studio-node:hover,
+.studio-node.is-selected {
+  border-color: #8e8edb;
+}
+.studio-node.is-selected {
+  box-shadow:
+    0 0 0 3px #5b5bd61a,
+    0 6px 16px #20212312;
+}
+.studio-inspector {
+  padding: 22px 20px 26px;
+  background: #f9f9fa;
+  border-left-color: #e4e4e8;
+}
+.studio-inspector > header {
+  margin-bottom: 20px;
+}
+.studio-inspector header p {
+  color: #8b8b92;
+  font-size: 9px;
+}
+.studio-inspector h2 {
+  font-size: 17px;
+  letter-spacing: -0.025em;
+}
+.studio-inspector label,
+.studio-drawer label {
+  margin: 17px 0;
+  color: #737379;
+  font-size: 10px;
+}
+.studio-inspector input,
+.studio-inspector textarea,
+.studio-inspector select,
+.studio-drawer textarea,
+.studio-drawer select {
+  min-height: 38px;
+  padding: 9px 10px;
+  border-color: #dedee3;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: inset 0 1px 1px #20212308;
+}
+.studio-inspector textarea {
+  min-height: 70px;
+}
+.studio-inspector textarea.instruction-field {
+  min-height: 128px;
+}
+.studio-inspector input:focus,
+.studio-inspector textarea:focus,
+.studio-inspector select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  outline: 0;
+}
+.inspector-section-title {
+  margin-top: 24px;
+  padding-top: 17px;
+  border-top-color: #e3e3e7;
+  color: #8b8b92;
+  font-size: 9px;
+  letter-spacing: 0.15em;
+}
+.resource-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: -4px 0 17px;
+  padding: 10px;
+  border: 1px solid #e2e2e6;
+  border-radius: 7px;
+  background: #fff;
+}
+.resource-status-dot {
+  flex: 0 0 7px;
+  width: 7px;
+  height: 7px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: #a2a2a8;
+}
+.resource-status.is-ready {
+  border-color: #d8e7dd;
+  background: #fbfdfb;
+}
+.resource-status.is-ready .resource-status-dot {
+  background: #3f8a5d;
+}
+.resource-status.is-missing {
+  border-color: #eadfc9;
+  background: #fffdf8;
+}
+.resource-status.is-missing .resource-status-dot {
+  background: #ba8731;
+}
+.resource-status strong,
+.resource-status small {
+  display: block;
+}
+.resource-status strong {
+  color: #3b3b40;
+  font-size: 10px;
+  font-weight: 600;
+}
+.resource-status small {
+  margin-top: 3px;
+  color: #8b8b92;
+  font-size: 9px;
+  line-height: 1.45;
+}
+.inspector-footer {
+  margin-top: 28px;
+  border-top-color: #e3e3e7;
+}
+.studio-drawer {
+  right: 340px;
+  background: #fff;
+  border-left-color: #e3e3e7;
+}
 .studio-header .back-link {
   margin: 0;
   font-size: 9px;
@@ -466,10 +704,10 @@
 }
 @media (max-width: 1000px) {
   .studio-body {
-    grid-template-columns: 120px 1fr 250px;
+    grid-template-columns: 156px 1fr 280px;
   }
   .studio-drawer {
-    right: 250px;
+    right: 280px;
   }
   .studio-header {
     grid-template-columns: 1fr auto;
@@ -500,5 +738,70 @@
   .studio-drawer {
     right: 0;
     width: 100%;
+  }
+}
+
+/* Focused Studio fills the viewport instead of inheriting the page gutter. */
+.workspace-shell.is-focused .studio-shell {
+  margin: 0;
+  width: 100%;
+  height: 100dvh;
+}
+.studio-shell .studio-body {
+  grid-template-columns: 188px minmax(0, 1fr) 340px;
+}
+.studio-shell .studio-header {
+  height: 60px;
+}
+.studio-shell .studio-drawer {
+  right: 340px;
+}
+.studio-palette button > .palette-copy {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  display: grid;
+  place-items: start;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.studio-palette button > .palette-copy strong {
+  width: auto;
+  height: auto;
+  border: 0;
+  background: transparent;
+  color: #55555b;
+  font: 600 11px/1.2 inherit;
+}
+.studio-palette button > .palette-copy small {
+  width: auto;
+  height: auto;
+  border: 0;
+  background: transparent;
+  color: #9a9aa1;
+  font: 9px/1.35 inherit;
+  white-space: nowrap;
+}
+.studio-palette button:hover > .palette-copy strong {
+  color: #252529;
+}
+@media (max-width: 1000px) {
+  .studio-shell .studio-body {
+    grid-template-columns: 156px minmax(0, 1fr) 280px;
+  }
+  .studio-shell .studio-drawer {
+    right: 280px;
+  }
+}
+@media (max-width: 760px) {
+  .studio-shell .studio-body {
+    grid-template-columns: 1fr;
+  }
+  .studio-shell .studio-drawer {
+    right: 0;
   }
 }

@@ -12,9 +12,12 @@ import {
   useAgent,
   useAgentDraft,
   useAgentTasks,
+  useAgents,
   usePublishAgent,
   useReplayExecution,
   useSaveAgentDraft,
+  useSkills,
+  useTools,
 } from '../api/queries';
 import { readSseFrames } from '../api/readSse';
 import { compileWorkspaceSpec, validateWorkspace } from '../workspace/graph/compiler';
@@ -71,6 +74,9 @@ export function WorkspacePage() {
   const agent = useAgent(agentId);
   const draft = useAgentDraft(agentId);
   const tasks = useAgentTasks(agentId);
+  const agents = useAgents();
+  const tools = useTools();
+  const skills = useSkills();
   const save = useSaveAgentDraft(agentId);
   const publish = usePublishAgent(agentId);
   const replay = useReplayExecution();
@@ -102,6 +108,12 @@ export function WorkspacePage() {
     loaded.current = true;
   }, [agent.data, agentId, draft.data]);
   const node = graph.nodes.find((item) => item.id === selected) ?? graph.nodes[0];
+  const selectedTool = tools.data?.find(
+    (item) => item.id === node.config.toolId || item.name === node.title,
+  );
+  const selectedSkill = skills.data?.find(
+    (item) => item.key === node.config.skillKey || item.name === node.title,
+  );
   const errors = validateWorkspace(graph);
   const releaseVersion = agent.data?.version
     ? agent.data.version.replace(/(\d+)$/, (value) => String(Number(value) + 1))
@@ -331,8 +343,23 @@ export function WorkspacePage() {
           {(['tool', 'skill', 'memory', 'child-agent', 'condition'] as WorkspaceNodeType[]).map(
             (type) => (
               <button key={type} onClick={() => addNode(type)}>
-                <span>{type === 'child-agent' ? 'A' : type.slice(0, 1).toUpperCase()}</span>
-                {nodeCopy[type].title}
+                <span className={`palette-icon palette-icon-${type}`} aria-hidden="true">
+                  {type === 'child-agent' ? 'A' : nodeCopy[type].label.slice(0, 3)}
+                </span>
+                <span className="palette-copy">
+                  <strong>{nodeCopy[type].title}</strong>
+                  <small>
+                    {type === 'tool'
+                      ? '连接一个可调用能力'
+                      : type === 'skill'
+                        ? '添加行为与方法'
+                        : type === 'memory'
+                          ? '读取任务上下文'
+                          : type === 'child-agent'
+                            ? '委派给另一个 Agent'
+                            : '增加分支判断'}
+                  </small>
+                </span>
               </button>
             ),
           )}
@@ -509,19 +536,156 @@ export function WorkspacePage() {
             </>
           )}
           {node.type === 'tool' && (
-            <label>
-              权限
-              <select
-                value={String(node.config.access ?? 'ask')}
-                onChange={(event) =>
-                  updateNode({ config: { ...node.config, access: event.target.value } })
-                }
-              >
-                <option value="ask">每次确认</option>
-                <option value="allow">允许</option>
-                <option value="deny">禁止</option>
-              </select>
-            </label>
+            <>
+              <div className="inspector-section-title">能力来源</div>
+              <label>
+                已安装工具
+                <select
+                  value={String(node.config.toolId ?? selectedTool?.id ?? '')}
+                  onChange={(event) => {
+                    const tool = tools.data?.find((item) => item.id === event.target.value);
+                    updateNode({
+                      title: tool?.name ?? node.title,
+                      description: tool?.description ?? node.description,
+                      config: { ...node.config, toolId: event.target.value },
+                    });
+                  }}
+                >
+                  <option value="">选择一个已注册工具</option>
+                  {(tools.data ?? []).map((tool) => (
+                    <option key={tool.id} value={tool.id}>
+                      {tool.name} · v{tool.version}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className={`resource-status ${selectedTool ? 'is-ready' : 'is-missing'}`}>
+                <span className="resource-status-dot" aria-hidden="true" />
+                <div>
+                  <strong>{selectedTool ? '工具已绑定' : '尚未绑定工具'}</strong>
+                  <small>
+                    {selectedTool
+                      ? `${selectedTool.source} · ${selectedTool.side_effect} · ${selectedTool.status}`
+                      : '请选择 Registry 中的工具，避免运行时找不到能力。'}
+                  </small>
+                </div>
+              </div>
+              <label>
+                调用权限
+                <select
+                  value={String(node.config.access ?? 'ask')}
+                  onChange={(event) =>
+                    updateNode({ config: { ...node.config, access: event.target.value } })
+                  }
+                >
+                  <option value="ask">调用前询问</option>
+                  <option value="allow">自动允许</option>
+                  <option value="deny">禁止调用</option>
+                </select>
+              </label>
+            </>
+          )}
+          {node.type === 'skill' && (
+            <>
+              <div className="inspector-section-title">Skill 资产</div>
+              <label>
+                已安装 Skill
+                <select
+                  value={String(node.config.skillKey ?? selectedSkill?.key ?? '')}
+                  onChange={(event) => {
+                    const skill = skills.data?.find((item) => item.key === event.target.value);
+                    updateNode({
+                      title: skill?.name ?? node.title,
+                      description: skill?.description ?? node.description,
+                      config: {
+                        ...node.config,
+                        skillKey: event.target.value,
+                        version: '1.0.0',
+                        procedure: skill?.procedure ?? node.description,
+                      },
+                    });
+                  }}
+                >
+                  <option value="">选择一个已导入 Skill</option>
+                  {(skills.data ?? []).map((skill) => (
+                    <option key={skill.key} value={skill.key}>
+                      {skill.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className={`resource-status ${selectedSkill ? 'is-ready' : 'is-missing'}`}>
+                <span className="resource-status-dot" aria-hidden="true" />
+                <div>
+                  <strong>{selectedSkill ? 'Skill 已固定版本' : 'Skill 尚未绑定'}</strong>
+                  <small>
+                    {selectedSkill
+                      ? `${selectedSkill.source} · ${selectedSkill.tags.join(' / ') || '无标签'}`
+                      : 'Skill 只提供指令和资源，不会自动获得工具权限。'}
+                  </small>
+                </div>
+              </div>
+            </>
+          )}
+          {node.type === 'memory' && (
+            <>
+              <div className="inspector-section-title">记忆策略</div>
+              <label>
+                读取范围
+                <select
+                  value={String(node.config.scope ?? 'task')}
+                  onChange={(event) =>
+                    updateNode({ config: { ...node.config, scope: event.target.value } })
+                  }
+                >
+                  <option value="task">当前任务</option>
+                  <option value="project">当前项目</option>
+                  <option value="user">用户偏好</option>
+                </select>
+              </label>
+              <div className="resource-status is-ready">
+                <span className="resource-status-dot" aria-hidden="true" />
+                <div>
+                  <strong>受策略保护</strong>
+                  <small>长期记忆写入仍需候选、审批和审计。</small>
+                </div>
+              </div>
+            </>
+          )}
+          {node.type === 'child-agent' && (
+            <>
+              <div className="inspector-section-title">委派目标</div>
+              <label>
+                选择子 Agent
+                <select
+                  value={String(node.config.agentId ?? '')}
+                  onChange={(event) => {
+                    const child = agents.data?.find((item) => item.id === event.target.value);
+                    updateNode({
+                      title: child?.name ?? node.title,
+                      description: child?.description ?? node.description,
+                      config: { ...node.config, agentId: event.target.value, specRef: child?.id },
+                    });
+                  }}
+                >
+                  <option value="">选择一个 Agent</option>
+                  {(agents.data ?? [])
+                    .filter((item) => item.id !== agentId)
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <div className={`resource-status ${node.config.agentId ? 'is-ready' : 'is-missing'}`}>
+                <span className="resource-status-dot" aria-hidden="true" />
+                <div>
+                  <strong>{node.config.agentId ? '委派目标已选择' : '尚未选择目标'}</strong>
+                  <small>子 Agent 使用独立运行路径和预算。</small>
+                </div>
+              </div>
+            </>
           )}
           <div className="inspector-footer">
             <span>
