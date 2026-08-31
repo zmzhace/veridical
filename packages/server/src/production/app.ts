@@ -241,6 +241,22 @@ export async function buildProductionApp(options: {
     const page = Page.parse(req.query);
     return db.list(req.principal.tenant, 'spec', page.limit, page.offset);
   });
+  app.get('/v1/artifacts/:kind/:key', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
+    const params = z.object({ kind: Key, key: z.string().min(1).max(260).regex(/^[a-zA-Z0-9_.@+-]+$/) }).parse(req.params);
+    const artifact = await db.get(req.principal.tenant, params.kind, params.key);
+    if (!artifact) throw new Fault(404, 'artifact_not_found');
+    return { key: artifact.key, kind: params.kind, digest: artifact.digest, author: artifact.author, status: artifact.status, created: artifact.created, object_key: `tenants/${req.principal.tenant}/artifacts/${artifact.key}/${artifact.digest}.json` };
+  });
+  app.get('/v1/artifacts/:kind/:key/content', async (req, reply) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
+    const params = z.object({ kind: Key, key: z.string().min(1).max(260).regex(/^[a-zA-Z0-9_.@+-]+$/) }).parse(req.params);
+    const artifact = await db.get(req.principal.tenant, params.kind, params.key);
+    if (!artifact) throw new Fault(404, 'artifact_not_found');
+    if (!objectStore) return reply.type('application/json').send(JSON.stringify(artifact.body));
+    const bytes = await objectStore.get(`tenants/${req.principal.tenant}/artifacts/${artifact.key}/${artifact.digest}.json`);
+    return reply.type('application/json').send(Buffer.from(bytes));
+  });
   app.post('/v1/specs', async (req, reply) => {
     const body = z
       .object({ yaml: z.string().min(1).max(32000) })

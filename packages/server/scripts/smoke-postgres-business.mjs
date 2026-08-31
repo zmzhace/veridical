@@ -58,6 +58,11 @@ try {
   const artifact = await env.db.get('e2e', 'spec', `${agentName}@1.0.0`);
   assert.ok(artifact);
   assert.equal((await env.objectStore.head(`tenants/e2e/artifacts/${agentName}@1.0.0/${artifact.digest}.json`)).$metadata.httpStatusCode, 200);
+  const artifactResponse = await request('GET', `/v1/artifacts/spec/${agentName}@1.0.0`, undefined, undefined, 'operator');
+  assert.equal(artifactResponse.statusCode, 200);
+  const contentResponse = await request('GET', `/v1/artifacts/spec/${agentName}@1.0.0/content`, undefined, undefined, 'operator');
+  assert.equal(contentResponse.statusCode, 200);
+  assert.equal(JSON.parse(contentResponse.body).name, agentName);
   console.log(`PostgreSQL business E2E passed: ${events.length} events, job ${result.id}`);
 } finally {
   await env.app.close();
