@@ -627,7 +627,7 @@ async function runSpecInternal(
                 AbortSignal.timeout(tool.timeout_ms),
               ])
             : deps.signal;
-          const r = await withAbort(broker.call(name, structuredClone(args)), signal);
+          const r = await withAbort(broker.callObserved(name, structuredClone(args)), signal);
           return r.ok
             ? r.result
             : {

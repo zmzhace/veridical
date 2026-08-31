@@ -6,6 +6,7 @@ import {
   projectInvocations,
   trajectoryJsonl,
   exportGRPO,
+  trajectoryHtml,
   ReplayEngine,
   type ReplayPlan,
 } from '@veridical/replay';
@@ -73,7 +74,7 @@ interface SessionSummary {
   first_message?: string;
 }
 
-async function listSessions(store: TraceStore): Promise<SessionSummary[]> {
+export async function listSessions(store: TraceStore): Promise<SessionSummary[]> {
   const { readdirSync, existsSync } = await import('node:fs');
   const { join } = await import('node:path');
   const dir = (store as any).dir as string;
@@ -129,6 +130,16 @@ export async function registerSessionsRoutes(app: FastifyInstance) {
 
   app.get('/api/sessions', async () => listSessions(store));
 
+  app.get<{ Params: { id: string } }>('/api/agents/:id/tasks', async (req) =>
+    (await listSessions(store)).filter((session) => session.spec_name === req.params.id),
+  );
+
+  app.post<{ Params: { id: string } }>('/api/agents/:id/tasks', async (req) => ({
+    id: 'new',
+    agent_id: req.params.id,
+    status: 'ready',
+  }));
+
   app.get<{ Params: { id: string } }>('/api/sessions/:id', async (req, reply) => {
     try {
       const events = await store.readBySession(req.params.id);
@@ -140,6 +151,19 @@ export async function registerSessionsRoutes(app: FastifyInstance) {
     } catch (err) {
       return reply.code(500).send({ error: { code: 'trace_corrupt', message: String(err) } });
     }
+  });
+
+  app.get<{ Params: { id: string } }>('/api/tasks/:id', async (req, reply) => {
+    const events = await store.readBySession(req.params.id).catch(() => []);
+    if (!events.length) return reply.code(404).send({ error: { code: 'not_found' } });
+    return { id: req.params.id, status: 'completed', events };
+  });
+
+  app.get<{ Params: { id: string } }>('/api/tasks/:id/artifacts', async (req) => {
+    const events = await store.readBySession(req.params.id).catch(() => []);
+    return events
+      .filter((event) => ['artifact.created', 'artifact.output'].includes(event.type))
+      .map((event) => event.payload);
   });
 
   app.post<{ Params: { id: string }; Body: { targetSeq?: number; mode?: string } }>(
@@ -186,11 +210,32 @@ export async function registerSessionsRoutes(app: FastifyInstance) {
     },
   );
 
+  app.post<{ Params: { id: string }; Body: Record<string, unknown> }>(
+    '/api/tasks/:id/replay',
+    async (req, reply) => {
+      const result = await app.inject({
+        method: 'POST',
+        url: `/api/sessions/${encodeURIComponent(req.params.id)}/replay`,
+        payload: req.body,
+      });
+      return reply.code(result.statusCode).headers(result.headers).send(result.rawPayload);
+    },
+  );
+
   app.get<{ Params: { id: string } }>('/api/sessions/:id/invocations', async (req, reply) => {
     const events = await store.readBySession(req.params.id);
     if (events.length === 0) return reply.code(404).send({ error: { code: 'not_found' } });
     return {
       legacy: !events.some((e) => e.type === 'invocation.start'),
+      invocations: projectInvocations(events),
+    };
+  });
+
+  app.get<{ Params: { id: string } }>('/api/tasks/:id/invocations', async (req, reply) => {
+    const events = await store.readBySession(req.params.id);
+    if (!events.length) return reply.code(404).send({ error: { code: 'not_found' } });
+    return {
+      legacy: !events.some((event) => event.type === 'invocation.start'),
       invocations: projectInvocations(events),
     };
   });
@@ -202,6 +247,13 @@ export async function registerSessionsRoutes(app: FastifyInstance) {
     if (!query.success)
       return reply.code(400).send({ error: { code: 'invalid_trajectory_query' } });
     return projectTrajectory(events, query.data);
+  });
+
+  app.get<{ Params: { id: string } }>('/api/sessions/:id/trace.html', async (req, reply) => {
+    const events = await store.readBySession(req.params.id);
+    if (!events.length) return reply.code(404).send({ error: { code: 'not_found' } });
+    reply.header('content-type', 'text/html; charset=utf-8');
+    return reply.send(trajectoryHtml(events));
   });
 
   app.post<{ Params: { id: string } }>(
@@ -226,6 +278,18 @@ export async function registerSessionsRoutes(app: FastifyInstance) {
           },
         });
       }
+    },
+  );
+
+  app.post<{ Params: { id: string }; Body: Record<string, unknown> }>(
+    '/api/tasks/:id/trajectory/export',
+    async (req, reply) => {
+      const result = await app.inject({
+        method: 'POST',
+        url: `/api/sessions/${encodeURIComponent(req.params.id)}/trajectory/export`,
+        payload: req.body,
+      });
+      return reply.code(result.statusCode).headers(result.headers).send(result.rawPayload);
     },
   );
 }

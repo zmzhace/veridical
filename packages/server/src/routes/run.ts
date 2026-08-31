@@ -4,6 +4,7 @@ import { parseSpecYaml, runSpec, type SpecRunnerDeps } from '@veridical/spec';
 import { OpenAICompatibleProvider, MockScriptedProvider, resolveTools } from '../providers.js';
 import { makeDecisionRunStep } from '../runStep.js';
 import { createLocalModel, localModelMetadata } from '../local-model.js';
+import { tenantId } from '../principal.js';
 
 interface RunBody {
   specYaml: string;
@@ -95,7 +96,7 @@ export async function registerRunRoutes(app: FastifyInstance) {
       store,
       providers,
       tools: resolveTools(spec.tools.map((t) => t.name)),
-      tenant_id: 't1',
+      tenant_id: tenantId(req),
       session_id: sessionId,
       runStep: makeDecisionRunStep(),
       childRunStep: makeDecisionRunStep(),

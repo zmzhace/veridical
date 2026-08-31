@@ -13,6 +13,16 @@ import {
 import { OpenAICompatibleProvider, MockScriptedProvider, resolveTools } from '../providers.js';
 import { parseDecision } from '../runStep.js';
 import { createLocalModel } from '../local-model.js';
+import { z } from 'zod';
+import { tenantId } from '../principal.js';
+
+type PendingApproval = { request: Record<string, unknown>; resolve: (allowed: boolean) => void; expires: number };
+const pendingApprovals = new Map<string, PendingApproval>();
+async function appendApprovalEvent(store: any, session_id: string, spec_version: string, type: string, verb: 'request' | 'response', payload: unknown, tenant_id = 'local') {
+  const events = await store.readBySession(session_id).catch(() => []);
+  const seq = (events.at(-1)?.seq ?? 0) + 1;
+  await store.append({ id: `approval_${randomUUID()}`, tenant_id, session_id, span_id: 'approval', parent_span_id: null, seq, type, verb, attempt: 1, duration_ms: 0, payload, spec_version });
+}
 
 interface TurnBody {
   specName: string;
@@ -62,6 +72,16 @@ export function buildHistory(
 export async function registerTurnRoutes(app: FastifyInstance) {
   const store = app.store;
   const registry = app.specRegistry;
+
+  app.get('/api/approvals', async () => [...pendingApprovals.entries()].filter(([, value]) => value.expires > Date.now()).map(([id, value]) => ({ id, ...value.request, expires_at: new Date(value.expires).toISOString() })));
+  app.post<{ Params: { id: string } }>('/api/approvals/:id/decision', async (req, reply) => {
+    const parsed = z.object({ decision: z.enum(['allow', 'deny']) }).safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: { code: 'invalid_approval_decision' } });
+    const pending = pendingApprovals.get(req.params.id);
+    if (!pending) return reply.code(404).send({ error: { code: 'approval_not_found' } });
+    pendingApprovals.delete(req.params.id); pending.resolve(parsed.data.decision === 'allow');
+    return { id: req.params.id, decision: parsed.data.decision, resolved: true };
+  });
 
   app.post<{ Body: TurnBody }>('/api/run/turn', async (req, reply) => {
     const b = req.body;
@@ -252,12 +272,24 @@ export async function registerTurnRoutes(app: FastifyInstance) {
         store,
         providers,
         tools: resolveTools(spec.tools.map((t) => t.name)),
-        tenant_id: 't1',
+        tenant_id: tenantId(req),
         session_id,
         historyMessages: history,
         runStep,
         childRunStep: runStep,
         registry,
+        onAsk: async (tool, args) => {
+          const id = `approval_${randomUUID()}`;
+          const expires = Date.now() + 5 * 60_000;
+          const request = { approval_id: id, session_id, tool: tool.name, args, side_effect: tool.side_effect ?? 'none' };
+          const allowed = await new Promise<boolean>((resolve) => {
+            pendingApprovals.set(id, { request, resolve, expires });
+            void appendApprovalEvent(store, session_id, spec.version, 'approval.requested', 'request', request, tenantId(req));
+            setTimeout(() => { const pending = pendingApprovals.get(id); if (pending) { pendingApprovals.delete(id); pending.resolve(false); } }, 5 * 60_000).unref();
+          });
+          void appendApprovalEvent(store, session_id, spec.version, 'approval.resolved', 'response', { approval_id: id, allowed }, tenantId(req));
+          return allowed;
+        },
         // 未传 stepBoundary：turn 连续执行，每步不暂停（断连时靠 clearPoll/abort 收尾）
       };
       const prompt = b.prompt ?? 'hello';

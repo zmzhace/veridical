@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { MessageContent } from './MessageContent';
 
 export function ChatBubble({
   role,
@@ -17,7 +18,7 @@ export function ChatBubble({
       <div className="chat-avatar">{isUser ? '你' : 'AI'}</div>
       <div className="chat-message-body">
         <div className="chat-message-text">
-          {content}
+          {isUser ? content : <MessageContent text={content} />}
           {streaming && <span className="cursor-typing" />}
         </div>
         {children}

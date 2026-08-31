@@ -7,10 +7,15 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "test:regression": "pnpm -r test && pnpm build && node packages/server/scripts/smoke-production.mjs",
+    "test:production": "pnpm --filter @veridical/server test:production",
+    "test:infrastructure": "pnpm --filter @veridical/server test:infrastructure",
     "test:llm:live": "pnpm -F @veridical/server test:llm:live",
     "dev": "pnpm -r --parallel -F @veridical/server -F @veridical/web dev",
     "dev:server": "pnpm -F @veridical/server dev",
     "dev:web": "pnpm -F @veridical/web dev",
+    "infra:up": "docker compose -f docker-compose.infrastructure.yml up -d",
+    "infra:down": "docker compose -f docker-compose.infrastructure.yml down",
+    "infra:status": "docker compose -f docker-compose.infrastructure.yml ps",
     "format:check": "prettier --check 'packages/server/src/production/**/*.ts' 'packages/server/scripts/*.mjs' 'packages/server/test/{production,ledger,secure-provider}.test.ts' 'packages/server/test/fixtures/*.ts'"
   },
   "devDependencies": {"prettier":"3.6.2"}

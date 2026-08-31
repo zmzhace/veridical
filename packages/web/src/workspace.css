@@ -48,8 +48,9 @@ textarea {
   height: 100dvh;
   display: flex;
   flex-direction: column;
-  background: #171b25;
-  color: #edf0f7;
+  background: #f1f1ee;
+  color: #1f1f1d;
+  border-right: 1px solid var(--line);
 }
 .workspace-brand {
   display: flex;
@@ -62,12 +63,12 @@ textarea {
 }
 .workspace-brand svg {
   flex-shrink: 0;
-  color: #c6c5ff;
+  color: #5b5bd6;
 }
 .workspace-brand small {
   display: block;
   margin-top: 3px;
-  color: #a3acbe;
+  color: #83837d;
   font-size: 10px;
   font-weight: 400;
   letter-spacing: 0.05em;
@@ -78,7 +79,7 @@ textarea {
   align-items: center;
   margin: 5px 18px 27px;
   padding: 13px 9px;
-  border-block: 1px solid #303644;
+  border-block: 1px solid #deded8;
   font-size: 12px;
 }
 .workspace-identity > span {
@@ -86,14 +87,14 @@ textarea {
   place-items: center;
   width: 29px;
   height: 29px;
-  background: #2c3241;
-  border: 1px solid #444c60;
+  background: #fff;
+  border: 1px solid #d8d8d2;
   border-radius: 7px;
 }
 .workspace-identity small {
   display: block;
   font-size: 10px;
-  color: #a3acbe;
+  color: #83837d;
   margin-top: 2px;
 }
 .workspace-nav {
@@ -109,7 +110,7 @@ textarea {
   padding: 12px 15px;
   border: 1px solid transparent;
   border-radius: 7px;
-  color: #b8c0d1;
+  color: #64645f;
   font-size: 13px;
   transition:
     color 150ms,
@@ -119,25 +120,25 @@ textarea {
   margin-top: 20px;
 }
 .workspace-nav-item:hover {
-  background: #242a37;
-  color: #fff;
+  background: #e7e7e2;
+  color: #1f1f1d;
 }
 .workspace-nav-item.is-active {
-  background: #30314d;
-  color: #e1dfff;
-  border-color: #444366;
+  background: #fff;
+  color: #333330;
+  border-color: #d9d9d3;
 }
 .workspace-sidebar a:focus-visible {
-  outline-color: #c6c5ff;
+  outline-color: #5b5bd6;
 }
 .workspace-sidebar-note {
   margin: auto 24px 26px;
   padding-top: 36px;
   font-size: 11px;
-  color: #c1c8d6;
+  color: #5f5f5a;
 }
 .workspace-sidebar-note p {
-  color: #a3acbe;
+  color: #83837d;
   margin-top: 8px;
   line-height: 1.8;
 }
@@ -145,8 +146,8 @@ textarea {
   display: flex;
   justify-content: space-between;
   padding: 19px 24px;
-  border-top: 1px solid #303644;
-  color: #a3acbe;
+  border-top: 1px solid #deded8;
+  color: #83837d;
   font-size: 11px;
 }
 .workspace-body {
@@ -187,6 +188,8 @@ textarea {
 .workspace-content:focus {
   outline: none;
 }
+.workspace-shell.is-focused>.workspace-sidebar,.workspace-shell.is-focused .workspace-topbar{display:none}.workspace-shell.is-focused .workspace-content{max-width:none;padding:36px 40px 64px}.workspace-shell.is-focused .workspace-body{width:100%}.workspace-shell.is-focused .studio-shell{height:100dvh}
+.workspace-shell.is-focused .studio-header nav{display:flex}
 .skip-link {
   position: fixed;
   top: 10px;

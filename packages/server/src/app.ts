@@ -13,6 +13,12 @@ import { registerCompareRoutes } from './routes/compare.js';
 import { registerStepRoutes } from './routes/step.js';
 import { registerTurnRoutes } from './routes/turn.js';
 import { registerSkillRoutes } from './routes/skills.js';
+import { registerAgentRoutes } from './routes/agents.js';
+import { registerCapabilityRoutes } from './routes/capabilities.js';
+import { registerMemoryRoutes } from './routes/memories.js';
+import { registerKnowledgeRoutes } from './routes/knowledge.js';
+import { registerOrganizationRoutes } from './routes/organizations.js';
+import { localModelMetadata } from './local-model.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -43,7 +49,17 @@ export async function buildApp(tracesDir?: string, specsDir?: string) {
   await app.register(registerCompareRoutes);
   await app.register(registerStepRoutes);
   await app.register(registerTurnRoutes);
-  await app.register(registerSkillRoutes);
+  await app.register(registerSkillRoutes, { dataDir: specsDir ?? CONFIG.specsDir });
+  await registerAgentRoutes(app, specsDir ?? CONFIG.specsDir);
+  await registerCapabilityRoutes(app, specsDir ?? CONFIG.specsDir);
+  await registerMemoryRoutes(app, { dataDir: specsDir ?? CONFIG.specsDir });
+  await registerKnowledgeRoutes(app, { dataDir: specsDir ?? CONFIG.specsDir });
+  await registerOrganizationRoutes(app, { dataDir: specsDir ?? CONFIG.specsDir });
+  app.get('/api/models', async () => {
+    const model = localModelMetadata();
+    return model.configured ? [{ id: `${model.provider}:${model.model}`, provider: model.provider, model: model.model, status: 'configured' }] : [];
+  });
+  app.get('/api/credentials/status', async () => ({ provider: localModelMetadata() }));
   app.get('/api/health', async () => ({ ok: true }));
   return app;
 }

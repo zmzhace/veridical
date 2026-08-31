@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { InMemoryTraceStore } from '@veridical/store';
-import { Recorder, Session, type FlowContext, LoopRegistry, ResearchLoop } from '../../src';
+import { Recorder, Session, type FlowContext, LoopRegistry, ResearchLoop, PlanAndSolveLoop, ReflectionLoop } from '../../src';
 
 function context(overrides: Partial<FlowContext> = {}) {
   const store = new InMemoryTraceStore();
@@ -25,5 +25,15 @@ describe('pluggable loops', () => {
     const controller = new AbortController(); controller.abort(new Error('cancelled'));
     const { ctx } = context({ signal: controller.signal });
     await expect(new ResearchLoop().run(ctx, 'question')).rejects.toThrow('cancelled');
+  });
+
+  it('runs plan-and-solve and reflection strategies through the shared context', async () => {
+    const seen: string[] = [];
+    const { ctx } = context({ runStep: async (prompt) => { seen.push(prompt); return { text: 'ok' }; }, checkpoint: async () => undefined });
+    await new PlanAndSolveLoop().run(ctx, 'task');
+    await new ReflectionLoop().run(ctx, 'task');
+    expect(seen).toHaveLength(5);
+    expect(seen[0]).toContain('制定执行计划');
+    expect(seen[2]).toContain('草稿');
   });
 });

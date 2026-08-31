@@ -1,5 +1,5 @@
 import type { LLMProvider, LLMRequest, LLMResponse, LLMUsage } from '@veridical/llm';
-import type { ToolDef } from '@veridical/tools';
+import { editText, globFiles, grepFiles, listFiles, multiEditText, readText, writeText, type ToolDef } from '@veridical/tools';
 
 export class OpenAICompatibleProvider implements LLMProvider {
   constructor(private baseUrl: string, private apiKey: string, private model: string) {}
@@ -69,6 +69,23 @@ export const BUILTIN_TOOLS: ToolDef[] = [
   { id: 'finish', name: 'finish', description: 'finish with report', deterministic: true, execute: async (a) => a },
 ];
 
-export function resolveTools(names: string[]): ToolDef[] {
-  return names.map((n) => BUILTIN_TOOLS.find((t) => t.name === n) ?? { id: n, name: n, description: `generic ${n}`, deterministic: false, execute: async (a) => a });
+export function builtinTools(workspace = process.env.VERIDICAL_WORKSPACE ?? process.cwd()): ToolDef[] {
+  return [...BUILTIN_TOOLS,
+    { id: 'list', name: 'list', description: 'List workspace entries', deterministic: true, side_effect: 'none', execute: async (args: any) => listFiles(workspace, typeof args?.path === 'string' ? args.path : '') },
+    { id: 'glob', name: 'glob', description: 'Find workspace files by pattern', deterministic: true, side_effect: 'none', execute: async (args: any) => globFiles(workspace, typeof args?.pattern === 'string' ? args.pattern : '**/*') },
+    { id: 'read', name: 'read', description: 'Read a workspace text file', deterministic: true, side_effect: 'none', execute: async (args: any) => readText(workspace, String(args?.path ?? '')) },
+    { id: 'grep', name: 'grep', description: 'Search workspace text', deterministic: true, side_effect: 'none', execute: async (args: any) => grepFiles(workspace, String(args?.pattern ?? ''), typeof args?.path === 'string' ? args.path : '') },
+    { id: 'write', name: 'write', description: 'Write a workspace text file with optimistic locking', deterministic: false, side_effect: 'write', execute: async (args: any) => writeText(workspace, String(args?.path ?? ''), String(args?.content ?? ''), typeof args?.expected_hash === 'string' ? args.expected_hash : undefined) },
+    { id: 'edit', name: 'edit', description: 'Replace one exact workspace text range', deterministic: false, side_effect: 'write', execute: async (args: any) => editText(workspace, String(args?.path ?? ''), String(args?.old_text ?? ''), String(args?.new_text ?? ''), typeof args?.expected_hash === 'string' ? args.expected_hash : undefined) },
+    { id: 'multi_edit', name: 'multi_edit', description: 'Apply multiple exact workspace edits', deterministic: false, side_effect: 'write', execute: async (args: any) => multiEditText(workspace, String(args?.path ?? ''), Array.isArray(args?.edits) ? args.edits : [], typeof args?.expected_hash === 'string' ? args.expected_hash : undefined) },
+  ];
+}
+
+export function resolveTools(names: string[], workspace?: string): ToolDef[] {
+  const available = builtinTools(workspace);
+  return names.map((name) => {
+    const tool = available.find((candidate) => candidate.name === name);
+    if (!tool) throw Object.assign(new Error(`tool is not registered: ${name}`), { code: 'tool_not_registered' });
+    return tool;
+  });
 }

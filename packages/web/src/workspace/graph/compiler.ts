@@ -2,17 +2,61 @@ import { stringify } from 'yaml';
 import type { WorkspaceGraph } from './model';
 import type { AgentSpec } from '@veridical/spec/schema';
 
-export function compileWorkspaceSpec(graph: WorkspaceGraph): string {
+export function compileWorkspaceSpec(graph: WorkspaceGraph, version = '1.0.0'): string {
   const agent = graph.nodes.find((node) => node.type === 'agent');
   if (!agent) throw new Error('画布需要一个 Agent 节点');
-  const tools = graph.edges.filter((edge) => edge.kind === 'capability' && edge.target === agent.id).map((edge) => graph.nodes.find((node) => node.id === edge.source)).filter(Boolean);
+  const tools = graph.edges
+    .filter((edge) => edge.kind === 'capability' && edge.target === agent.id)
+    .map((edge) => graph.nodes.find((node) => node.id === edge.source))
+    .filter(Boolean);
+  const skills = graph.edges
+    .filter((edge) => edge.kind === 'instruction' && edge.target === agent.id)
+    .map((edge) => graph.nodes.find((node) => node.id === edge.source))
+    .filter(Boolean);
+  const delegates = graph.edges
+    .filter((edge) => edge.kind === 'delegate' && edge.source === agent.id)
+    .map((edge) => graph.nodes.find((node) => node.id === edge.target))
+    .filter(Boolean);
+  const strategy = String(agent.config.strategy ?? 'direct');
+  const mode =
+    strategy === 'supervisor'
+      ? 'supervisor'
+      : strategy === 'stage-gate'
+        ? 'stage-gate'
+        : 'single-loop';
   return stringify({
-    name: graph.id, version: '1.0.0', schema_version: 1,
+    name: graph.id,
+    version,
+    schema_version: 1,
+    description: graph.name,
     instruction: { system: String(agent.config.instruction ?? agent.description) },
-    flow: { mode: 'single-loop', max_steps: Number(agent.config.maxSteps ?? 8), loop: { engine: 'orchestrator', strategy: 'direct' } },
+    flow: {
+      mode,
+      max_steps: Number(agent.config.maxSteps ?? 8),
+      loop: { engine: 'orchestrator', strategy },
+      ...(mode === 'stage-gate' ? { stages: [{ id: 'main' }] } : {}),
+    },
     llm: { provider: 'local', model: String(agent.config.model ?? 'configured'), fallback: [] },
-    tools: tools.map((tool) => { const slug = tool!.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); return { name: slug || tool!.id, access: String(tool!.config.access ?? 'ask') }; }),
-    skills: [], agents: [],
+    tools: tools.map((tool) => {
+      const slug = tool!.title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+      return { name: slug || tool!.id, access: String(tool!.config.access ?? 'ask') };
+    }),
+    skills: skills.map((skill) => ({
+      name: skill!.title,
+      version: String(skill!.config.version ?? '1.0.0'),
+      status: String(skill!.config.status ?? 'draft'),
+      source: 'workspace',
+      description: skill!.description,
+      procedure: String(skill!.config.procedure ?? skill!.description),
+      tags: [],
+    })),
+    agents: delegates.map((delegate) => ({
+      name: delegate!.title,
+      spec_ref: String(delegate!.config.specRef ?? delegate!.id),
+    })),
   });
 }
 
@@ -23,24 +67,73 @@ export function validateWorkspace(graph: WorkspaceGraph): string[] {
   if (!graph.nodes.some((node) => node.type === 'input')) errors.push('缺少输入节点');
   if (!graph.nodes.some((node) => node.type === 'output')) errors.push('缺少输出节点');
   for (const edge of graph.edges) {
-    if (!graph.nodes.some((node) => node.id === edge.source) || !graph.nodes.some((node) => node.id === edge.target)) errors.push(`连线 ${edge.id} 引用了不存在的节点`);
+    if (
+      !graph.nodes.some((node) => node.id === edge.source) ||
+      !graph.nodes.some((node) => node.id === edge.target)
+    )
+      errors.push(`连线 ${edge.id} 引用了不存在的节点`);
   }
   return errors;
 }
 
 export function workspaceFromSpec(spec: AgentSpec): WorkspaceGraph {
   const graph: WorkspaceGraph = {
-    id: spec.name, name: spec.description || spec.name, status: 'draft',
+    id: spec.name,
+    name: spec.description || spec.name,
+    status: 'draft',
     nodes: [
-      { id: 'input', type: 'input', label: 'Chat Input', title: '用户输入', description: '会话消息和任务入口', position: { x: 12, y: 34 }, config: {} },
-      { id: 'agent', type: 'agent', label: 'Agent', title: spec.name, description: spec.instruction.system, position: { x: 44, y: 34 }, config: { model: spec.llm.model, provider: spec.llm.provider, instruction: spec.instruction.system, maxSteps: spec.flow.max_steps } },
-      ...spec.tools.map((tool, index) => ({ id: `tool-${index}`, type: 'tool' as const, label: 'Tool', title: tool.name, description: `权限：${tool.access}`, position: { x: 38 + index * 12, y: 68 }, config: { access: tool.access } })),
-      { id: 'output', type: 'output', label: 'Chat Output', title: '助手输出', description: '返回最终结果', position: { x: 78, y: 34 }, config: {} },
-    ], edges: [],
+      {
+        id: 'input',
+        type: 'input',
+        label: 'Chat Input',
+        title: '用户输入',
+        description: '会话消息和任务入口',
+        position: { x: 12, y: 34 },
+        config: {},
+      },
+      {
+        id: 'agent',
+        type: 'agent',
+        label: 'Agent',
+        title: spec.name,
+        description: spec.instruction.system,
+        position: { x: 44, y: 34 },
+        config: {
+          model: spec.llm.model,
+          provider: spec.llm.provider,
+          instruction: spec.instruction.system,
+          maxSteps: spec.flow.max_steps,
+        },
+      },
+      ...spec.tools.map((tool, index) => ({
+        id: `tool-${index}`,
+        type: 'tool' as const,
+        label: 'Tool',
+        title: tool.name,
+        description: `权限：${tool.access}`,
+        position: { x: 38 + index * 12, y: 68 },
+        config: { access: tool.access },
+      })),
+      {
+        id: 'output',
+        type: 'output',
+        label: 'Chat Output',
+        title: '助手输出',
+        description: '返回最终结果',
+        position: { x: 78, y: 34 },
+        config: {},
+      },
+    ],
+    edges: [],
   };
   graph.edges = [
     { id: 'input-agent', source: 'input', target: 'agent', kind: 'message' },
-    ...spec.tools.map((_, index) => ({ id: `tool-${index}-agent`, source: `tool-${index}`, target: 'agent', kind: 'capability' as const })),
+    ...spec.tools.map((_, index) => ({
+      id: `tool-${index}-agent`,
+      source: `tool-${index}`,
+      target: 'agent',
+      kind: 'capability' as const,
+    })),
     { id: 'agent-output', source: 'agent', target: 'output', kind: 'message' },
   ];
   return graph;

@@ -10,6 +10,12 @@ function allowAll(): ApprovalPolicy {
 }
 
 describe('ToolBroker', () => {
+  it('exposes a structured observation without changing the legacy call contract', async () => {
+    const broker = new ToolBroker([echoTool()], allowAll());
+    const observed = await broker.callObserved('echo', { a: 1 });
+    expect(observed).toMatchObject({ ok: true, observation: { status: 'success', metadata: { truncated: false } } });
+    expect(await broker.call('echo', { a: 1 })).toEqual({ ok: true, result: { a: 1 } });
+  });
   it('executes an allowed tool', async () => {
     const broker = new ToolBroker([echoTool()], allowAll());
     const r = await broker.call('echo', { a: 1 });

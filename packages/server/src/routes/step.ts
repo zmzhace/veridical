@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import { parseSpecYaml, runSpec, type SpecRunnerDeps } from '@veridical/spec';
 import { resolveTools } from '../providers.js';
+import { tenantId } from '../principal.js';
 
 const pendingSteps = new Map<string, () => void>();
 
@@ -58,7 +59,7 @@ export async function registerStepRoutes(app: FastifyInstance) {
       store,
       providers,
       tools: resolveTools(spec.tools.map(t => t.name)),
-      tenant_id: 't1',
+      tenant_id: tenantId(req),
       session_id: sessionId,
       stepBoundary,
       runStep: async () => {

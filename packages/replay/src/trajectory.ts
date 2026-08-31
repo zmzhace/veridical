@@ -145,6 +145,12 @@ export interface TrajectoryStep {
   legacy: boolean;
 }
 
+const html = (value: unknown) => String(value ?? '').replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;' }[c]!));
+export function trajectoryHtml(events: TraceEvent[]): string {
+  const rows = projectInvocations(events).map((i) => `<details><summary><b>${html(i.path)}</b> · ${html(i.operation)} · ${html(i.status)} · ${i.duration_ms}ms</summary><h4>Input</h4><pre>${html(JSON.stringify(i.input, null, 2))}</pre><h4>Output</h4><pre>${html(JSON.stringify(i.output ?? i.error ?? null, null, 2))}</pre></details>`).join('\n');
+  return `<!doctype html><meta charset="utf-8"><title>Veridical Trace</title><style>body{font:14px system-ui;max-width:1100px;margin:32px auto;background:#f7f7f5;color:#1f1f1d}details{background:#fff;border:1px solid #e5e5e0;border-radius:8px;padding:12px;margin:8px 0}pre{white-space:pre-wrap;background:#f2f2ef;padding:12px;border-radius:6px}summary{cursor:pointer}</style><h1>运行诊断</h1>${rows}`;
+}
+
 export function projectTrajectory(
   events: TraceEvent[],
   trajectoryIdOrOptions?: string | TrajectoryOptions,
