@@ -1,5 +1,6 @@
 import { useState, type PointerEvent } from 'react';
-import { useAddSpec, useSpecs } from '../api/queries';
+import { useAddSpec, useReplayExecution, useSessions, useSpecs } from '../api/queries';
+import { readSseFrames } from '../api/readSse';
 import { stringify } from 'yaml';
 
 type CanvasNode = {
@@ -58,7 +59,9 @@ const seedEdges = [
 
 export function WorkspacePage() {
   const { data: specs = [] } = useSpecs();
+  const { data: sessions = [] } = useSessions();
   const addSpec = useAddSpec();
+  const replay = useReplayExecution();
   const [agentName, setAgentName] = useState('研究助手');
   const [instruction, setInstruction] = useState(
     '帮助用户完成研究任务，引用可靠证据并说明不确定性。',
@@ -78,6 +81,8 @@ export function WorkspacePage() {
   const [linking, setLinking] = useState<string | null>(null);
   const [showSpec, setShowSpec] = useState(false);
   const [panel, setPanel] = useState<'run' | 'replay' | null>(null);
+  const [prompt, setPrompt] = useState(''); const [runOutput, setRunOutput] = useState(''); const [running, setRunning] = useState(false); const [replaySession, setReplaySession] = useState('');
+  async function runCanvas() { setRunning(true); setRunOutput(''); try { const response = await fetch('/api/run/turn', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ specName: agentName.toLowerCase().replace(/[^a-z0-9]+/g,'-') || 'research-agent', mode:'mock', prompt }) }); if (!response.ok) throw new Error((await response.text()) || response.statusText); await readSseFrames(response, (frame) => { if (frame.type === 'token') setRunOutput((v) => v + frame.text); if (frame.type === 'error') setRunOutput(`错误：${frame.message}`); }); } catch (e) { setRunOutput(e instanceof Error ? `错误：${e.message}` : '运行失败'); } finally { setRunning(false); } }
   const node = nodes.find((n) => n.id === selected) ?? nodes[0];
   function addNode(kind: '工具' | 'Skill' | 'Memory' | '条件' | '输出' = '工具') {
     const id = `${kind}-${nodes.length}`;
@@ -375,16 +380,16 @@ export function WorkspacePage() {
               <>
                 <label>
                   输入任务
-                  <textarea className="field" placeholder="告诉 Agent 需要完成什么…" />
+                  <textarea className="field" placeholder="告诉 Agent 需要完成什么…" value={prompt} onChange={(e)=>setPrompt(e.target.value)} />
                 </label>
-                <button className="btn btn-primary panel-action">开始运行</button>
+                <button className="btn btn-primary panel-action" disabled={!prompt.trim()||running} onClick={runCanvas}>{running?'运行中…':'开始运行'}</button>{runOutput&&<pre className="panel-output">{runOutput}</pre>}
               </>
             ) : (
               <>
                 <label>
                   源运行
-                  <select className="field">
-                    <option>选择一条运行…</option>
+                  <select className="field" value={replaySession} onChange={(e)=>setReplaySession(e.target.value)}>
+                    <option value="">选择一条运行…</option>{sessions.map((s)=><option key={s.session_id} value={s.session_id}>{s.spec_name??s.session_id} · {s.event_count} 事件</option>)}
                   </select>
                 </label>
                 <div className="panel-mode-row">
@@ -392,7 +397,7 @@ export function WorkspacePage() {
                   <button>固定数据</button>
                   <button>行为验证</button>
                 </div>
-                <button className="btn btn-primary panel-action">开始回放</button>
+                <button className="btn btn-primary panel-action" disabled={!replaySession||replay.isPending} onClick={()=>replay.mutate({id:replaySession,body:{mode:'strict'}})}>{replay.isPending?'回放中…':'开始回放'}</button>{replay.data&&<pre className="panel-output">{replay.data.identical?'严格一致':'完成，需审阅差异'}</pre>}
               </>
             )}
           </section>
