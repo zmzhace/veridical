@@ -26,6 +26,9 @@ import {
 } from './runner';
 import type { ProductionConfig } from './config';
 import { replayRecorded } from './replay';
+import { SqliteJobStore, type AsyncJobStore, type JobStore } from './job-store';
+import { AsyncWorker, type AsyncWorkItem } from './async-worker';
+import type { QueueJob } from './redis-queue';
 
 export class ProductionService {
   healthy = true;
@@ -33,13 +36,21 @@ export class ProductionService {
   readonly tools: ProductionTool[];
   private stopped = false;
   private timer?: ReturnType<typeof setInterval>;
+  private asyncTimer?: ReturnType<typeof setInterval>;
+  private asyncWorker?: AsyncWorker;
   private tasks = new Map<string, { controller: AbortController; promise: Promise<void> }>();
+  readonly jobs: JobStore;
+  readonly asyncJobs?: AsyncJobStore;
   constructor(
     readonly db: Ledger,
     readonly config: ProductionConfig,
     readonly providers: Map<string, LLMProvider>,
     tools = safeTools,
+    jobs?: JobStore,
+    asyncJobs?: AsyncJobStore,
   ) {
+    this.jobs = jobs ?? new SqliteJobStore(db);
+    this.asyncJobs = asyncJobs;
     this.tools = tools;
     if (
       tools.some((t) => t.readOnly !== true) ||
@@ -49,6 +60,38 @@ export class ProductionService {
   }
   environment(spec: AgentSpec) {
     return runtimeEnvironment(spec, this.config, this.tools);
+  }
+  /** Persist the API-visible job and mirror delivery to the durable async queue when configured. */
+  private enqueue(
+    tenant: string,
+    actor: string,
+    kind: Job['kind'],
+    idempotencyKey: string,
+    args: unknown,
+    session?: string,
+  ) {
+    const job = this.jobs.enqueue(tenant, actor, kind, idempotencyKey, args, session);
+    if (this.asyncJobs) {
+      const queued: QueueJob = {
+        id: job.id,
+        tenant: job.tenant,
+        actor: job.actor,
+        kind: job.kind,
+        args: job.args,
+        created: job.created,
+        session: job.session,
+        deadline: job.deadline ?? undefined,
+      };
+      void this.asyncJobs.enqueue(queued, idempotencyKey).catch(() => {
+        this.healthy = false;
+        try {
+          this.jobs.finish(job, 'failed', { code: 'async_queue_unavailable' });
+        } catch {
+          // Preserve the original queue failure as the health signal.
+        }
+      });
+    }
+    return job;
   }
   checkCapacity() {
     const capacity = this.db.capacity();
@@ -118,7 +161,7 @@ export class ProductionService {
       throw new Fault(409, 'immutable_release_requires_new_version');
     const suite = this.db.pointer(p.tenant, 'suite', spec.body.name);
     if (!suite) throw new Fault(409, 'acceptance_suite_required');
-    const job = this.db.enqueue(p.tenant, p.actor, 'evaluate', idem, {
+    const job = this.enqueue(p.tenant, p.actor, 'evaluate', idem, {
       ref,
       suite,
       environment: this.environment(spec.body),
@@ -209,7 +252,7 @@ export class ProductionService {
       if (!session || session.kind !== 'run') throw new Fault(404, 'session_not_found');
       if (session.ref !== ref) throw new Fault(409, 'session_release_is_pinned');
     }
-    const job = this.db.enqueue(
+    const job = this.enqueue(
       p.tenant,
       p.actor,
       'run',
@@ -236,7 +279,7 @@ export class ProductionService {
     if (prior) return prior;
     if (this.db.get(p.tenant, 'spec', `${name}@${version}`))
       throw new Fault(409, 'artifact_exists');
-    const job = this.db.enqueue(p.tenant, p.actor, 'improve', idem, {
+    const job = this.enqueue(p.tenant, p.actor, 'improve', idem, {
       ref,
       version,
       feedback,
@@ -250,16 +293,10 @@ export class ProductionService {
     this.checkCapacity();
     const session = this.db.session(p.tenant, source);
     if (!session || session.kind !== 'run') throw new Fault(404, 'session_not_found');
-    if (
-      this.db.sql
-        .prepare(
-          "SELECT 1 FROM jobs WHERE tenant=? AND session=? AND state IN ('queued','running')",
-        )
-        .get(p.tenant, source)
-    )
+    if (this.db.sql.prepare("SELECT 1 FROM jobs WHERE tenant=? AND session=? AND state IN ('queued','running')").get(p.tenant, source))
       throw new Fault(409, 'session_busy');
     const checkpoint = this.db.verify(p.tenant, source);
-    const job = this.db.enqueue(p.tenant, p.actor, 'replay', idem, {
+    const job = this.enqueue(p.tenant, p.actor, 'replay', idem, {
       ref: session.ref,
       source,
       checkpoint,
@@ -281,7 +318,18 @@ export class ProductionService {
       throw new Fault(401, 'execution_credential_revoked_or_expired');
   }
   start() {
-    this.db.recover();
+    if (this.asyncJobs) {
+      this.asyncWorker = new AsyncWorker(this.asyncJobs, this.owner, this.config.concurrency, this.config.timeoutMs);
+      this.asyncTimer = setInterval(() => {
+        void this.asyncWorker!.tick((item, signal) => this.executeAsync(item, signal)).catch(() => {
+          this.healthy = false;
+        });
+      }, 250);
+      this.asyncTimer.unref();
+      void this.asyncWorker.tick((item, signal) => this.executeAsync(item, signal));
+      return;
+    }
+    this.jobs.recover();
     this.timer = setInterval(() => {
       try {
         this.kick();
@@ -293,9 +341,11 @@ export class ProductionService {
     this.kick();
   }
   kick() {
-    if (this.stopped || !this.healthy) return;
+    // Redis-backed delivery is driven exclusively by AsyncWorker; never also
+    // claim the mirrored SQLite ledger job, which would execute it twice.
+    if (this.asyncJobs || this.stopped || !this.healthy) return;
     while (this.tasks.size < this.config.concurrency) {
-      const job = this.db.claim(this.owner, this.config.timeoutMs, this.config.concurrency);
+      const job = this.jobs.claim(this.owner, this.config.timeoutMs, this.config.concurrency);
       if (!job) break;
       const controller = new AbortController();
       const promise = this.work(job, controller)
@@ -309,7 +359,7 @@ export class ProductionService {
     }
   }
   cancel(p: Principal, id: string) {
-    const job = this.db.job(p.tenant, id);
+    const job = this.jobs.job(p.tenant, id);
     if (!job) throw new Fault(404, 'job_not_found');
     requireRole(
       p,
@@ -317,13 +367,15 @@ export class ProductionService {
         ? ['operator' as const]
         : ['developer' as const, 'reviewer' as const]),
     );
-    const cancelled = this.db.cancel(p.tenant, id, p.actor);
+    const cancelled = this.jobs.cancel(p.tenant, id, p.actor);
     this.tasks.get(id)?.controller.abort(new Fault(409, 'cancelled'));
     return cancelled;
   }
   async close() {
     this.stopped = true;
     clearInterval(this.timer);
+    clearInterval(this.asyncTimer);
+    await this.asyncWorker?.drain();
     for (const task of this.tasks.values())
       task.controller.abort(new Fault(503, 'server_shutdown'));
     await Promise.all([...this.tasks.values()].map((t) => t.promise));
@@ -335,51 +387,67 @@ export class ProductionService {
     );
     const heartbeat = setInterval(() => {
       try {
-        this.checkCredential(job);
-        this.db.heartbeat(job);
+        void this.checkCredential(job);
+        this.jobs.heartbeat(job);
       } catch {
         controller.abort(new Fault(409, 'execution_fenced'));
       }
     }, 1000);
     try {
-      this.checkCredential(job);
-      let result: unknown;
-      if (job.kind === 'run') {
-        const spec = this.assertApproved(job.tenant, job.args.ref);
-        result = await this.turn(
-          job,
-          job.session,
-          spec.body,
-          job.args.prompt,
-          controller.signal,
-          () => {
-            this.assertApproved(job.tenant, job.args.ref);
-          },
-        );
-      } else if (job.kind === 'replay')
-        result = await replayRecorded({
-          db: this.db,
-          job,
-          spec: this.spec(job.tenant, job.args.ref).body,
-          config: this.config,
-          tools: this.tools,
-          signal: controller.signal,
-          check: () => this.checkCredential(job),
-        });
-      else if (job.kind === 'evaluate') result = await this.evaluateJob(job, controller.signal);
-      else result = await this.improveJob(job, controller.signal);
-      controller.signal.throwIfAborted();
-      this.checkCredential(job);
-      if (job.kind === 'run') this.assertApproved(job.tenant, job.args.ref);
-      this.db.finish(job, 'completed', result);
+      const result = await this.execute(job, controller.signal);
+      this.jobs.finish(job, 'completed', result);
     } catch (error) {
-      this.db.finish(job, this.stopped ? 'interrupted' : 'failed', {
+      this.jobs.finish(job, this.stopped ? 'interrupted' : 'failed', {
         code: error instanceof Fault ? error.code : 'execution_failed',
       });
     } finally {
       clearTimeout(timeout);
       clearInterval(heartbeat);
     }
+  }
+  private async execute(job: Job, signal: AbortSignal) {
+    this.checkCredential(job);
+    let result: unknown;
+    if (job.kind === 'run') {
+      const spec = this.assertApproved(job.tenant, job.args.ref);
+      result = await this.turn(job, job.session, spec.body, job.args.prompt, signal, () => {
+        this.assertApproved(job.tenant, job.args.ref);
+      });
+    } else if (job.kind === 'replay') {
+      result = await replayRecorded({
+        db: this.db, job, spec: this.spec(job.tenant, job.args.ref).body,
+        config: this.config, tools: this.tools, signal,
+        check: () => this.checkCredential(job),
+      });
+    } else if (job.kind === 'evaluate') result = await this.evaluateJob(job, signal);
+    else result = await this.improveJob(job, signal);
+    signal.throwIfAborted();
+    this.checkCredential(job);
+    if (job.kind === 'run') this.assertApproved(job.tenant, job.args.ref);
+    return result;
+  }
+  private executeAsync(item: AsyncWorkItem, signal: AbortSignal) {
+    const job = {
+      ...item,
+      state: 'running' as const,
+      session: item.session ?? String((item.args as any)?.session ?? `run_${item.id}`),
+      owner: item.owner,
+      deadline: item.deadline ?? null,
+      lease_until: item.leaseUntil,
+      result: undefined,
+    } as unknown as Job;
+    return this.execute(job, signal).then(
+      (result) => {
+        this.jobs.finish(job, 'completed', result);
+        return result;
+      },
+      (error) => {
+        this.jobs.finish(job, this.stopped ? 'interrupted' : 'failed', {
+          code: error instanceof Fault ? error.code : 'execution_failed',
+        });
+        throw error;
+      },
+    );
   }
   private turn(
     job: Job,
@@ -397,7 +465,7 @@ export class ProductionService {
       input,
       signal,
       checkRelease: () => {
-        this.checkCredential(job);
+        void this.checkCredential(job);
         checkRelease();
       },
       config: this.config,
@@ -546,13 +614,19 @@ export class ProductionService {
       });
       const suite = this.db.pointer(job.tenant, 'suite', spec.name);
       if (!suite) throw new Fault(409, 'acceptance_suite_required');
-      this.checkCredential(job);
-      const evaluation = this.db.enqueue(job.tenant, job.actor, 'evaluate', `generated_${job.id}`, {
-        ref,
-        suite,
-        environment: this.environment(spec),
-        credential: job.args.credential,
-      });
+      void this.checkCredential(job);
+      const evaluation = this.enqueue(
+        job.tenant,
+        job.actor,
+        'evaluate',
+        `generated_${job.id}`,
+        {
+          ref,
+          suite,
+          environment: this.environment(spec),
+          credential: job.args.credential,
+        },
+      );
       return {
         candidate: ref,
         evaluation_job: evaluation.id,

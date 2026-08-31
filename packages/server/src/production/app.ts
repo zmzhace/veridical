@@ -8,6 +8,11 @@ import { ProductionConfigSchema, type ProductionConfig } from './config';
 import { ProductionService } from './service';
 import { SecureProvider, type ProductionTool } from './runner';
 import { BUILD_ID } from './build';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { resolveCredential } from './credentials';
+import type { AsyncJobStore, JobStore } from './job-store';
+import { RedisJobQueue } from './redis-queue';
+import { buildLedger } from './storage';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -39,26 +44,49 @@ export async function buildProductionApp(options: {
   auditKey: Buffer;
   providers?: Map<string, LLMProvider>;
   tools?: ProductionTool[];
+  jobs?: JobStore;
+  asyncJobs?: AsyncJobStore;
   worker?: boolean;
   logger?: boolean;
 }) {
   const config = ProductionConfigSchema.parse(options.config);
+  const managedQueue =
+    config.storage.queue === 'redis'
+      ? (options.asyncJobs ?? new RedisJobQueue(config.storage.redisUrl!))
+      : options.asyncJobs;
   const providers =
     options.providers ??
     new Map(
-      config.providers.map((p) => {
-        const key = process.env[p.apiKeyEnv];
-        if (!key) throw new Error(`provider credential required in ${p.apiKeyEnv}`);
-        return [
-          p.name,
-          new SecureProvider(p.baseUrl, key, p.model, { enableThinking: p.enableThinking }),
-        ];
-      }),
+      await Promise.all(
+        config.providers.map(async (p) => {
+          const key = p.apiKeyEnv.startsWith('vault:')
+            ? await resolveCredential({
+                kind: 'vault',
+                address: process.env.VERIDICAL_VAULT_ADDR ?? '',
+                tokenEnv: process.env.VERIDICAL_VAULT_TOKEN_ENV ?? 'VERIDICAL_VAULT_TOKEN',
+                path: p.apiKeyEnv.slice(6).split('#')[0],
+                field: p.apiKeyEnv.slice(6).split('#')[1],
+              })
+            : await resolveCredential({ kind: 'env', name: p.apiKeyEnv });
+          return [
+            p.name,
+            new SecureProvider(p.baseUrl, key, p.model, { enableThinking: p.enableThinking }),
+          ] as const;
+        }),
+      ),
     );
   for (const provider of config.providers)
     if (!providers.has(provider.name)) throw new Error('provider not configured');
-  const db = new Ledger(config.database, options.dataKey, options.auditKey);
-  const service = new ProductionService(db, config, providers, options.tools);
+  const db: any = await buildLedger(config, options.dataKey, options.auditKey);
+  const service = new ProductionService(
+    db as any,
+    config,
+    providers,
+    options.tools,
+    options.jobs,
+    managedQueue,
+  );
+  const oidcKeys = config.oidc ? createRemoteJWKSet(new URL(config.oidc.jwksUrl)) : undefined;
   const app = Fastify({
     bodyLimit: 65536,
     requestTimeout: 15000,
@@ -87,28 +115,59 @@ export async function buildProductionApp(options: {
     reply.header('content-security-policy', "default-src 'none'; frame-ancestors 'none'");
     reply.header('x-request-id', req.id);
     if (req.url === '/health/live') return;
-    if (!db.rate(`ip:${req.ip}`, config.requestsPerMinute * 4))
+    if (!(await (db as any).rate(`ip:${req.ip}`, config.requestsPerMinute * 4)))
       throw new Fault(429, 'rate_limited');
     const auth = req.headers.authorization;
     if (!auth?.startsWith('Bearer ') || auth.length < 39 || auth.length > 512)
       throw new Fault(401, 'authentication_required');
-    const hash = tokenDigest(auth.slice(7));
+    const rawToken = auth.slice(7);
+    const hash = tokenDigest(rawToken);
     const found = config.tokens.find((t) =>
       timingSafeEqual(Buffer.from(t.hash, 'hex'), Buffer.from(hash, 'hex')),
     );
+    let principal: Principal | undefined;
     if (
-      !found ||
-      Date.parse(found.expires) <= Date.now() ||
-      db.sql.prepare('SELECT hash FROM revoked_tokens WHERE hash=?').get(hash)
-    )
-      throw new Fault(401, 'invalid_credentials');
-    req.principal = {
-      tenant: found.tenant,
-      actor: found.actor,
-      roles: found.roles,
-      tokenHash: hash,
-    };
-    if (!db.rate(`actor:${found.tenant}:${found.actor}`, config.requestsPerMinute))
+      found &&
+      Date.parse(found.expires) > Date.now() &&
+      !(db.isRevoked ? await db.isRevoked(hash) : !!db.sql.prepare('SELECT hash FROM revoked_tokens WHERE hash=?').get(hash))
+    ) {
+      principal = { tenant: found.tenant, actor: found.actor, roles: found.roles, tokenHash: hash };
+    } else if (oidcKeys && config.oidc) {
+      try {
+        const verified = await jwtVerify(rawToken, oidcKeys, {
+          issuer: config.oidc.issuer,
+          audience: config.oidc.audience,
+        });
+        const claims = verified.payload as Record<string, unknown>;
+        const tenant = claims[config.oidc.tenantClaim];
+        const actor = claims[config.oidc.actorClaim];
+        const rawRoles = claims[config.oidc.rolesClaim];
+        const roles = (
+          Array.isArray(rawRoles)
+            ? rawRoles
+            : typeof rawRoles === 'string'
+              ? rawRoles.split(/[ ,]+/)
+              : []
+        ).filter(
+          (role): role is string =>
+            typeof role === 'string' &&
+            ['viewer', 'operator', 'developer', 'reviewer', 'publisher', 'admin'].includes(role),
+        );
+        if (
+          typeof tenant !== 'string' ||
+          typeof actor !== 'string' ||
+          !Key.safeParse(tenant).success ||
+          !Key.safeParse(actor).success ||
+          !roles.length
+        )
+          throw new Error('OIDC claims missing tenant, actor or roles');
+        principal = { tenant, actor, roles: roles as Principal['roles'], tokenHash: hash };
+      } catch {
+        throw new Fault(401, 'invalid_credentials');
+      }
+    } else throw new Fault(401, 'invalid_credentials');
+    req.principal = principal;
+    if (!(await (db as any).rate(`actor:${principal.tenant}:${principal.actor}`, config.requestsPerMinute)))
       throw new Fault(429, 'rate_limited');
   });
   app.setErrorHandler((error, req, reply) => {
@@ -158,9 +217,16 @@ export async function buildProductionApp(options: {
   app.get('/health/live', async () => ({ ok: true }));
   app.get('/health/ready', async () => {
     if (!service.healthy) throw new Fault(503, 'worker_unhealthy');
-    service.checkCapacity();
-    db.sql.prepare('SELECT 1').get();
-    return { ok: true, release: config.releaseId, build: BUILD_ID };
+    await service.checkCapacity();
+    if ('pool' in (db as any)) await (db as any).pool.query('SELECT 1');
+    return {
+      ok: true,
+      release: config.releaseId,
+      build: BUILD_ID,
+      storage: config.storage,
+      execution: config.storage.queue === 'redis' ? 'redis_async' : 'in_process',
+      ledger: config.storage.database,
+    };
   });
   app.get('/v1/me', async (req) => ({
     tenant: req.principal.tenant,
@@ -177,11 +243,11 @@ export async function buildProductionApp(options: {
       .object({ yaml: z.string().min(1).max(32000) })
       .strict()
       .parse(req.body);
-    return reply.code(201).send(service.createSpec(req.principal, body.yaml));
+    return reply.code(201).send(await service.createSpec(req.principal, body.yaml));
   });
   app.post('/v1/suites/:name', async (req, reply) => {
     const { name } = z.object({ name: Key }).parse(req.params);
-    return reply.code(201).send(service.setSuite(req.principal, name, req.body));
+    return reply.code(201).send(await service.setSuite(req.principal, name, req.body));
   });
   const idem = (headers: Record<string, any>) =>
     z
@@ -192,11 +258,11 @@ export async function buildProductionApp(options: {
     const body = z.object({ ref: Ref }).strict().parse(req.body);
     return reply
       .code(202)
-      .send(jobView(service.evaluate(req.principal, body.ref, idem(req.headers))));
+      .send(jobView(await service.evaluate(req.principal, body.ref, idem(req.headers))));
   });
   app.post('/v1/approvals', async (req) => {
     const body = z.object({ ref: Ref, reason: Reason }).strict().parse(req.body);
-    return service.approve(req.principal, body.ref, body.reason);
+    return await service.approve(req.principal, body.ref, body.reason);
   });
   app.post('/v1/deployments/:name', async (req) => {
     const { name } = z.object({ name: Key }).parse(req.params);
@@ -208,11 +274,11 @@ export async function buildProductionApp(options: {
       })
       .strict()
       .parse(req.body);
-    return service.deploy(req.principal, name, body.ref, body.channel, body.reason);
+    return await service.deploy(req.principal, name, body.ref, body.channel, body.reason);
   });
   app.post('/v1/revocations', async (req) => {
     const body = z.object({ ref: Ref, reason: Reason }).strict().parse(req.body);
-    return service.revoke(req.principal, body.ref, body.reason);
+    return await service.revoke(req.principal, body.ref, body.reason);
   });
   app.post('/v1/runs', async (req, reply) => {
     const body = z
@@ -224,7 +290,7 @@ export async function buildProductionApp(options: {
       })
       .strict()
       .parse(req.body);
-    return reply.code(202).send(jobView(service.run(req.principal, body, idem(req.headers))));
+    return reply.code(202).send(jobView(await service.run(req.principal, body, idem(req.headers))));
   });
   app.post('/v1/improvements', async (req, reply) => {
     const body = z
@@ -239,7 +305,13 @@ export async function buildProductionApp(options: {
       .code(202)
       .send(
         jobView(
-          service.improve(req.principal, body.name, body.version, body.feedback, idem(req.headers)),
+          await service.improve(
+            req.principal,
+            body.name,
+            body.version,
+            body.feedback,
+            idem(req.headers),
+          ),
         ),
       );
   });
@@ -247,7 +319,7 @@ export async function buildProductionApp(options: {
     const body = z.object({ session: Key }).strict().parse(req.body);
     return reply
       .code(202)
-      .send(jobView(service.replay(req.principal, body.session, idem(req.headers))));
+      .send(jobView(await service.replay(req.principal, body.session, idem(req.headers))));
   });
   app.post('/v1/replay', async (req, reply) => {
     const body = z
@@ -256,18 +328,18 @@ export async function buildProductionApp(options: {
       .parse(req.body);
     return reply
       .code(202)
-      .send(jobView(service.replay(req.principal, body.session, idem(req.headers))));
+      .send(jobView(await service.replay(req.principal, body.session, idem(req.headers))));
   });
   app.get('/v1/jobs/:id', async (req) => {
     requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer');
     const { id } = z.object({ id: Key }).parse(req.params);
-    const job = db.job(req.principal.tenant, id);
+    const job = await db.job(req.principal.tenant, id);
     if (!job) throw new Fault(404, 'job_not_found');
     return jobView(job);
   });
   app.post('/v1/jobs/:id/cancel', async (req) => {
     const { id } = z.object({ id: Key }).parse(req.params);
-    return jobView(service.cancel(req.principal, id));
+    return jobView(await service.cancel(req.principal, id));
   });
   app.get('/v1/sessions', async (req) => {
     requireRole(req.principal, 'viewer', 'operator');
@@ -293,7 +365,7 @@ export async function buildProductionApp(options: {
         limit: z.coerce.number().int().min(1).max(500).default(100),
       })
       .parse(req.query);
-    const events = db.read(req.principal.tenant, id, query.after, query.limit);
+    const events = await db.read(req.principal.tenant, id, query.after, query.limit);
     db.audit(req.principal.tenant, req.principal.actor, 'trace.read', {
       session: id,
       after: query.after,
@@ -310,15 +382,15 @@ export async function buildProductionApp(options: {
   app.get('/v1/runs/:id/provenance', async (req) => {
     const { id } = z.object({ id: Key }).parse(req.params);
     visibleSession(req.principal, id);
-    const events = db.read(req.principal.tenant, id).filter((e) => e.type === 'run.provenance');
+    const events = (await db.read(req.principal.tenant, id)).filter((e: any) => e.type === 'run.provenance');
     db.audit(req.principal.tenant, req.principal.actor, 'provenance.read', {
       session: id,
       request_id: req.id,
     });
     return {
       session: id,
-      checkpoint: db.verify(req.principal.tenant, id),
-      provenance: events.map((e) => ({ path: e.path, seq: e.seq, payload: e.payload })),
+      checkpoint: await db.verify(req.principal.tenant, id),
+      provenance: events.map((e: any) => ({ path: e.path, seq: e.seq, payload: e.payload })),
     };
   });
   app.post('/v1/sessions/:id/integrity', async (req) => {
@@ -332,7 +404,7 @@ export async function buildProductionApp(options: {
       })
       .strict()
       .parse(req.body);
-    return db.verify(req.principal.tenant, id, checkpoint);
+    return await db.verify(req.principal.tenant, id, checkpoint);
   });
   app.get('/v1/audit', async (req) => {
     requireRole(req.principal, 'reviewer');
@@ -349,28 +421,27 @@ export async function buildProductionApp(options: {
       (t) => t.hash === body.hash && t.tenant === req.principal.tenant,
     );
     if (!target) throw new Fault(404, 'token_not_found');
-    db.tx(() => {
-      db.sql.prepare('INSERT OR IGNORE INTO revoked_tokens VALUES (?)').run(body.hash);
-      db.audit(req.principal.tenant, req.principal.actor, 'token.revoked', {
-        actor: target.actor,
-        reason: body.reason,
-      });
+    if (db.revoke) await db.revoke(body.hash);
+    else db.tx(() => db.sql.prepare('INSERT OR IGNORE INTO revoked_tokens VALUES (?)').run(body.hash));
+    await db.audit(req.principal.tenant, req.principal.actor, 'token.revoked', {
+      actor: target.actor,
+      reason: body.reason,
     });
     return { revoked: true };
   });
   app.get('/v1/metrics', async (req) => {
     requireRole(req.principal, 'admin');
     return {
-      jobs: db.sql
-        .prepare('SELECT state,COUNT(*) count FROM jobs WHERE tenant=? GROUP BY state')
-        .all(req.principal.tenant),
-      storage: db.capacity(),
+      jobs: db.jobCounts ? await db.jobCounts(req.principal.tenant) : db.sql.prepare('SELECT state,COUNT(*) count FROM jobs WHERE tenant=? GROUP BY state').all(req.principal.tenant),
+      storage: await db.capacity(),
       release: config.releaseId,
       build: BUILD_ID,
     };
   });
   app.addHook('onClose', async () => {
     await service.close();
+    if (managedQueue && managedQueue !== options.asyncJobs && 'close' in managedQueue)
+      await (managedQueue as { close: () => Promise<void> }).close();
     db.close();
   });
   if (options.worker !== false) service.start();

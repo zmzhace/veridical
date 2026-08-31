@@ -14,7 +14,10 @@ const semantic = (events: TraceEvent[]) =>
 
 // Strict offline re-execution: never falls back to a live provider or tool.
 export async function replayRecorded(options: {
-  db: Ledger;
+  db: Pick<Ledger, 'verify' | 'read' | 'assertFence' | 'append'> & {
+    verify(tenant: string, session: string, checkpoint?: any): any | Promise<any>;
+    read(tenant: string, session: string, after?: number, limit?: number): TraceEvent[] | Promise<TraceEvent[]>;
+  };
   job: Job;
   spec: AgentSpec;
   config: ProductionConfig;
@@ -23,10 +26,10 @@ export async function replayRecorded(options: {
   check: () => void;
 }) {
   const { db, job, spec, config, tools, signal } = options;
-  const checkpoint = db.verify(job.tenant, job.args.source, job.args.checkpoint);
+  const checkpoint = await db.verify(job.tenant, job.args.source, job.args.checkpoint);
   if (checkpoint.head !== job.args.checkpoint.head || checkpoint.seq !== job.args.checkpoint.seq)
     throw new Fault(409, 'replay_source_changed');
-  const source = db.read(job.tenant, job.args.source);
+  const source = await db.read(job.tenant, job.args.source);
   if (
     !source.length ||
     source.some((e) => e.verb === 'error') ||
@@ -74,7 +77,7 @@ export async function replayRecorded(options: {
   const clean = (events: TraceEvent[]) =>
     events.filter((e) => !e.type.startsWith('job.') && e.type !== 'run.provenance');
   const expected = digest(comparableGraph(clean(source))),
-    actual = digest(comparableGraph(clean(db.read(job.tenant, job.session))));
+    actual = digest(comparableGraph(clean(await db.read(job.tenant, job.session))));
   if (expected !== actual) throw new Fault(409, 'replay_semantics_diverged');
   return {
     matched: true,

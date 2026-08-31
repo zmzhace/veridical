@@ -1,0 +1,147 @@
+import type { Job, JobKind } from './contracts';
+import type { Ledger } from './database';
+
+/** Stable boundary for durable job delivery. Implementations must preserve tenant/idempotency fencing. */
+export interface JobStore {
+  enqueue(
+    tenant: string,
+    actor: string,
+    kind: JobKind,
+    idempotencyKey: string,
+    args: unknown,
+    session?: string,
+  ): Job;
+  claim(owner: string, leaseMs: number, limit?: number): Job | undefined;
+  heartbeat(job: Job): void;
+  finish(job: Job, state: 'completed' | 'failed' | 'interrupted', result: unknown): void;
+  cancel(tenant: string, id: string, actor: string): Job;
+  job(tenant: string, id: string): Job | undefined;
+  recover(): void;
+}
+
+
+/** Network-backed variant. Implementations must be idempotent and lease-fenced. */
+export interface AsyncJobStore {
+  enqueue(
+    job: {
+      id: string;
+      tenant: string;
+      actor: string;
+      kind: JobKind;
+      args: unknown;
+      created: number;
+      session?: string;
+      deadline?: number;
+    },
+    idempotencyKey: string,
+  ): Promise<{ id: string; duplicate: boolean }>;
+  claim(
+    owner: string,
+    leaseMs: number,
+  ): Promise<
+    | {
+        id: string;
+        tenant: string;
+        actor: string;
+        kind: JobKind;
+        args: unknown;
+        created: number;
+        session?: string;
+        deadline?: number;
+        owner: string;
+        leaseUntil: number;
+      }
+    | undefined
+  >;
+  heartbeat(id: string, owner: string, leaseMs: number): Promise<boolean>;
+  finish(
+    id: string,
+    owner: string,
+    state: 'completed' | 'failed' | 'cancelled',
+    result?: unknown,
+  ): Promise<boolean>;
+}
+
+/** Compatibility adapter while the async Redis implementation is rolled out. */
+export class SqliteJobStore implements JobStore {
+  constructor(private readonly ledger: Ledger) {}
+  enqueue(...args: Parameters<Ledger['enqueue']>) {
+    return this.ledger.enqueue(...args);
+  }
+  claim(...args: Parameters<Ledger['claim']>) {
+    return this.ledger.claim(...args);
+  }
+  heartbeat(...args: Parameters<Ledger['heartbeat']>) {
+    return this.ledger.heartbeat(...args);
+  }
+  finish(...args: Parameters<Ledger['finish']>) {
+    return this.ledger.finish(...args);
+  }
+  cancel(...args: Parameters<Ledger['cancel']>) {
+    return this.ledger.cancel(...args);
+  }
+  job(...args: Parameters<Ledger['job']>) {
+    return this.ledger.job(...args);
+  }
+  recover(...args: Parameters<Ledger['recover']>) {
+    return this.ledger.recover(...args);
+  }
+}
+
+/** Promise-shaped compatibility adapter used while callers are migrated to async APIs. */
+export class AsyncSqliteJobStore implements AsyncJobStore {
+  constructor(private readonly ledger: Ledger) {}
+  async enqueue(
+    job: {
+      id: string;
+      tenant: string;
+      actor: string;
+      kind: JobKind;
+      args: unknown;
+      created: number;
+      deadline?: number;
+    },
+    idempotencyKey: string,
+  ) {
+    const result = this.ledger.enqueue(job.tenant, job.actor, job.kind, idempotencyKey, job.args);
+    return { id: result.id, duplicate: result.created !== job.created };
+  }
+  async claim(owner: string, leaseMs: number) {
+    const result = this.ledger.claim(owner, leaseMs, 1);
+    if (!result) return undefined;
+    return {
+      id: result.id,
+      tenant: result.tenant,
+      actor: result.actor,
+      kind: result.kind,
+      args: result.args,
+      created: result.created,
+      ...(result.deadline ? { deadline: result.deadline } : {}),
+      owner,
+      leaseUntil: result.lease_until ?? Date.now() + leaseMs,
+    };
+  }
+  async heartbeat(id: string, owner: string, leaseMs: number) {
+    const row = this.ledger.sql.prepare('SELECT tenant FROM jobs WHERE id=?').get(id) as
+      | { tenant?: string }
+      | undefined;
+    const job = row?.tenant ? this.ledger.job(row.tenant, id) : undefined;
+    if (!job || job.owner !== owner) return false;
+    this.ledger.heartbeat(job);
+    return true;
+  }
+  async finish(
+    id: string,
+    owner: string,
+    state: 'completed' | 'failed' | 'cancelled',
+    result?: unknown,
+  ) {
+    const row = this.ledger.sql.prepare('SELECT tenant FROM jobs WHERE id=?').get(id) as
+      | { tenant?: string }
+      | undefined;
+    const job = row?.tenant ? this.ledger.job(row.tenant, id) : undefined;
+    if (!job || job.owner !== owner) return false;
+    this.ledger.finish(job, state === 'cancelled' ? 'interrupted' : state, result ?? null);
+    return true;
+  }
+}

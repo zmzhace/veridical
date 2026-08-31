@@ -48,6 +48,7 @@ const env = {
   SMOKE_DATA_KEY: randomBytes(32).toString('hex'),
   SMOKE_AUDIT_KEY: randomBytes(32).toString('hex'),
   SMOKE_PROVIDER_KEY: 'not-used-no-model-calls',
+  VERIDICAL_ALLOW_LOCAL_STORAGE: '1',
 };
 const rejected = await new Promise((resolve, reject) => {
   const probe = spawn(process.execPath, [bundle], {

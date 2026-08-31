@@ -4,7 +4,7 @@ import { LLMGateway, type LLMProvider, type LLMRequest, type LLMResponse } from 
 import { InvocationRecorder, Session, type InvocationInterceptor } from '@veridical/runtime';
 import { AgentSpecSchema, artifactHash, type AgentSpec } from '@veridical/spec';
 import type { TraceEvent } from '@veridical/schema';
-import { Ledger, TenantTraceStore } from './database';
+import { Ledger, TenantTraceStore, type Fence } from './database';
 import { canonical, digest, Fault, Key, type Job } from './contracts';
 import type { ProductionConfig } from './config';
 import { BUILD_ID } from './build';
@@ -220,7 +220,10 @@ export function messagesFrom(
 }
 
 export interface ExecuteTurnOptions {
-  ledger: Ledger;
+  ledger: Pick<Ledger, 'assertFence' | 'read' | 'append'> & {
+    assertFence(tenant: string, fence: Fence): void | Promise<void>;
+    read(tenant: string, session: string, after?: number, limit?: number): TraceEvent[] | Promise<TraceEvent[]>;
+  };
   job: Job;
   session: string;
   spec: AgentSpec;
@@ -229,7 +232,7 @@ export interface ExecuteTurnOptions {
   tools: ProductionTool[];
   signal: AbortSignal;
   input: string;
-  checkRelease: () => void;
+  checkRelease: () => void | Promise<void>;
   invocationInterceptor?: InvocationInterceptor;
 }
 
@@ -239,8 +242,8 @@ export async function executeTurn(options: ExecuteTurnOptions) {
     id: job.id,
     owner: job.owner!,
   });
-  const roots = ledger
-    .read(job.tenant, session)
+  const roots = (await ledger
+    .read(job.tenant, session))
     .filter((e) => e.type === 'invocation.start' && !e.parent_invocation_id);
   const recorder = InvocationRecorder.root(
     store,
@@ -296,12 +299,12 @@ async function executeTurnInternal(options: ExecuteTurnOptions, recorder: Invoca
     ]),
   );
   const gateway = new LLMGateway(providers);
-  const check = () => {
+  const check = async () => {
     signal.throwIfAborted();
-    ledger.assertFence(job.tenant, { id: job.id, owner: job.owner! });
-    options.checkRelease();
+    await ledger.assertFence(job.tenant, { id: job.id, owner: job.owner! });
+    await options.checkRelease();
   };
-  check();
+  await check();
   const toolVersions = spec.tools.map((t) => ({
     name: t.name,
     version: tools.find((x) => x.name === t.name)!.version,
@@ -351,7 +354,7 @@ async function executeTurnInternal(options: ExecuteTurnOptions, recorder: Invoca
   let outcome: unknown;
   try {
     for (let step = 1; step <= spec.flow.max_steps; step++) {
-      check();
+      await check();
       let stage = stages.find((s) => !completed.has(s.id));
       while (stage && !stage.gate) {
         await record('stage/end', { stage: stage.id });
@@ -378,7 +381,7 @@ async function executeTurnInternal(options: ExecuteTurnOptions, recorder: Invoca
         },
         recorder,
       );
-      check();
+      await check();
       const trimmed = response.text.trim();
       const decision = Decision.parse(
         trimmed.startsWith('{') ? JSON.parse(trimmed) : { text: response.text, done: true },
@@ -444,7 +447,7 @@ async function executeTurnInternal(options: ExecuteTurnOptions, recorder: Invoca
             }
             try {
               const args = tool.schema.parse(decision.tool!.args);
-              check();
+              await check();
               const result = await abortable(
                 tool.execute(args, { tenant: job.tenant, actor: job.actor, signal }),
                 signal,
@@ -464,7 +467,7 @@ async function executeTurnInternal(options: ExecuteTurnOptions, recorder: Invoca
               }
               if (result && typeof result === 'object' && 'ok' in result && result.ok === false)
                 throw new Fault(422, 'tool_reported_failure');
-              check();
+              await check();
               await toolRecord('tool.result', { name: tool.name, result });
               return result;
             } catch (error) {

@@ -10,6 +10,34 @@ export interface Fence {
   id: string;
   owner: string;
 }
+/** Minimal durable trace boundary shared by SQLite and future PostgreSQL ledgers. */
+export interface TraceLedger {
+  append(tenant: string, session: string, input: NewTraceEvent, fence?: Fence): TraceEvent | Promise<TraceEvent>;
+  read(tenant: string, session: string, after?: number, limit?: number): TraceEvent[] | Promise<TraceEvent[]>;
+}
+/** Artifact boundary used by release/governance code. Implementations must preserve immutability. */
+export interface ArtifactLedger {
+  put(tenant: string, kind: string, key: string, body: unknown, actor: string, status?: string, meta?: unknown): Artifact;
+  get<T = any>(tenant: string, kind: string, key: string): Artifact<T> | undefined;
+  transition(tenant: string, kind: string, key: string, status: string, meta: unknown, actor: string): Artifact;
+  list(tenant: string, kind: string, limit?: number, offset?: number): Artifact[];
+  pointer(tenant: string, kind: string, name: string): string | undefined;
+  point(tenant: string, kind: string, name: string, ref: string, actor: string, reason: string): void;
+}
+/** Async persistence contract used by managed production backends. */
+export interface LedgerPort extends TraceLedger, ArtifactLedger {
+  createSession(tenant: string, id: string, kind?: string, ref?: string): Promise<void>;
+  verify(tenant: string, session: string, checkpoint?: Fence & { seq: number; head: string; signature: string }): Promise<unknown>;
+  enqueue(...args: any[]): Promise<Job>;
+  job(tenant: string, id: string): Promise<Job | undefined>;
+  claim(owner: string, timeoutMs: number): Promise<Job | undefined>;
+  heartbeat(job: Job): Promise<void>;
+  assertFence(tenant: string, fence: Fence): Promise<void>;
+  finish(job: Job, state: string, result: unknown): Promise<void>;
+  cancel(tenant: string, id: string, actor: string): Promise<Job>;
+  capacity(): Promise<{ database_bytes: number; free_disk_bytes: number }>;
+  close(): Promise<void>;
+}
 export class Ledger {
   readonly sql: Database.Database;
   constructor(
@@ -542,6 +570,9 @@ export class Ledger {
       );
     });
   }
+  activeJob(tenant: string, session: string) {
+    return this.sql.prepare("SELECT 1 FROM jobs WHERE tenant=? AND session=? AND state IN ('queued','running')").get(tenant, session) as any;
+  }
   async backup(path: string) {
     await this.sql.backup(path);
     chmodSync(path, 0o600);
@@ -550,13 +581,13 @@ export class Ledger {
 
 export class TenantTraceStore implements TraceStore {
   constructor(
-    private ledger: Ledger,
+    private ledger: TraceLedger,
     readonly tenant: string,
     private actor: string,
     private fence?: Fence,
   ) {}
   async appendNext(evt: NewTraceEvent) {
-    return this.ledger.append(
+    return await this.ledger.append(
       this.tenant,
       evt.session_id,
       { ...evt, actor_id: this.actor, run_id: this.fence?.id },
@@ -567,9 +598,9 @@ export class TenantTraceStore implements TraceStore {
     throw new Fault(403, 'explicit_identity_import_disabled');
   }
   async readBySession(session: string) {
-    return this.ledger.read(this.tenant, session);
+    return await this.ledger.read(this.tenant, session);
   }
   async bySeq(session: string, seq: number) {
-    return this.ledger.read(this.tenant, session, seq - 1, 1).find((e) => e.seq === seq);
+    return (await this.ledger.read(this.tenant, session, seq - 1, 1)).find((e) => e.seq === seq);
   }
 }
