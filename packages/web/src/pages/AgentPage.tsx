@@ -2,7 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import type { TraceEvent } from '@veridical/schema';
-import { useAgent, useAgentTasks, useSession, useStartTurn, useApprovals, useDecideApproval } from '../api/queries';
+import {
+  useAgent,
+  useAgentTasks,
+  useSession,
+  useStartTurn,
+  useApprovals,
+  useDecideApproval,
+} from '../api/queries';
 import type { TurnFrame } from '../api/types';
 import { buildChat } from './SessionPage';
 import { ChatBubble } from '../components/ChatBubble';
@@ -236,7 +243,8 @@ export function AgentPage() {
             >
               <strong>{task.first_message || '未命名任务'}</strong>
               <small>
-                {task.turn_count ?? 0} 轮 · {formatDuration(task.total_duration_ms)} · #{task.session_id.slice(-6)}
+                {task.turn_count ?? 0} 轮 · {formatDuration(task.total_duration_ms)} · #
+                {task.session_id.slice(-6)}
               </small>
             </button>
           ))}
@@ -283,12 +291,31 @@ export function AgentPage() {
             )}
           </div>
         </header>
-        {approvals.data?.filter((item) => item.session_id === taskId).map((approval) => (
-          <div className="approval-banner" key={approval.id} role="alert">
-            <div><strong>需要确认：调用 {approval.tool}</strong><p>此操作可能产生 {approval.side_effect} 副作用。</p><pre>{JSON.stringify(approval.args, null, 2)}</pre></div>
-            <div className="approval-actions"><button className="button button-quiet" onClick={() => decideApproval.mutate({ id: approval.id, decision: 'deny' })}>拒绝</button><button className="button button-primary" onClick={() => decideApproval.mutate({ id: approval.id, decision: 'allow' })}>允许一次</button></div>
-          </div>
-        ))}
+        {approvals.data
+          ?.filter((item) => item.session_id === taskId)
+          .map((approval) => (
+            <div className="approval-banner" key={approval.id} role="alert">
+              <div>
+                <strong>需要确认：调用 {approval.tool}</strong>
+                <p>此操作可能产生 {approval.side_effect} 副作用。</p>
+                <pre>{JSON.stringify(approval.args, null, 2)}</pre>
+              </div>
+              <div className="approval-actions">
+                <button
+                  className="button button-quiet"
+                  onClick={() => decideApproval.mutate({ id: approval.id, decision: 'deny' })}
+                >
+                  拒绝
+                </button>
+                <button
+                  className="button button-primary"
+                  onClick={() => decideApproval.mutate({ id: approval.id, decision: 'allow' })}
+                >
+                  允许一次
+                </button>
+              </div>
+            </div>
+          ))}
         <section
           className="conversation-stream"
           aria-live="polite"
@@ -383,14 +410,34 @@ export function AgentPage() {
         <section>
           <h3>已启用能力</h3>
           <div className="agent-capability-summary">
-            <div><span>模型</span><strong>{agent.data.capabilities?.model.name ?? agent.data.model}</strong></div>
-            <div><span>工具</span><strong>{agent.data.capabilities?.tools.length ?? 0}</strong></div>
-            <div><span>MCP</span><strong>{agent.data.capabilities?.mcp_servers.length ?? 0}</strong></div>
-            <div><span>Skills</span><strong>{agent.data.capabilities?.skills.length ?? 0}</strong></div>
-            <div><span>Memory</span><strong>{agent.data.capabilities?.memory.enabled ? '任务' : '关闭'}</strong></div>
-            <div><span>子 Agent</span><strong>{agent.data.capabilities?.child_agents.length ?? 0}</strong></div>
+            <div>
+              <span>模型</span>
+              <strong>{agent.data.capabilities?.model.name ?? agent.data.model}</strong>
+            </div>
+            <div>
+              <span>工具</span>
+              <strong>{agent.data.capabilities?.tools.length ?? 0}</strong>
+            </div>
+            <div>
+              <span>MCP</span>
+              <strong>{agent.data.capabilities?.mcp_servers.length ?? 0}</strong>
+            </div>
+            <div>
+              <span>Skills</span>
+              <strong>{agent.data.capabilities?.skills.length ?? 0}</strong>
+            </div>
+            <div>
+              <span>Memory</span>
+              <strong>{agent.data.capabilities?.memory.enabled ? '任务' : '关闭'}</strong>
+            </div>
+            <div>
+              <span>子 Agent</span>
+              <strong>{agent.data.capabilities?.child_agents.length ?? 0}</strong>
+            </div>
           </div>
-          {agent.data.mock && <p className="mock-capability-note">此 Agent 使用本地 Mock 模型，仅用于开发验收。</p>}
+          {agent.data.mock && (
+            <p className="mock-capability-note">此 Agent 使用本地 Mock 模型，仅用于开发验收。</p>
+          )}
         </section>
         <section className="activity-list">
           <h3>最近活动</h3>
