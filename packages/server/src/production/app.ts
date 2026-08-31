@@ -12,7 +12,7 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { resolveCredential } from './credentials';
 import type { AsyncJobStore, JobStore } from './job-store';
 import { RedisJobQueue } from './redis-queue';
-import { buildLedger } from './storage';
+import { buildLedger, buildObjectStore } from './storage';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -78,6 +78,7 @@ export async function buildProductionApp(options: {
   for (const provider of config.providers)
     if (!providers.has(provider.name)) throw new Error('provider not configured');
   const db: any = await buildLedger(config, options.dataKey, options.auditKey);
+  const objectStore = buildObjectStore(config);
   const service = new ProductionService(
     db as any,
     config,
@@ -445,5 +446,5 @@ export async function buildProductionApp(options: {
     db.close();
   });
   if (options.worker !== false) service.start();
-  return { app, db, service };
+  return { app, db, service, objectStore };
 }
