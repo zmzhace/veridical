@@ -1,5 +1,5 @@
 import Fastify from 'fastify';
-import { timingSafeEqual, randomUUID } from 'node:crypto';
+import { timingSafeEqual, randomUUID, createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { LLMProvider } from '@veridical/llm';
 import { Ledger } from './database';
@@ -91,7 +91,7 @@ export async function buildProductionApp(options: {
   );
   const oidcKeys = config.oidc ? createRemoteJWKSet(new URL(config.oidc.jwksUrl)) : undefined;
   const app = Fastify({
-    bodyLimit: 65536,
+    bodyLimit: 20 * 1024 * 1024,
     requestTimeout: 15000,
     connectionTimeout: 20000,
     keepAliveTimeout: 5000,
@@ -256,6 +256,70 @@ export async function buildProductionApp(options: {
     if (!objectStore) return reply.type('application/json').send(JSON.stringify(artifact.body));
     const bytes = await objectStore.get(`tenants/${req.principal.tenant}/artifacts/${artifact.key}/${artifact.digest}.json`);
     return reply.type('application/json').send(Buffer.from(bytes));
+  });
+  const KnowledgeUpload = z.object({
+    project_id: Key,
+    name: z.string().trim().min(1).max(240),
+    mime_type: z.string().trim().min(1).max(120),
+    content_base64: z.string().min(1).max(18_000_000),
+  }).strict();
+  const knowledgeObjectKey = (tenant: string, id: string, hash: string) => `tenants/${tenant}/knowledge/${id}/${hash}`;
+  app.post('/v1/knowledge/files', async (req, reply) => {
+    requireRole(req.principal, 'operator', 'developer', 'reviewer');
+    if (!objectStore) throw new Fault(503, 's3_object_store_required');
+    const input = KnowledgeUpload.parse(req.body);
+    const bytes = Buffer.from(input.content_base64, 'base64');
+    if (!bytes.length || bytes.length > 15 * 1024 * 1024) throw new Fault(413, 'file_too_large');
+    const id = randomUUID();
+    const contentHash = createHash('sha256').update(bytes).digest('hex');
+    const objectKey = knowledgeObjectKey(req.principal.tenant, id, contentHash);
+    await objectStore.put(objectKey, bytes, input.mime_type);
+    const text = /^text\//.test(input.mime_type) || /json|csv|xml/.test(input.mime_type) ? bytes.toString('utf8') : '';
+    const chunks = [];
+    for (let start = 0, n = 0; start < text.length; start += 1200, n += 1) {
+      const end = Math.min(text.length, start + 1200);
+      const value = text.slice(start, end);
+      chunks.push({ id: `${id}:${n}`, text: value, start, end, hash: createHash('sha256').update(value).digest('hex') });
+    }
+    const metadata = { id, project_id: input.project_id, name: input.name, mime_type: input.mime_type, size: bytes.length, content_hash: contentHash, object_key: objectKey, chunks, created_at: new Date().toISOString() };
+    try {
+      const artifact = await db.put(req.principal.tenant, 'knowledge_file', id, metadata, req.principal.actor, 'active');
+      return reply.code(201).send({ ...metadata, artifact_digest: artifact.digest });
+    } catch (error) {
+      await objectStore.delete(objectKey).catch(() => undefined);
+      throw error;
+    }
+  });
+  app.get('/v1/knowledge/files', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer');
+    const query = z.object({ project_id: Key }).parse(req.query);
+    const files = await db.list(req.principal.tenant, 'knowledge_file', 100, 0);
+    return files.filter((file: any) => file.status === 'active' && file.body.project_id === query.project_id).map((file: any) => ({ ...file.body, artifact_digest: file.digest }));
+  });
+  app.get('/v1/knowledge/files/:id/content', async (req, reply) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer');
+    const { id } = z.object({ id: Key }).parse(req.params);
+    const file = await db.get(req.principal.tenant, 'knowledge_file', id);
+    if (!file || file.status !== 'active') throw new Fault(404, 'file_not_found');
+    if (!objectStore) throw new Fault(503, 's3_object_store_required');
+    const bytes = await objectStore.get(file.body.object_key);
+    return reply.type(file.body.mime_type).send(Buffer.from(bytes));
+  });
+  app.get('/v1/knowledge/search', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer');
+    const query = z.object({ project_id: Key, q: z.string().trim().min(1).max(1000), limit: z.coerce.number().int().min(1).max(50).default(10) }).parse(req.query);
+    const terms = query.q.toLowerCase().split(/\s+/).filter(Boolean);
+    const files = await db.list(req.principal.tenant, 'knowledge_file', 100, 0);
+    return files.filter((file: any) => file.status === 'active' && file.body.project_id === query.project_id).flatMap((file: any) => file.body.chunks.map((chunk: any) => ({ file_id: file.key, file_name: file.body.name, chunk_id: chunk.id, text: chunk.text, start: chunk.start, end: chunk.end, score: terms.filter((term) => chunk.text.toLowerCase().includes(term)).length })).filter((hit: any) => hit.score > 0)).sort((a: any, b: any) => b.score - a.score).slice(0, query.limit);
+  });
+  app.delete('/v1/knowledge/files/:id', async (req) => {
+    requireRole(req.principal, 'developer', 'reviewer');
+    const { id } = z.object({ id: Key }).parse(req.params);
+    const file = await db.get(req.principal.tenant, 'knowledge_file', id);
+    if (!file || file.status !== 'active') throw new Fault(404, 'file_not_found');
+    await db.transition(req.principal.tenant, 'knowledge_file', id, 'deleted', { ...file.meta, deleted_at: new Date().toISOString() }, req.principal.actor);
+    if (objectStore) await objectStore.delete(file.body.object_key).catch(() => undefined);
+    return { deleted: true, id };
   });
   app.post('/v1/specs', async (req, reply) => {
     const body = z

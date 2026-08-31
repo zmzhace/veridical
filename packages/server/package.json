@@ -14,6 +14,7 @@
     "test:llm:live": "node --env-file=../../.env.local --import tsx scripts/live-llm.mjs",
     "test:production": "pnpm build && node scripts/smoke-production.mjs",
     "test:production:postgres": "tsx scripts/smoke-postgres-business.mjs",
+    "test:production:live": "node --env-file=../../.env.local --import tsx scripts/smoke-postgres-live.mjs",
     "test:infrastructure": "tsx scripts/smoke-infrastructure.mjs",
     "db:migrate:postgres": "tsx scripts/migrate-postgres.mjs"
   },
