@@ -51,7 +51,6 @@ const seedNodes: CanvasNode[] = [
   },
 ];
 const seedEdges = [
-  ['agent', 'model'],
   ['agent', 'tools'],
   ['model', 'review'],
   ['tools', 'review'],
@@ -66,6 +65,7 @@ export function WorkspacePage() {
   const [instruction, setInstruction] = useState(
     '帮助用户完成研究任务，引用可靠证据并说明不确定性。',
   );
+  const [model, setModel] = useState('服务端默认模型');
   const [notice, setNotice] = useState('');
   const [nodes, setNodes] = useState<CanvasNode[]>(() => {
     try {
@@ -285,6 +285,13 @@ export function WorkspacePage() {
                   value={instruction}
                   onChange={(e) => setInstruction(e.target.value)}
                 />
+              </label>
+              <label>
+                使用模型
+                <select className="field" value={model} onChange={(e) => setModel(e.target.value)}>
+                  <option>服务端默认模型</option><option>Qwen 3.8 Flash</option><option>自定义模型配置</option>
+                </select>
+                <small className="field-hint">模型属于 Agent 配置，不需要单独连线。</small>
               </label>
             </>
           )}
