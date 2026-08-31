@@ -5,11 +5,8 @@ import '../workspace.css';
 const links = [
   { to: '/', label: '会话', icon: 'M4 4h16v12H8l-4 4V4Z M8 8h8 M8 12h5' },
   { to: '/workspace', label: '工作区', icon: 'M4 5h6v6H4z M14 5h6v6h-6z M4 15h6v4H4z M14 15h6v4h-6z' },
-  { to: '/run', label: '运行', icon: 'm8 4 12 8-12 8V4Z' },
-  { to: '/specs', label: '规格', icon: 'M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6' },
   { to: '/compare', label: '对比', icon: 'M4 4h6v16H4z M14 4h6v16h-6z' },
   { to: '/audit', label: '审计', icon: 'm12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z m-4 9 3 3 5-6' },
-  { to: '/replay', label: '回放', icon: 'M4 5v6h6 M4.5 11A8 8 0 1 0 7 5.5' },
 ];
 
 export function AppShell() {
