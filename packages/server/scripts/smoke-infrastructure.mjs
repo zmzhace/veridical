@@ -18,6 +18,7 @@ const pg = await probePostgres(postgres);
 if (!pg.ok) throw new Error(`postgres unavailable: ${pg.error}`);
 const rd = await probeRedis(redis);
 if (!rd.ok) throw new Error(`redis unavailable: ${rd.error}`);
+await s3.ensureBucket();
 const trace = new PostgresTraceLedger(postgres, Buffer.alloc(32, 7), Buffer.alloc(32, 9));
 const tenant = `infra_${randomUUID().slice(0, 8)}`;
 const traceSession = `infra_${randomUUID()}`;
