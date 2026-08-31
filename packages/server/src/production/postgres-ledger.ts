@@ -18,6 +18,12 @@ export class PostgresTraceLedger implements TraceLedger {
     this.pool = new Pool({ connectionString, max: 10, application_name: 'veridical-ledger' });
   }
   close() { return this.pool.end(); }
+  async transaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    try { await client.query('BEGIN'); const value = await fn(client); await client.query('COMMIT'); return value; }
+    catch (error) { await client.query('ROLLBACK').catch(()=>undefined); throw error; }
+    finally { client.release(); }
+  }
   async createSession(tenant: string, id: string, kind = 'run', ref = '') {
     await this.pool.query(
       `INSERT INTO sessions(tenant,id,kind,ref,created) VALUES($1,$2,$3,$4,now()) ON CONFLICT DO NOTHING`,

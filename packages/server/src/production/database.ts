@@ -123,6 +123,7 @@ export class Ledger {
   tx<T>(fn: () => T): T {
     return this.sql.transaction(fn).immediate();
   }
+  transaction<T>(fn: () => T): T { return this.tx(fn); }
   mac(value: string) {
     return createHmac('sha256', this.auditKey).update(value).digest('hex');
   }

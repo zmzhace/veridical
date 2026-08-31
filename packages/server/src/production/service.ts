@@ -160,7 +160,7 @@ export class ProductionService {
     if ((this.db as any).pool) return this.setSuiteManaged(p, specName, raw);
     const suite = SuiteSchema.parse(raw);
     this.checkCapacity();
-    return this.db.tx(() => {
+    return this.db.transaction(() => {
       const key = `${specName}_${randomUUID()}`;
       const artifact = this.db.put(p.tenant, 'suite', key, suite, p.actor, 'active');
       this.db.point(p.tenant, 'suite', specName, key, p.actor, 'new immutable acceptance suite');
@@ -205,7 +205,7 @@ export class ProductionService {
   approve(p: Principal, ref: string, reason: string) {
     requireRole(p, 'reviewer');
     if ((this.db as any).pool) return this.approveManaged(p, ref, reason);
-    return this.db.tx(() => {
+    return this.db.transaction(() => {
       const spec = this.spec(p.tenant, ref);
       if (spec.author === p.actor) throw new Fault(403, 'independent_reviewer_required');
       if (spec.status !== 'evaluated') throw new Fault(409, 'evaluated_release_required');
@@ -260,7 +260,7 @@ export class ProductionService {
   deploy(p: Principal, name: string, ref: string, channel: string, reason: string) {
     requireRole(p, 'publisher');
     if ((this.db as any).pool) return this.deployManaged(p, name, ref, channel, reason);
-    return this.db.tx(() => {
+    return this.db.transaction(() => {
       const spec = this.assertApproved(p.tenant, ref);
       if (spec.body.name !== name) throw new Fault(422, 'release_name_mismatch');
       this.db.point(p.tenant, 'deployment', `${channel}.${name}`, ref, p.actor, reason);
@@ -278,7 +278,7 @@ export class ProductionService {
   revoke(p: Principal, ref: string, reason: string) {
     requireRole(p, 'reviewer');
     if ((this.db as any).pool) return this.revokeManaged(p, ref, reason);
-    return this.db.tx(() => {
+    return this.db.transaction(() => {
       const spec = this.spec(p.tenant, ref);
       return this.db.transition(
         p.tenant,
@@ -605,7 +605,7 @@ export class ProductionService {
       checks.push({ index, passed, session });
     }
     signal.throwIfAborted();
-    return this.db.tx(() => {
+    return this.db.transaction(() => {
       this.db.assertFence(job.tenant, { id: job.id, owner: job.owner! });
       const evidence = {
         ref: artifact.key,
@@ -694,7 +694,7 @@ export class ProductionService {
       this.config,
       this.tools,
     );
-    return this.db.tx(() => {
+    return this.db.transaction(() => {
       this.db.assertFence(job.tenant, { id: job.id, owner: job.owner! });
       this.assertApproved(job.tenant, baseline.key);
       const ref = `${spec.name}@${spec.version}`;
