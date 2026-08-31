@@ -243,6 +243,7 @@ export class ProductionService {
     idem: string,
   ) {
     requireRole(p, 'operator');
+    if ((this.db as any).pool) return this.runManaged(p, input, idem);
     this.checkCapacity();
     const ref = this.db.pointer(p.tenant, 'deployment', `${input.channel}.${input.name}`);
     if (!ref) throw new Fault(404, 'deployment_not_found');
@@ -260,6 +261,15 @@ export class ProductionService {
       { ref, prompt: input.prompt, credential: p.tokenHash },
       input.session,
     );
+    this.kick();
+    return job;
+  }
+  private async runManaged(p: Principal, input: { name: string; channel: string; prompt: string; session?: string }, idem: string) {
+    const ref = await (this.db as any).pointer(p.tenant, 'deployment', `${input.channel}.${input.name}`);
+    if (!ref) throw new Fault(404, 'deployment_not_found');
+    const spec = await (this.db as any).get(p.tenant, 'spec', ref);
+    if (!spec || spec.status !== 'approved') throw new Fault(409, 'release_not_approved_for_environment');
+    const job = await (this.db as any).enqueue(p.tenant, p.actor, 'run', idem, { ref, prompt: input.prompt, credential: p.tokenHash }, input.session);
     this.kick();
     return job;
   }
@@ -290,6 +300,7 @@ export class ProductionService {
   }
   replay(p: Principal, source: string, idem: string) {
     requireRole(p, 'operator', 'reviewer');
+    if ((this.db as any).pool) return this.replayManaged(p, source, idem);
     this.checkCapacity();
     const session = this.db.session(p.tenant, source);
     if (!session || session.kind !== 'run') throw new Fault(404, 'session_not_found');
@@ -302,6 +313,15 @@ export class ProductionService {
       checkpoint,
       credential: p.tokenHash,
     });
+    this.kick();
+    return job;
+  }
+  private async replayManaged(p: Principal, source: string, idem: string) {
+    const session = await (this.db as any).session(p.tenant, source);
+    if (!session || session.kind !== 'run') throw new Fault(404, 'session_not_found');
+    if (await (this.db as any).activeJob(p.tenant, source)) throw new Fault(409, 'session_busy');
+    const checkpoint = await (this.db as any).verify(p.tenant, source);
+    const job = await (this.db as any).enqueue(p.tenant, p.actor, 'replay', idem, { ref: session.ref, source, checkpoint, credential: p.tokenHash });
     this.kick();
     return job;
   }
