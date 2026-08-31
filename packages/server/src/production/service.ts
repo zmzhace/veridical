@@ -157,6 +157,7 @@ export class ProductionService {
   }
   setSuite(p: Principal, specName: string, raw: unknown) {
     requireRole(p, 'reviewer');
+    if ((this.db as any).pool) return this.setSuiteManaged(p, specName, raw);
     const suite = SuiteSchema.parse(raw);
     this.checkCapacity();
     return this.db.tx(() => {
@@ -165,6 +166,13 @@ export class ProductionService {
       this.db.point(p.tenant, 'suite', specName, key, p.actor, 'new immutable acceptance suite');
       return artifact;
     });
+  }
+  private async setSuiteManaged(p: Principal, specName: string, raw: unknown) {
+    const suite = SuiteSchema.parse(raw); this.checkCapacity();
+    const key = `${specName}_${randomUUID()}`;
+    const artifact = await (this.db as any).put(p.tenant, 'suite', key, suite, p.actor, 'active');
+    await (this.db as any).point(p.tenant, 'suite', specName, key, p.actor, 'new immutable acceptance suite');
+    return artifact;
   }
   evaluate(p: Principal, ref: string, idem: string) {
     requireRole(p, 'developer', 'reviewer');
@@ -185,6 +193,7 @@ export class ProductionService {
   }
   approve(p: Principal, ref: string, reason: string) {
     requireRole(p, 'reviewer');
+    if ((this.db as any).pool) return this.approveManaged(p, ref, reason);
     return this.db.tx(() => {
       const spec = this.spec(p.tenant, ref);
       if (spec.author === p.actor) throw new Fault(403, 'independent_reviewer_required');
@@ -208,6 +217,16 @@ export class ProductionService {
         p.actor,
       );
     });
+  }
+  private async approveManaged(p: Principal, ref: string, reason: string) {
+    const spec = await (this.db as any).get(p.tenant, 'spec', ref);
+    if (!spec) throw new Fault(404, 'spec_not_found');
+    if (spec.author === p.actor) throw new Fault(403, 'independent_reviewer_required');
+    if (spec.status !== 'evaluated') throw new Fault(409, 'evaluated_release_required');
+    const evidence = spec.meta.evaluation ? await (this.db as any).get(p.tenant, 'evaluation', spec.meta.evaluation) : undefined;
+    const suite = await (this.db as any).pointer(p.tenant, 'suite', spec.body.name);
+    if (!evidence?.body.passed || evidence.body.candidate_digest !== spec.digest || evidence.body.suite !== suite || spec.meta.release_artifact_hash !== this.releaseArtifactHash(spec.body)) throw new Fault(409, 'current_passing_evaluation_required');
+    return (this.db as any).transition(p.tenant, 'spec', ref, 'approved', { ...spec.meta, reviewer: p.actor, reason, environment: this.environment(spec.body) }, p.actor);
   }
   assertApproved(tenant: string, ref: string) {
     const spec = this.spec(tenant, ref);
