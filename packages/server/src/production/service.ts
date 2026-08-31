@@ -304,7 +304,7 @@ export class ProductionService {
     this.checkCapacity();
     const session = this.db.session(p.tenant, source);
     if (!session || session.kind !== 'run') throw new Fault(404, 'session_not_found');
-    if (this.db.sql.prepare("SELECT 1 FROM jobs WHERE tenant=? AND session=? AND state IN ('queued','running')").get(p.tenant, source))
+    if ((this.db as any).activeJob && (this.db as any).activeJob(p.tenant, source))
       throw new Fault(409, 'session_busy');
     const checkpoint = this.db.verify(p.tenant, source);
     const job = this.enqueue(p.tenant, p.actor, 'replay', idem, {
@@ -333,7 +333,7 @@ export class ProductionService {
     if (
       !token ||
       Date.parse(token.expires) <= Date.now() ||
-      (!(this.db as any).pool && this.db.sql.prepare('SELECT 1 FROM revoked_tokens WHERE hash=?').get(token.hash))
+      (!(this.db as any).pool && this.db.isRevoked(token.hash))
     )
       throw new Fault(401, 'execution_credential_revoked_or_expired');
   }

@@ -573,6 +573,9 @@ export class Ledger {
   activeJob(tenant: string, session: string) {
     return this.sql.prepare("SELECT 1 FROM jobs WHERE tenant=? AND session=? AND state IN ('queued','running')").get(tenant, session) as any;
   }
+  isRevoked(hash: string) {
+    return Boolean(this.sql.prepare('SELECT 1 FROM revoked_tokens WHERE hash=?').get(hash));
+  }
   async backup(path: string) {
     await this.sql.backup(path);
     chmodSync(path, 0o600);
