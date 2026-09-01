@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { apiFetch } from './client';
+import { apiFetch, ApiError } from './client';
 import { readSseFrames } from './readSse';
 import type { TraceEvent } from '@veridical/schema';
 import type { AgentSpec } from '@veridical/spec/schema';
@@ -16,6 +16,9 @@ import type {
   AgentDraft,
   InvocationResponse,
 } from './types';
+
+const canUseResearchFallback = (error: unknown) =>
+  error instanceof ApiError && (error.status === 404 || error.status === 405);
 
 export const useAgents = () =>
   useQuery({ queryKey: ['agents'], queryFn: () => apiFetch<AgentSummary[]>('/api/agents') });
@@ -99,7 +102,8 @@ export const useModels = () =>
           model: item.model,
           status: item.configured === false ? 'unavailable' : 'configured',
         }));
-      } catch {
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
         return apiFetch<ModelSummary[]>('/api/models');
       }
     },
@@ -221,7 +225,8 @@ export const useSkills = () =>
           source: 'production-registry',
           key: String(skill.id ?? `${skill.name}@${skill.version}`),
         }));
-      } catch {
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
         return apiFetch<SkillCatalogItem[]>('/api/skills');
       }
     },
@@ -270,7 +275,8 @@ export const useTools = () =>
           status: tool.approved === false ? 'draft' : 'approved',
           implementation_hash: String(tool.implementation_hash ?? ''),
         }));
-      } catch {
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
         return apiFetch<ToolArtifactSummary[]>('/api/tools');
       }
     },
@@ -295,7 +301,8 @@ export const useMcpServers = () =>
           schema_hash: server.schema_hash as string | undefined,
           last_error: undefined,
         }));
-      } catch {
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
         return apiFetch<McpServerSummary[]>('/api/mcp/servers');
       }
     },
@@ -315,7 +322,8 @@ export const useCreateMcpServer = () =>
             tool_names: body.tool_names ?? [],
           }),
         });
-      } catch {
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
         return apiFetch<McpServerSummary>('/api/mcp/servers', {
           method: 'POST',
           body: JSON.stringify(body),
@@ -330,7 +338,8 @@ export const useDiscoverMcpServer = () =>
         return await apiFetch<McpServerSummary>(`/v1/mcp/servers/${id}/discover`, {
           method: 'POST',
         });
-      } catch {
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
         return apiFetch<McpServerSummary>(`/api/mcp/servers/${id}/discover`, { method: 'POST' });
       }
     },
@@ -414,11 +423,12 @@ export const useKnowledgeFiles = (organizationId: string, projectId: string) =>
     queryFn: () =>
       apiFetch<KnowledgeFile[]>(
         `/v1/knowledge/files?project_id=${encodeURIComponent(projectId)}`,
-      ).catch(() =>
-        apiFetch<KnowledgeFile[]>(
+      ).catch((error) => {
+        if (!canUseResearchFallback(error)) throw error;
+        return apiFetch<KnowledgeFile[]>(
           `/api/knowledge/files?organization_id=${encodeURIComponent(organizationId)}&project_id=${encodeURIComponent(projectId)}`,
-        ),
-      ),
+        );
+      }),
     enabled: !!organizationId && !!projectId,
   });
 export interface KnowledgeBackendSummary {
@@ -432,9 +442,10 @@ export const useKnowledgeBackends = () =>
   useQuery({
     queryKey: ['knowledge-backends'],
     queryFn: () =>
-      apiFetch<KnowledgeBackendSummary[]>('/v1/knowledge/backends').catch(() =>
-        apiFetch<KnowledgeBackendSummary[]>('/api/knowledge/backends'),
-      ),
+      apiFetch<KnowledgeBackendSummary[]>('/v1/knowledge/backends').catch((error) => {
+        if (!canUseResearchFallback(error)) throw error;
+        return apiFetch<KnowledgeBackendSummary[]>('/api/knowledge/backends');
+      }),
     staleTime: 30_000,
   });
 export const useRun = () =>
