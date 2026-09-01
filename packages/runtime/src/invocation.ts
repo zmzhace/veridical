@@ -197,6 +197,7 @@ export class InvocationRecorder extends Recorder {
       attempt: i.attempt,
       path_source: 'explicit',
       replay_key: `${i.path}@${i.attempt}:${input.type}:${this.eventOrdinal}`,
+      fingerprint: i.fingerprint,
     });
   }
   async start(): Promise<void> {

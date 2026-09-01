@@ -112,7 +112,7 @@ async function importAll() {
             decoded.path ?? null,
             decoded.ordinal ?? null,
             decoded.attempt ?? null,
-            decoded.payload?.fingerprint ?? null,
+            decoded.fingerprint ?? null,
           ],
         );
         report.counts.events++;

@@ -120,7 +120,7 @@ export class PostgresTraceLedger implements TraceLedger {
           event.path ?? null,
           event.ordinal ?? null,
           event.attempt ?? null,
-          (event.payload as any)?.fingerprint ?? null,
+          event.fingerprint ?? null,
         ],
       );
       await client.query('UPDATE sessions SET seq=$1,head=$2 WHERE tenant=$3 AND id=$4', [

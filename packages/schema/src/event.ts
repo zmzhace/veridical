@@ -35,6 +35,10 @@ export const TraceEventSchema = z.object({
   parent_invocation_id: z.string().optional(),
   path: z.string().optional(),
   replay_key: z.string().optional(),
+  fingerprint: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
   ordinal: z.number().int().positive().optional(),
   path_source: z.enum(['explicit', 'legacy']).optional(),
 });
