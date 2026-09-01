@@ -238,6 +238,12 @@ async function verifyTarget() {
     for (const [name, value] of Object.entries(result.rows[0]))
       if (Number(value) !== report.counts[name])
         throw new Error(`migration_${name}_count_mismatch`);
+    const targetHash = createHash('sha256');
+    for (const table of ['events', 'artifacts', 'pointers', 'jobs']) {
+      const rows = await target.pool.query(`SELECT * FROM ${table} ORDER BY tenant, 2`, []);
+      for (const row of rows.rows) targetHash.update(JSON.stringify(row));
+    }
+    report.target_hash = targetHash.digest('hex');
   } catch (error) {
     report.failures.push({ type: 'verification', error: String(error) });
   } finally {
