@@ -1484,6 +1484,19 @@ export async function buildProductionApp(options: {
     });
     return events;
   });
+  // Task aliases keep the public Task API independent from the physical session
+  // storage used by the ledger while preserving one canonical event source.
+  app.get('/v1/tasks/:id/events', async (req) => {
+    const { id } = z.object({ id: Key }).parse(req.params);
+    await visibleSession(req.principal, id);
+    const query = z
+      .object({
+        after: z.coerce.number().int().min(0).default(0),
+        limit: z.coerce.number().int().min(1).max(500).default(100),
+      })
+      .parse(req.query);
+    return db.read(req.principal.tenant, id, query.after, query.limit);
+  });
   app.get('/v1/sessions/:id/integrity', async (req) => {
     const { id } = z.object({ id: Key }).parse(req.params);
     await visibleSession(req.principal, id);
@@ -1569,6 +1582,46 @@ export async function buildProductionApp(options: {
       request_id: req.id,
     });
     return { session: id, steps };
+  });
+  app.get('/v1/tasks/:id/trajectory', async (req) => {
+    const { id } = z.object({ id: Key }).parse(req.params);
+    await visibleSession(req.principal, id);
+    const query = z
+      .object({
+        path: z.string().min(1).max(500).optional(),
+        scope: z.enum(['tree', 'agent']).default('tree'),
+      })
+      .parse(req.query);
+    const events = await db.read(req.principal.tenant, id);
+    return {
+      session: id,
+      steps: projectTrajectory(events, { path: query.path, scope: query.scope }),
+    };
+  });
+  app.get('/v1/tasks/:id/artifacts', async (req) => {
+    const { id } = z.object({ id: Key }).parse(req.params);
+    await visibleSession(req.principal, id);
+    const events = await db.read(req.principal.tenant, id);
+    const refs = new Set<string>();
+    for (const event of events) {
+      const payload = event.payload as any;
+      for (const ref of payload?.artifact_refs ?? payload?.artifacts ?? []) {
+        if (typeof ref === 'string') refs.add(ref);
+        else if (ref?.key) refs.add(String(ref.key));
+      }
+    }
+    const artifacts = [];
+    for (const key of refs) {
+      const artifact = await db.get(req.principal.tenant, 'artifact', key);
+      if (artifact)
+        artifacts.push({
+          key: artifact.key,
+          digest: artifact.digest,
+          status: artifact.status,
+          created: artifact.created,
+        });
+    }
+    return artifacts;
   });
   app.post('/v1/sessions/:id/trajectory/export', async (req, reply) => {
     const { id } = z.object({ id: Key }).parse(req.params);
