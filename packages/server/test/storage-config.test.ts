@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { ProductionConfigSchema } from '../src/production/config';
+import { assertProductionStorage, ProductionConfigSchema } from '../src/production/config';
 
 const base = {
   database: '/tmp/veridical.db',
@@ -27,6 +27,15 @@ const base = {
 };
 
 describe('production storage profile', () => {
+  test('rejects local dependencies when the runtime is production', () => {
+    const previous = process.env.VERIDICAL_ALLOW_LOCAL_STORAGE;
+    delete process.env.VERIDICAL_ALLOW_LOCAL_STORAGE;
+    expect(() => assertProductionStorage(ProductionConfigSchema.parse(base))).toThrow(
+      'production_requires_postgres_ledger',
+    );
+    if (previous === undefined) delete process.env.VERIDICAL_ALLOW_LOCAL_STORAGE;
+    else process.env.VERIDICAL_ALLOW_LOCAL_STORAGE = previous;
+  });
   test('defaults to the explicitly supported single-host profile', () => {
     expect(ProductionConfigSchema.parse(base).storage).toEqual({
       database: 'sqlite',

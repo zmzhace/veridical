@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { LLMProvider } from '@veridical/llm';
 import { Ledger } from './database';
 import { Fault, Key, requireRole, tokenDigest, type Principal, type Job } from './contracts';
-import { ProductionConfigSchema, type ProductionConfig } from './config';
+import { assertProductionStorage, ProductionConfigSchema, type ProductionConfig } from './config';
 import { ProductionService } from './service';
 import { SecureProvider, type ProductionTool } from './runner';
 import { BUILD_ID } from './build';
@@ -50,6 +50,7 @@ export async function buildProductionApp(options: {
   logger?: boolean;
 }) {
   const config = ProductionConfigSchema.parse(options.config);
+  if (process.env.VERIDICAL_MODE === 'production') assertProductionStorage(config);
   const managedQueue =
     config.storage.queue === 'redis'
       ? (options.asyncJobs ?? new RedisJobQueue(config.storage.redisUrl!))

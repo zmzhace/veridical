@@ -126,17 +126,19 @@ export const ProductionConfigSchema = z
       ctx.addIssue({ code: 'custom', message: 'duplicate provider names' });
   });
 export type ProductionConfig = z.infer<typeof ProductionConfigSchema>;
+/** Enforce the managed dependency boundary at every production entry point. */
+export function assertProductionStorage(config: ProductionConfig) {
+  if (process.env.VERIDICAL_ALLOW_LOCAL_STORAGE === '1') return;
+  if (config.storage.database !== 'postgres') throw new Error('production_requires_postgres_ledger');
+  if (config.storage.queue !== 'redis') throw new Error('production_requires_redis_queue');
+  if (config.storage.objectStore !== 's3') throw new Error('production_requires_s3_object_store');
+}
 export function loadProductionConfig() {
   const file = process.env.VERIDICAL_CONFIG;
   if (!file)
     throw new Error('VERIDICAL_CONFIG is required; development mode must be explicitly selected');
   const config = ProductionConfigSchema.parse(JSON.parse(readFileSync(resolve(file), 'utf8')));
-  if (process.env.VERIDICAL_ALLOW_LOCAL_STORAGE !== '1') {
-    if (config.storage.database !== 'postgres')
-      throw new Error('production_requires_postgres_ledger');
-    if (config.storage.queue !== 'redis') throw new Error('production_requires_redis_queue');
-    if (config.storage.objectStore !== 's3') throw new Error('production_requires_s3_object_store');
-  }
+  assertProductionStorage(config);
   config.database = resolve(config.database);
   const key = (name: string) => {
     const raw = process.env[name];
