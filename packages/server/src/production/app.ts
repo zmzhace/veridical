@@ -22,8 +22,26 @@ import { PostgresJobStore, type AsyncJobStore, type JobStore } from './job-store
 import { RedisJobQueue } from './redis-queue';
 import { buildLedger, buildObjectStore } from './storage';
 import { exportGRPO, projectTrajectory, trajectoryJsonl } from '@veridical/replay';
-import { createMcpProductionTool, type McpRuntimeConfig } from './mcp-runtime';
+import { createMcpProductionTool, executeMcpTool, type McpRuntimeConfig } from './mcp-runtime';
 import type { KnowledgePort } from '@veridical/knowledge';
+import { GBrainMcpAdapter } from '@veridical/knowledge';
+
+/** Create a KnowledgePort from reviewed, fixed MCP tool bindings. */
+export function createMcpKnowledgeAdapter(serverRef: string, bindings: McpRuntimeConfig[]) {
+  const serverBindings = bindings.filter((binding) => binding.id === serverRef);
+  return new GBrainMcpAdapter(
+    {
+      call: async <T>(operation: string, args: Record<string, unknown>) => {
+        const toolName = operation.split('.').at(-1)!;
+        const binding = serverBindings.find((candidate) => candidate.toolName === toolName);
+        if (!binding)
+          throw new Fault(503, 'knowledge_mcp_tool_not_bound', `${serverRef}/${toolName}`);
+        return (await executeMcpTool(binding, args)) as T;
+      },
+    },
+    serverRef,
+  );
+}
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -94,7 +112,7 @@ export async function buildProductionApp(options: {
     if (!providers.has(provider.name)) throw new Error('provider not configured');
   const db: any = await buildLedger(config, options.dataKey, options.auditKey);
   const objectStore = options.objectStore ?? buildObjectStore(config);
-  const knowledgeBackends = options.knowledgeBackends ?? new Map<string, KnowledgePort>();
+  const knowledgeBackends = new Map(options.knowledgeBackends ?? []);
   const knowledgeSearchTool: ProductionTool = {
     name: 'knowledge_search',
     version: '1.0.0',
