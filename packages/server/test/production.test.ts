@@ -527,6 +527,12 @@ test('production provenance and replay alias enforce tenant, mode and artifact b
   expect(provenance.statusCode).toBe(200);
   expect(provenance.json().provenance[0]).toMatchObject({ path: 'root' });
   expect(provenance.json().provenance[0].payload.release_artifact_hash).toMatch(/^[a-f0-9]{64}$/);
+  const invocations = await request('viewer', 'GET', `/v1/sessions/${source.session}/invocations`);
+  expect(invocations.statusCode).toBe(200);
+  expect(invocations.json().invocations[0]).toMatchObject({
+    path: 'root',
+    run_id: expect.any(String),
+  });
   expect(
     (await request('foreign', 'GET', `/v1/runs/${source.session}/provenance`)).statusCode,
   ).toBe(404);
