@@ -302,11 +302,26 @@ export const useMcpServers = () =>
   });
 export const useCreateMcpServer = () =>
   useMutation({
-    mutationFn: (body: Record<string, unknown>) =>
-      apiFetch<McpServerSummary>('/api/mcp/servers', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      }),
+    mutationFn: async (body: Record<string, unknown>) => {
+      try {
+        return await apiFetch<McpServerSummary>('/v1/mcp/servers', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: body.name,
+            version: body.version ?? '1.0.0',
+            transport: body.transport,
+            endpoint: body.url ?? body.endpoint,
+            command: body.command,
+            tool_names: body.tool_names ?? [],
+          }),
+        });
+      } catch {
+        return apiFetch<McpServerSummary>('/api/mcp/servers', {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+      }
+    },
   });
 export const useDiscoverMcpServer = () =>
   useMutation({
