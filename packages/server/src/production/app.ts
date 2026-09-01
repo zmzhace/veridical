@@ -270,6 +270,12 @@ export async function buildProductionApp(options: {
       .parse(req.params);
     const artifact = await db.get(req.principal.tenant, params.kind, params.key);
     if (!artifact) throw new Fault(404, 'artifact_not_found');
+    await db.audit(req.principal.tenant, req.principal.actor, 'artifact.read', {
+      kind: params.kind,
+      key: params.key,
+      digest: artifact.digest,
+      request_id: req.id,
+    });
     return {
       key: artifact.key,
       kind: params.kind,
@@ -294,6 +300,12 @@ export async function buildProductionApp(options: {
       .parse(req.params);
     const artifact = await db.get(req.principal.tenant, params.kind, params.key);
     if (!artifact) throw new Fault(404, 'artifact_not_found');
+    await db.audit(req.principal.tenant, req.principal.actor, 'artifact.content_read', {
+      kind: params.kind,
+      key: params.key,
+      digest: artifact.digest,
+      request_id: req.id,
+    });
     if (!objectStore) return reply.type('application/json').send(JSON.stringify(artifact.body));
     const bytes = await objectStore.get(
       `tenants/${req.principal.tenant}/artifacts/${artifact.key}/${artifact.digest}.json`,
