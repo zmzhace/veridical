@@ -116,6 +116,8 @@ export async function buildProductionApp(options: {
         const backend = await db.get(context.tenant, 'knowledge_backend', input.backend_id);
         if (!backend || backend.status !== 'approved')
           throw new Fault(409, 'knowledge_backend_not_approved');
+        if (backend.body?.type !== 'native')
+          throw new Fault(501, 'knowledge_backend_runtime_unavailable', input.backend_id);
       }
       const terms = input.query.toLowerCase().split(/\s+/).filter(Boolean);
       const files = await db.list(context.tenant, 'knowledge_file', 200, 0);
@@ -1036,8 +1038,16 @@ export async function buildProductionApp(options: {
         project_id: Key,
         q: z.string().trim().min(1).max(1000),
         limit: z.coerce.number().int().min(1).max(50).default(10),
+        backend_id: z.string().min(3).max(160).optional(),
       })
       .parse(req.query);
+    if (query.backend_id) {
+      const backend = await db.get(req.principal.tenant, 'knowledge_backend', query.backend_id);
+      if (!backend || backend.status !== 'approved')
+        throw new Fault(409, 'knowledge_backend_not_approved');
+      if (backend.body?.type !== 'native')
+        throw new Fault(501, 'knowledge_backend_runtime_unavailable', query.backend_id);
+    }
     const terms = query.q.toLowerCase().split(/\s+/).filter(Boolean);
     const files = await db.list(req.principal.tenant, 'knowledge_file', 100, 0);
     const result = files
@@ -1062,6 +1072,7 @@ export async function buildProductionApp(options: {
       .slice(0, query.limit);
     await db.audit(req.principal.tenant, req.principal.actor, 'knowledge.search', {
       project_id: query.project_id,
+      backend_id: query.backend_id ?? 'native',
       query_hash: createHash('sha256').update(query.q).digest('hex'),
       count: result.length,
       request_id: req.id,

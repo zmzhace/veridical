@@ -200,6 +200,38 @@ test('knowledge backends are versioned capabilities and require approval', async
     ).statusCode,
   ).toBe(409);
 });
+test('knowledge search never falls back to an unapproved or remote backend', async () => {
+  const created = await request('developer', 'POST', '/v1/knowledge/backends', {
+    name: 'remote-index',
+    version: '1.0.0',
+    type: 'gbrain',
+    config_hash: 'c'.repeat(64),
+  });
+  expect(created.statusCode).toBe(201);
+  expect(
+    (
+      await request(
+        'operator',
+        'GET',
+        '/v1/knowledge/search?project_id=proj&q=test&backend_id=remote-index@1.0.0',
+      )
+    ).json().error.code,
+  ).toBe('knowledge_backend_not_approved');
+  expect(
+    (
+      await request('reviewer', 'POST', '/v1/knowledge/backends/remote-index@1.0.0/decision', {
+        status: 'approved',
+      })
+    ).statusCode,
+  ).toBe(200);
+  const response = await request(
+    'operator',
+    'GET',
+    '/v1/knowledge/search?project_id=proj&q=test&backend_id=remote-index@1.0.0',
+  );
+  expect(response.statusCode).toBe(501);
+  expect(response.json().error.code).toBe('knowledge_backend_runtime_unavailable');
+});
 test('production memories use candidate approval and tenant-scoped deletion', async () => {
   const created = await request('operator', 'POST', '/v1/memories', {
     project_id: 'proj-a',
