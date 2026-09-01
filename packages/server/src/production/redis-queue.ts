@@ -31,6 +31,9 @@ export class RedisJobQueue implements AsyncJobStore {
   async close() {
     await this.redis.quit();
   }
+  async ping() {
+    return (await this.redis.ping()) === 'PONG';
+  }
   async enqueue(
     job: QueueJob,
     idempotencyKey: string,

@@ -232,6 +232,10 @@ export async function buildProductionApp(options: {
     if (!service.healthy) throw new Fault(503, 'worker_unhealthy');
     await service.checkCapacity();
     if ('pool' in (db as any)) await (db as any).pool.query('SELECT 1');
+    if (managedQueue && 'ping' in (managedQueue as any)) {
+      const ok = await (managedQueue as unknown as { ping: () => Promise<boolean> }).ping();
+      if (!ok) throw new Fault(503, 'queue_unhealthy');
+    }
     return {
       ok: true,
       release: config.releaseId,
