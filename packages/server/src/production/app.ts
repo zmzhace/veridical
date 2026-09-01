@@ -274,12 +274,36 @@ export async function buildProductionApp(options: {
       version: provider.version,
       configured: providers.has(provider.name),
     }));
+    const [skillRows, mcpRows] = await Promise.all([
+      db.list(req.principal.tenant, 'skill', 200, 0),
+      db.list(req.principal.tenant, 'mcp_server', 100, 0),
+    ]);
+    const skills = skillRows
+      .filter((row: any) => row?.status === 'approved')
+      .map((row: any) => ({
+        id: row.key,
+        name: row.body.name,
+        version: row.body.version,
+        content_hash: row.digest,
+      }));
+    const mcp_servers = mcpRows
+      .filter((row: any) => row?.status === 'approved')
+      .map((row: any) => ({
+        id: row.key,
+        name: row.body.name,
+        version: row.body.version,
+        transport: row.body.transport,
+        schema_hash: row.body.schema_hash,
+        artifact_hash: row.digest,
+      }));
     await db.audit(req.principal.tenant, req.principal.actor, 'capabilities.read', {
       tools: tools.length,
       models: models.length,
+      skills: skills.length,
+      mcp_servers: mcp_servers.length,
       request_id: req.id,
     });
-    return { models, tools, mcp_servers: [], skills: [] };
+    return { models, tools, mcp_servers, skills };
   });
   const MemoryInput = z
     .object({
