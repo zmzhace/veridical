@@ -17,6 +17,7 @@ describe('S3ObjectStore', () => {
         }
         if (command.constructor.name === 'HeadObjectCommand')
           return { Metadata: objects.get(input.Key)?.metadata };
+        if (command.constructor.name === 'HeadBucketCommand') return {};
         objects.delete(input.Key);
         return {};
       },
@@ -32,6 +33,7 @@ describe('S3ObjectStore', () => {
     });
     await expect(store.get('release/a')).resolves.toEqual(body);
     await expect(store.head('release/a')).resolves.toHaveProperty('Metadata.sha256');
+    await expect(store.health()).resolves.toBe(true);
     await store.delete('release/a');
     await expect(store.get('release/a')).rejects.toThrow();
   });
