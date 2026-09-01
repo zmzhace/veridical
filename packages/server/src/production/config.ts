@@ -129,7 +129,8 @@ export type ProductionConfig = z.infer<typeof ProductionConfigSchema>;
 /** Enforce the managed dependency boundary at every production entry point. */
 export function assertProductionStorage(config: ProductionConfig) {
   if (process.env.VERIDICAL_ALLOW_LOCAL_STORAGE === '1') return;
-  if (config.storage.database !== 'postgres') throw new Error('production_requires_postgres_ledger');
+  if (config.storage.database !== 'postgres')
+    throw new Error('production_requires_postgres_ledger');
   if (config.storage.queue !== 'redis') throw new Error('production_requires_redis_queue');
   if (config.storage.objectStore !== 's3') throw new Error('production_requires_s3_object_store');
 }

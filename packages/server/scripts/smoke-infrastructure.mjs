@@ -64,6 +64,22 @@ await trace.finish(claimed, 'completed', { ok: true });
 const finished = await trace.job(tenant, job.id);
 if (!finished || finished.state !== 'completed' || finished.result?.ok !== true)
   throw new Error('postgres job finish mismatch');
+// Two workers racing for the same queued row must yield exactly one owner.
+const raceJob = await trace.enqueue(tenant, 'smoke', 'run', `idem_${randomUUID()}`, {
+  ref: 'smoke-race@1.0.0',
+});
+const claims = await Promise.all([
+  trace.claim('race-a', 30_000, 1, tenant),
+  trace.claim('race-b', 30_000, 1, tenant),
+]);
+const winners = claims.filter((candidate) => candidate?.id === raceJob.id);
+if (winners.length !== 1) throw new Error('postgres concurrent claim fencing mismatch');
+const winner = winners[0];
+const loser = claims.find((candidate) => candidate?.id !== raceJob.id);
+if (loser) throw new Error('postgres claim selected an unexpected job');
+await trace.finish(winner, 'completed', { raced: true });
+if ((await trace.job(tenant, raceJob.id).then((value) => value?.state)) !== 'completed')
+  throw new Error('postgres raced job did not finish');
 await trace.close();
 const key = `smoke/${randomUUID()}.txt`;
 const body = new TextEncoder().encode('veridical-infrastructure-smoke');
