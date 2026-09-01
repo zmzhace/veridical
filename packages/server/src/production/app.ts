@@ -152,6 +152,21 @@ export async function buildProductionApp(options: {
     if (!providers.has(provider.name)) throw new Error('provider not configured');
   const db: any = await buildLedger(config, options.dataKey, options.auditKey);
   const objectStore = options.objectStore ?? buildObjectStore(config);
+  /** Persist metadata and its immutable body as one application operation.
+   * S3 is written before the Ledger row; a failed Ledger write removes the
+   * object, preventing orphaned production artifacts. */
+  const putArtifact = async (...args: any[]) => {
+    const [tenant, kind, key, body] = args as [string, string, string, unknown];
+    const objectKey = `tenants/${tenant}/artifacts/${kind}/${key}/${digest(body)}.json`;
+    if (objectStore)
+      await objectStore.put(objectKey, Buffer.from(JSON.stringify(body)), 'application/json');
+    try {
+      return await db.put(...args);
+    } catch (error) {
+      if (objectStore) await objectStore.delete(objectKey).catch(() => undefined);
+      throw error;
+    }
+  };
   const knowledgeBackends = new Map(options.knowledgeBackends ?? []);
   const fixedMcpBindings = options.mcpTools ?? config.mcpTools;
   const knowledgeSearchTool: ProductionTool = {
@@ -514,7 +529,7 @@ export async function buildProductionApp(options: {
     const input = MemoryInput.parse(req.body);
     const id = randomUUID();
     const body = { ...input, created_at: new Date().toISOString() };
-    const record = await db.put(
+    const record = await putArtifact(
       req.principal.tenant,
       'memory',
       id,
@@ -607,7 +622,7 @@ export async function buildProductionApp(options: {
     const input = SkillInput.parse(req.body);
     const id = `${input.name}@${input.version}`;
     if (await db.get(req.principal.tenant, 'skill', id)) throw new Fault(409, 'skill_exists');
-    const record = await db.put(
+    const record = await putArtifact(
       req.principal.tenant,
       'skill',
       id,
@@ -696,7 +711,7 @@ export async function buildProductionApp(options: {
     const id = `${input.name}@${input.version}`;
     if (await db.get(req.principal.tenant, 'mcp_server', id))
       throw new Fault(409, 'mcp_server_exists');
-    const record = await db.put(
+    const record = await putArtifact(
       req.principal.tenant,
       'mcp_server',
       id,
@@ -842,7 +857,7 @@ export async function buildProductionApp(options: {
     const id = `${input.name}@${input.version}`;
     if (await db.get(req.principal.tenant, 'knowledge_backend', id))
       throw new Fault(409, 'knowledge_backend_exists');
-    const record = await db.put(
+    const record = await putArtifact(
       req.principal.tenant,
       'knowledge_backend',
       id,
@@ -978,7 +993,7 @@ export async function buildProductionApp(options: {
       version: '0.1.0',
       description: `${source.body.description ?? name} (copy)`,
     };
-    const artifact = await db.put(
+    const artifact = await putArtifact(
       req.principal.tenant,
       'spec',
       `${copyName}@0.1.0`,
@@ -1114,7 +1129,7 @@ export async function buildProductionApp(options: {
       .parse(req.body);
     const previous = await db.get(req.principal.tenant, 'agent_draft', name);
     const revision = Number((previous?.meta as any)?.revision ?? 0) + 1;
-    const draft = await db.put(
+    const draft = await putArtifact(
       req.principal.tenant,
       'agent_draft',
       name,
@@ -1224,7 +1239,7 @@ export async function buildProductionApp(options: {
       author: artifact.author,
       status: artifact.status,
       created: artifact.created,
-      object_key: `tenants/${req.principal.tenant}/artifacts/${artifact.key}/${artifact.digest}.json`,
+      object_key: `tenants/${req.principal.tenant}/artifacts/${params.kind}/${artifact.key}/${artifact.digest}.json`,
     };
   });
   app.get('/v1/artifacts/:kind/:key/content', async (req, reply) => {
@@ -1248,7 +1263,7 @@ export async function buildProductionApp(options: {
       request_id: req.id,
     });
     if (!objectStore) return reply.type('application/json').send(JSON.stringify(artifact.body));
-    const objectKey = `tenants/${req.principal.tenant}/artifacts/${artifact.key}/${artifact.digest}.json`;
+    const objectKey = `tenants/${req.principal.tenant}/artifacts/${params.kind}/${artifact.key}/${artifact.digest}.json`;
     let bytes: Uint8Array;
     try {
       bytes = await objectStore.get(objectKey);
@@ -1259,6 +1274,17 @@ export async function buildProductionApp(options: {
       const code =
         (error as { name?: string; Code?: string }).name ?? (error as { Code?: string }).Code;
       if (code !== 'NoSuchKey' && code !== 'NotFound') throw error;
+      const legacyKey = `tenants/${req.principal.tenant}/artifacts/${artifact.key}/${artifact.digest}.json`;
+      try {
+        bytes = await objectStore.get(legacyKey);
+        await objectStore.put(objectKey, bytes, 'application/json');
+        return reply.type('application/json').send(Buffer.from(bytes));
+      } catch (legacyError) {
+        const legacyCode =
+          (legacyError as { name?: string; Code?: string }).name ??
+          (legacyError as { Code?: string }).Code;
+        if (legacyCode !== 'NoSuchKey' && legacyCode !== 'NotFound') throw legacyError;
+      }
       const encoded = Buffer.from(JSON.stringify(artifact.body));
       await objectStore.put(objectKey, encoded, 'application/json');
       bytes = encoded;
@@ -1296,7 +1322,7 @@ export async function buildProductionApp(options: {
       created_at: new Date().toISOString(),
     };
     try {
-      const artifact = await db.put(
+      const artifact = await putArtifact(
         req.principal.tenant,
         'file',
         id,
@@ -1413,7 +1439,7 @@ export async function buildProductionApp(options: {
       created_at: new Date().toISOString(),
     };
     try {
-      const artifact = await db.put(
+      const artifact = await putArtifact(
         req.principal.tenant,
         'knowledge_file',
         id,
