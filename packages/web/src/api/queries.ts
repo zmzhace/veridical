@@ -47,8 +47,20 @@ export const useAgent = (id: string) =>
   });
 export const useCreateAgent = () =>
   useMutation({
-    mutationFn: (body: { name: string; description: string; model: string }) =>
-      apiFetch<AgentSummary>('/api/agents', { method: 'POST', body: JSON.stringify(body) }),
+    mutationFn: async (body: { name: string; description: string; model: string }) => {
+      try {
+        return await apiFetch<AgentSummary>('/v1/agents', {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
+        return apiFetch<AgentSummary>('/api/agents', {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+      }
+    },
   });
 export const useAgentTasks = (id: string) =>
   useQuery({

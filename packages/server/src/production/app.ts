@@ -855,6 +855,36 @@ export async function buildProductionApp(options: {
     const artifacts = await db.list(req.principal.tenant, 'spec', page.limit, page.offset);
     return artifacts.filter((artifact: any) => artifact.status === 'approved').map(productionAgent);
   });
+  app.post('/v1/agents', async (req, reply) => {
+    requireRole(req.principal, 'developer');
+    const body = z
+      .object({ name: Key, description: z.string().trim().min(1).max(500), model: Key.optional() })
+      .strict()
+      .parse(req.body);
+    const provider = config.providers[0];
+    if (!provider) throw new Fault(503, 'provider_not_configured');
+    const model = body.model && body.model !== 'server-default' ? body.model : provider.model;
+    const yaml = [
+      `name: ${JSON.stringify(body.name)}`,
+      'version: 0.1.0',
+      'schema_version: 1',
+      `description: ${JSON.stringify(body.description)}`,
+      `instruction: {system: ${JSON.stringify(body.description)}}`,
+      'flow: {mode: single-loop, max_steps: 8}',
+      `llm: {provider: ${JSON.stringify(provider.name)}, model: ${JSON.stringify(model)}}`,
+      'tools: [{name: finish, access: allow}]',
+    ].join('\n');
+    const artifact = await service.createSpec(req.principal, yaml);
+    return reply.code(201).send({
+      id: body.name,
+      name: body.name,
+      description: body.description,
+      model,
+      status: 'draft',
+      version: '0.1.0',
+      release_ref: artifact.key,
+    });
+  });
   app.get('/v1/agents/:name', async (req) => {
     requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
     const { name } = z.object({ name: Key }).parse(req.params);

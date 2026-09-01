@@ -589,6 +589,22 @@ test('production Agent catalog and Studio draft are backed by governed artifacts
     channel: 'production',
   });
 });
+test('production Agent creation creates a safe draft candidate', async () => {
+  const created = await request('developer', 'POST', '/v1/agents', {
+    name: 'new-agent',
+    description: 'A focused production assistant',
+    model: 'server-default',
+  });
+  expect(created.statusCode).toBe(201);
+  expect(created.json()).toMatchObject({
+    id: 'new-agent',
+    status: 'draft',
+    model: 'fixture-model',
+  });
+  const candidate = env.db.get('acme', 'spec', 'new-agent@0.1.0');
+  expect(candidate?.status).toBe('draft');
+  expect(candidate?.body.tools).toEqual([{ name: 'finish', access: 'allow' }]);
+});
 test('tool observations feed the next model request and history is recorded once', async () => {
   await publish();
   let count = 0;
