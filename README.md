@@ -198,6 +198,8 @@ release_hash / event_refs
 
 ## 常用命令
 
+生产启动、迁移、回滚和故障处理请参阅：[生产运行手册](docs/production-runbook.md)。
+
 ```bash
 pnpm test                         # 全 workspace 测试
 pnpm build                        # 全 workspace 构建
