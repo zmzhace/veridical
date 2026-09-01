@@ -97,6 +97,7 @@ export interface TurnRequestBody {
   conversationId?: string;
   mode?: 'mock' | 'live';
   prompt: string;
+  project_id?: string;
   script?: string[];
   provider?: string;
   model?: string;

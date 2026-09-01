@@ -466,16 +466,67 @@ export const useEvaluate = () =>
 
 export const useStartTurn = () => {
   const run = async (body: TurnRequestBody, onFrame: (f: TurnFrame) => void) => {
-    const res = await fetch('/api/run/turn', {
+    const requestInit = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err?.error?.message ?? res.statusText);
+    } satisfies RequestInit;
+    const legacy = await fetch('/api/run/turn', requestInit);
+    if (legacy.ok) {
+      await readSseFrames(legacy, onFrame);
+      return;
     }
-    await readSseFrames(res, onFrame);
+    if (![404, 405].includes(legacy.status)) {
+      const err = await legacy.json().catch(() => ({}));
+      throw new Error(err?.error?.message ?? legacy.statusText);
+    }
+    const productionPath = body.conversationId
+      ? `/v1/tasks/${encodeURIComponent(body.conversationId)}/turns`
+      : `/v1/agents/${encodeURIComponent(body.specName)}/tasks`;
+    const productionBody = body.conversationId
+      ? { prompt: body.prompt }
+      : { prompt: body.prompt, project_id: (body as any).project_id };
+    const created = await fetch(productionPath, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(productionBody),
+    });
+    if (!created.ok) {
+      const err = await created.json().catch(() => ({}));
+      throw new Error(err?.error?.message ?? created.statusText);
+    }
+    const job = (await created.json()) as { id: string; session?: string };
+    for (let attempt = 0; attempt < 600; attempt += 1) {
+      const status = await apiFetch<{ state: string; session?: string; result?: unknown }>(
+        `/v1/jobs/${encodeURIComponent(job.id)}`,
+      );
+      if (status.state === 'queued' || status.state === 'running') {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        continue;
+      }
+      const sessionId = status.session ?? job.session;
+      if (!sessionId) throw new Error('生产任务未返回 session');
+      const events = await apiFetch<TraceEvent[]>(
+        `/v1/sessions/${encodeURIComponent(sessionId)}/events`,
+      );
+      for (const event of events) onFrame({ type: 'event', event });
+      if (status.state !== 'completed') {
+        onFrame({
+          type: 'error',
+          message: String((status.result as any)?.code ?? status.state),
+          session_id: sessionId,
+        });
+      } else {
+        onFrame({
+          type: 'done',
+          session_id: sessionId,
+          event_count: events.length,
+          outcome: status.result,
+        });
+      }
+      return;
+    }
+    throw new Error('生产任务等待超时');
   };
   return { run };
 };
