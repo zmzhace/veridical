@@ -2081,6 +2081,46 @@ export async function buildProductionApp(options: {
     }
     return reply.type('application/x-ndjson').send(exportBytes);
   });
+  // Task is the public product name; sessions remains the physical ledger
+  // name. Keep both routes equivalent so clients never need to know storage
+  // terminology.
+  app.post('/v1/tasks/:id/trajectory/export', async (req, reply) => {
+    const { id } = z.object({ id: Key }).parse(req.params);
+    await visibleSession(req.principal, id);
+    const body = z
+      .object({
+        format: z.enum(['json', 'jsonl', 'grpo']).default('jsonl'),
+        path: z.string().min(1).max(500).optional(),
+        scope: z.enum(['tree', 'agent']).default('tree'),
+        group_id: z.string().min(1).max(160).optional(),
+      })
+      .strict()
+      .parse(req.body);
+    const events = await db.read(req.principal.tenant, id);
+    const options = { path: body.path, scope: body.scope } as const;
+    if (body.format === 'grpo' && !body.group_id) throw new Fault(400, 'group_id_required');
+    const payload =
+      body.format === 'grpo'
+        ? exportGRPO(events, { ...options, group_id: body.group_id! })
+        : body.format === 'jsonl'
+          ? trajectoryJsonl(projectTrajectory(events, options))
+          : projectTrajectory(events, options);
+    await db.audit(req.principal.tenant, req.principal.actor, 'trajectory.export', {
+      session: id,
+      format: body.format,
+      path: body.path,
+      request_id: req.id,
+    });
+    if (body.format === 'json') return { session: id, steps: payload };
+    const exportBytes = Buffer.from(String(payload));
+    if (objectStore) {
+      const exportHash = createHash('sha256').update(exportBytes).digest('hex');
+      const objectKey = `tenants/${req.principal.tenant}/exports/${id}/${exportHash}.${body.format}`;
+      await objectStore.put(objectKey, exportBytes, 'application/x-ndjson');
+      reply.header('x-export-object-key', objectKey).header('x-export-sha256', exportHash);
+    }
+    return reply.type('application/x-ndjson').send(exportBytes);
+  });
   app.get('/v1/runs/:id/provenance', async (req) => {
     const { id } = z.object({ id: Key }).parse(req.params);
     await visibleSession(req.principal, id);
