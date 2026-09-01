@@ -10,6 +10,20 @@ const dir = await mkdtemp(join(tmpdir(), 'veridical-production-'));
 const bundle =
   process.env.VERIDICAL_SMOKE_BUNDLE ??
   fileURLToPath(new URL('../dist/server.cjs', import.meta.url));
+// Fastify rejects duplicate method/path registrations at runtime. Keep this
+// inexpensive source-level guard in the production smoke so route regressions
+// fail before deployment rather than only when the server boots.
+const sourceApp = await readFile(
+  fileURLToPath(new URL('../src/production/app.ts', import.meta.url)),
+  'utf8',
+);
+const routes = new Map();
+for (const match of sourceApp.matchAll(/app\.(get|post|put|patch|delete)\((['"])([^'"]+)\2/g)) {
+  const key = `${match[1]} ${match[3]}`;
+  const count = (routes.get(key) ?? 0) + 1;
+  routes.set(key, count);
+  assert.ok(count === 1, `duplicate production route: ${key}`);
+}
 const token = randomBytes(32).toString('hex');
 const configFile = join(dir, 'config.json');
 await writeFile(
