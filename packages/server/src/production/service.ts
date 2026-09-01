@@ -66,6 +66,7 @@ export class ProductionService {
    * transactions and are selected before any synchronous operation is used.
    */
   private legacyAtomic<T>(fn: () => T): T {
+    if (this.managed) throw new Error('legacy_transaction_forbidden_in_managed_storage');
     const atomic = (this.db as any).transaction ?? (this.db as any).tx;
     if (typeof atomic !== 'function') throw new Error('ledger_transaction_unavailable');
     return atomic.call(this.db, fn);
