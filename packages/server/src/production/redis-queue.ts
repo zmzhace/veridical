@@ -42,15 +42,17 @@ export class RedisJobQueue implements AsyncJobStore {
     const result = await this.redis.eval(
       `
       local recovered = 0
-      for _, id in ipairs(ARGV) do
+      local now = tonumber(ARGV[1])
+      for index = 2, #ARGV do
+        local id = ARGV[index]
         local job = KEYS[1] .. ':job:' .. id
         if redis.call('HGET', job, 'state') == 'running' then
           local lease = tonumber(redis.call('HGET', job, 'lease_until') or '0')
-          if lease <= tonumber(KEYS[2]) then
+          if lease <= now then
             redis.call('HSET', job, 'state', 'queued')
             redis.call('HDEL', job, 'owner', 'lease_until')
             redis.call('ZREM', KEYS[1] .. ':leases', id)
-            redis.call('ZADD', KEYS[1] .. ':ready', KEYS[2], id)
+            redis.call('ZADD', KEYS[1] .. ':ready', now, id)
             recovered = recovered + 1
           end
         else
@@ -59,7 +61,7 @@ export class RedisJobQueue implements AsyncJobStore {
       end
       return recovered
       `,
-      2,
+      1,
       this.prefix,
       String(now),
       ...ids,
