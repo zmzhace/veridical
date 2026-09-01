@@ -14,7 +14,7 @@ import {
 } from './contracts';
 import { assertProductionStorage, ProductionConfigSchema, type ProductionConfig } from './config';
 import { ProductionService } from './service';
-import { SecureProvider, type ProductionTool } from './runner';
+import { SecureProvider, safeTools, type ProductionTool } from './runner';
 import { BUILD_ID } from './build';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { resolveCredential } from './credentials';
@@ -22,6 +22,7 @@ import { PostgresJobStore, type AsyncJobStore, type JobStore } from './job-store
 import { RedisJobQueue } from './redis-queue';
 import { buildLedger, buildObjectStore } from './storage';
 import { exportGRPO, projectTrajectory, trajectoryJsonl } from '@veridical/replay';
+import { createMcpProductionTool, type McpRuntimeConfig } from './mcp-runtime';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -53,6 +54,7 @@ export async function buildProductionApp(options: {
   auditKey: Buffer;
   providers?: Map<string, LLMProvider>;
   tools?: ProductionTool[];
+  mcpTools?: McpRuntimeConfig[];
   objectStore?: import('./object-store').S3ObjectStore;
   jobs?: JobStore;
   asyncJobs?: AsyncJobStore;
@@ -92,11 +94,15 @@ export async function buildProductionApp(options: {
   const objectStore = options.objectStore ?? buildObjectStore(config);
   const durableJobs =
     config.storage.database === 'postgres' ? new PostgresJobStore(db) : options.jobs;
+  const registeredTools = [
+    ...(options.tools ?? safeTools),
+    ...(options.mcpTools ?? []).map(createMcpProductionTool),
+  ];
   const service = new ProductionService(
     db as any,
     config,
     providers,
-    options.tools,
+    registeredTools,
     durableJobs as any,
     managedQueue,
     objectStore,
