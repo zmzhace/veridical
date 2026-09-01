@@ -845,8 +845,8 @@ export class ProductionService {
     let result: unknown;
     if (job.kind === 'run') {
       const spec = await this.assertApprovedManaged(job.tenant, job.args.ref);
-      result = await this.turn(job, job.session, spec.body, job.args.prompt, signal, () => {
-        void this.assertApprovedManaged(job.tenant, job.args.ref);
+      result = await this.turn(job, job.session, spec.body, job.args.prompt, signal, async () => {
+        await this.assertApprovedManaged(job.tenant, job.args.ref);
       });
     } else if (job.kind === 'replay') {
       const spec = await this.specManaged(job.tenant, job.args.ref);
@@ -906,7 +906,7 @@ export class ProductionService {
     spec: AgentSpec,
     input: string,
     signal: AbortSignal,
-    checkRelease: () => void,
+    checkRelease: () => void | Promise<void>,
   ) {
     return executeTurn({
       ledger: this.db,
@@ -916,8 +916,7 @@ export class ProductionService {
       input,
       signal,
       checkRelease: () => {
-        void this.checkCredential(job);
-        checkRelease();
+        return Promise.resolve(this.checkCredential(job)).then(() => checkRelease());
       },
       config: this.config,
       providers: this.providers,
