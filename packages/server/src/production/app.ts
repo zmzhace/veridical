@@ -1248,9 +1248,21 @@ export async function buildProductionApp(options: {
       request_id: req.id,
     });
     if (!objectStore) return reply.type('application/json').send(JSON.stringify(artifact.body));
-    const bytes = await objectStore.get(
-      `tenants/${req.principal.tenant}/artifacts/${artifact.key}/${artifact.digest}.json`,
-    );
+    const objectKey = `tenants/${req.principal.tenant}/artifacts/${artifact.key}/${artifact.digest}.json`;
+    let bytes: Uint8Array;
+    try {
+      bytes = await objectStore.get(objectKey);
+    } catch (error) {
+      // Artifacts created before S3 was enabled are still immutable in the
+      // Ledger.  Backfill them on first read, but only for an explicit
+      // not-found; transport/auth/checksum failures must remain visible.
+      const code =
+        (error as { name?: string; Code?: string }).name ?? (error as { Code?: string }).Code;
+      if (code !== 'NoSuchKey' && code !== 'NotFound') throw error;
+      const encoded = Buffer.from(JSON.stringify(artifact.body));
+      await objectStore.put(objectKey, encoded, 'application/json');
+      bytes = encoded;
+    }
     return reply.type('application/json').send(Buffer.from(bytes));
   });
   const FileUpload = z
