@@ -105,8 +105,23 @@ export class PostgresTraceLedger implements TraceLedger {
       const blob = this.encrypt(event, canonical([tenant, session, seq]));
       const hash = this.mac(canonical([tenant, session, seq, event.id, row.rows[0].head, blob]));
       await client.query(
-        'INSERT INTO events(tenant,session,seq,id,blob,prev,hash) VALUES($1,$2,$3,$4,$5,$6,$7)',
-        [tenant, session, seq, event.id, blob, row.rows[0].head, hash],
+        'INSERT INTO events(tenant,session,seq,id,blob,prev,hash,run_id,invocation_id,parent_invocation_id,path,ordinal,attempt,fingerprint) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',
+        [
+          tenant,
+          session,
+          seq,
+          event.id,
+          blob,
+          row.rows[0].head,
+          hash,
+          event.run_id ?? null,
+          event.invocation_id ?? null,
+          event.parent_invocation_id ?? null,
+          event.path ?? null,
+          event.ordinal ?? null,
+          event.attempt ?? null,
+          (event.payload as any)?.fingerprint ?? null,
+        ],
       );
       await client.query('UPDATE sessions SET seq=$1,head=$2 WHERE tenant=$3 AND id=$4', [
         seq,

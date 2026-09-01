@@ -22,6 +22,14 @@ DROP TRIGGER IF EXISTS events_no_update ON events;
 DROP TRIGGER IF EXISTS events_no_delete ON events;
 CREATE TRIGGER events_no_update BEFORE UPDATE ON events FOR EACH ROW EXECUTE FUNCTION reject_event_mutation();
 CREATE TRIGGER events_no_delete BEFORE DELETE ON events FOR EACH ROW EXECUTE FUNCTION reject_event_mutation();
+ALTER TABLE events ADD COLUMN IF NOT EXISTS run_id TEXT;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS invocation_id TEXT;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS parent_invocation_id TEXT;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS path TEXT;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS ordinal INTEGER;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS attempt INTEGER;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS fingerprint TEXT;
+CREATE INDEX IF NOT EXISTS events_invocation_path ON events(tenant, session, path, ordinal);
 CREATE TABLE IF NOT EXISTS artifacts (
   tenant TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL, author TEXT NOT NULL,
   status TEXT NOT NULL, digest TEXT NOT NULL, blob TEXT NOT NULL, meta JSONB NOT NULL,
