@@ -2072,6 +2072,11 @@ export async function buildProductionApp(options: {
           created: artifact.created,
         });
     }
+    await db.audit(req.principal.tenant, req.principal.actor, 'artifacts.read', {
+      session: id,
+      count: artifacts.length,
+      request_id: req.id,
+    });
     return artifacts;
   });
   app.post('/v1/sessions/:id/trajectory/export', async (req, reply) => {
