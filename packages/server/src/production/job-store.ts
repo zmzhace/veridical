@@ -76,6 +76,14 @@ export class PostgresJobStore implements AsyncJobStore {
   ) {
     return this.ledger.enqueue(tenant, actor, kind, idempotencyKey, args, session);
   }
+  async queued(limit = 1000) {
+    const result = await this.ledger.pool.query<{ tenant: string; id: string }>(
+      "SELECT tenant,id FROM jobs WHERE state='queued' ORDER BY created LIMIT $1",
+      [limit],
+    );
+    const jobs = await Promise.all(result.rows.map((row) => this.ledger.job(row.tenant, row.id)));
+    return jobs.filter((job): job is Job => Boolean(job));
+  }
   async enqueue(job: any, idempotencyKey: string) {
     const created = await this.ledger.enqueue(
       job.tenant,

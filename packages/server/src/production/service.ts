@@ -633,6 +633,9 @@ export class ProductionService {
         });
       }, 250);
       this.asyncTimer.unref();
+      void this.republishQueued().catch(() => {
+        this.healthy = false;
+      });
       void this.asyncWorker.tick((item, signal) => this.executeAsync(item, signal));
       return;
     }
@@ -646,6 +649,25 @@ export class ProductionService {
     }, 250);
     this.timer.unref();
     this.kick();
+  }
+  private async republishQueued() {
+    const queued = await (this.jobs as any).queued?.();
+    if (!queued) return;
+    for (const job of queued as Job[]) {
+      await this.asyncJobs!.enqueue(
+        {
+          id: job.id,
+          tenant: job.tenant,
+          actor: job.actor,
+          kind: job.kind,
+          args: job.args,
+          created: job.created,
+          session: job.session,
+          deadline: job.deadline ?? undefined,
+        },
+        `recovery:${job.id}`,
+      );
+    }
   }
   kick() {
     // Redis-backed delivery is driven exclusively by AsyncWorker; never also
