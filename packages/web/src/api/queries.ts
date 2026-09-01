@@ -206,8 +206,16 @@ export const useCredentialStatus = () =>
   });
 export const useDuplicateAgent = () =>
   useMutation({
-    mutationFn: (id: string) =>
-      apiFetch<AgentSummary>(`/api/agents/${id}/duplicate`, { method: 'POST' }),
+    mutationFn: async (id: string) => {
+      try {
+        return await apiFetch<AgentSummary>(`/v1/agents/${encodeURIComponent(id)}/duplicate`, {
+          method: 'POST',
+        });
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
+        return apiFetch<AgentSummary>(`/api/agents/${id}/duplicate`, { method: 'POST' });
+      }
+    },
   });
 export const useArchiveAgent = () =>
   useMutation({

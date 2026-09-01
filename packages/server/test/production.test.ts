@@ -616,6 +616,15 @@ test('production Agent creation creates a safe draft candidate', async () => {
   expect(candidate?.status).toBe('draft');
   expect(candidate?.body.tools).toEqual([{ name: 'finish', access: 'allow' }]);
 });
+test('production Agent duplication creates an un-deployed draft', async () => {
+  await publish();
+  const response = await request('developer', 'POST', '/v1/agents/probe/duplicate');
+  expect(response.statusCode).toBe(201);
+  const copy = response.json();
+  expect(copy.status).toBe('draft');
+  expect(copy.id).toMatch(/^probe-copy-/);
+  expect((await request('viewer', 'GET', `/v1/agents/${copy.id}`)).statusCode).toBe(404);
+});
 test('tool observations feed the next model request and history is recorded once', async () => {
   await publish();
   let count = 0;

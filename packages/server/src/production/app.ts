@@ -911,6 +911,38 @@ export async function buildProductionApp(options: {
       release_ref: artifact.key,
     });
   });
+  app.post('/v1/agents/:name/duplicate', async (req, reply) => {
+    requireRole(req.principal, 'developer');
+    const { name } = z.object({ name: Key }).parse(req.params);
+    const candidates = await db.list(req.principal.tenant, 'spec', 100, 0);
+    const source = candidates.find((candidate: any) => candidate.body?.name === name);
+    if (!source) throw new Fault(404, 'agent_not_found');
+    const copyName = `${name}-copy-${randomUUID().slice(0, 8)}`;
+    const copied = {
+      ...source.body,
+      name: copyName,
+      version: '0.1.0',
+      description: `${source.body.description ?? name} (copy)`,
+    };
+    const artifact = await db.put(
+      req.principal.tenant,
+      'spec',
+      `${copyName}@0.1.0`,
+      copied,
+      req.principal.actor,
+      'draft',
+      { release_artifact_hash: digest(copied), duplicated_from: source.key },
+    );
+    return reply.code(201).send({
+      id: copyName,
+      name: copyName,
+      description: copied.description,
+      model: copied.llm?.model,
+      status: 'draft',
+      version: copied.version,
+      release_ref: artifact.key,
+    });
+  });
   app.get('/v1/agents/:name', async (req) => {
     requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
     const { name } = z.object({ name: Key }).parse(req.params);
