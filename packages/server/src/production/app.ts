@@ -378,12 +378,18 @@ export async function buildProductionApp(options: {
     requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer');
     const query = z.object({ project_id: Key }).parse(req.query);
     const files = await db.list(req.principal.tenant, 'knowledge_file', 100, 0);
-    return files
+    const result = files
       .filter(
         (file: any) =>
           file && file.status === 'active' && file.body?.project_id === query.project_id,
       )
       .map((file: any) => ({ ...file.body, artifact_digest: file.digest }));
+    await db.audit(req.principal.tenant, req.principal.actor, 'knowledge.list', {
+      project_id: query.project_id,
+      count: result.length,
+      request_id: req.id,
+    });
+    return result;
   });
   app.get('/v1/knowledge/files/:id/content', async (req, reply) => {
     requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer');
@@ -392,6 +398,11 @@ export async function buildProductionApp(options: {
     if (!file || file.status !== 'active') throw new Fault(404, 'file_not_found');
     if (!objectStore) throw new Fault(503, 's3_object_store_required');
     const bytes = await objectStore.get(file.body.object_key);
+    await db.audit(req.principal.tenant, req.principal.actor, 'knowledge.content_read', {
+      file_id: id,
+      project_id: file.body.project_id,
+      request_id: req.id,
+    });
     return reply.type(file.body.mime_type).send(Buffer.from(bytes));
   });
   app.get('/v1/knowledge/search', async (req) => {
@@ -405,7 +416,7 @@ export async function buildProductionApp(options: {
       .parse(req.query);
     const terms = query.q.toLowerCase().split(/\s+/).filter(Boolean);
     const files = await db.list(req.principal.tenant, 'knowledge_file', 100, 0);
-    return files
+    const result = files
       .filter(
         (file: any) =>
           file && file.status === 'active' && file.body?.project_id === query.project_id,
@@ -425,6 +436,13 @@ export async function buildProductionApp(options: {
       )
       .sort((a: any, b: any) => b.score - a.score)
       .slice(0, query.limit);
+    await db.audit(req.principal.tenant, req.principal.actor, 'knowledge.search', {
+      project_id: query.project_id,
+      query_hash: createHash('sha256').update(query.q).digest('hex'),
+      count: result.length,
+      request_id: req.id,
+    });
+    return result;
   });
   app.delete('/v1/knowledge/files/:id', async (req) => {
     requireRole(req.principal, 'developer', 'reviewer');
@@ -440,6 +458,11 @@ export async function buildProductionApp(options: {
       req.principal.actor,
     );
     if (objectStore) await objectStore.delete(file.body.object_key).catch(() => undefined);
+    await db.audit(req.principal.tenant, req.principal.actor, 'knowledge.deleted', {
+      file_id: id,
+      project_id: file.body.project_id,
+      request_id: req.id,
+    });
     return { deleted: true, id };
   });
   app.post('/v1/specs', async (req, reply) => {
