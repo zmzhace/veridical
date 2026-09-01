@@ -258,6 +258,29 @@ export async function buildProductionApp(options: {
     actor: req.principal.actor,
     roles: req.principal.roles,
   }));
+  app.get('/v1/capabilities', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
+    const tools = service.tools.map((tool) => ({
+      name: tool.name,
+      version: tool.version,
+      description: tool.description,
+      source: 'builtin' as const,
+      side_effect: tool.readOnly ? 'read' : 'write',
+      approved: tool.readOnly === true,
+    }));
+    const models = config.providers.map((provider) => ({
+      provider: provider.name,
+      model: provider.model,
+      version: provider.version,
+      configured: providers.has(provider.name),
+    }));
+    await db.audit(req.principal.tenant, req.principal.actor, 'capabilities.read', {
+      tools: tools.length,
+      models: models.length,
+      request_id: req.id,
+    });
+    return { models, tools, mcp_servers: [], skills: [] };
+  });
   app.get('/v1/specs', async (req) => {
     requireRole(req.principal, 'viewer', 'developer', 'reviewer', 'publisher');
     const page = Page.parse(req.query);
