@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   CreateBucketCommand,
+  HeadBucketCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
@@ -42,6 +43,10 @@ export class S3ObjectStore {
         (error as { name?: string; Code?: string }).name ?? (error as { Code?: string }).Code;
       if (code !== 'BucketAlreadyOwnedByYou' && code !== 'BucketAlreadyExists') throw error;
     }
+  }
+  async health() {
+    await this.client.send(new HeadBucketCommand({ Bucket: this.config.bucket }));
+    return true;
   }
   async put(key: string, body: Uint8Array, contentType = 'application/octet-stream') {
     if (!key || key.startsWith('/') || key.includes('..')) throw new Error('invalid_object_key');

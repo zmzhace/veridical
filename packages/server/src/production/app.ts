@@ -236,6 +236,7 @@ export async function buildProductionApp(options: {
       const ok = await (managedQueue as unknown as { ping: () => Promise<boolean> }).ping();
       if (!ok) throw new Fault(503, 'queue_unhealthy');
     }
+    if (objectStore) await objectStore.health();
     return {
       ok: true,
       release: config.releaseId,
