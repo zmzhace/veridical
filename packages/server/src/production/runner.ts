@@ -110,6 +110,10 @@ export function validateSpec(
     throw new Fault(422, 'loop_not_enabled_in_production');
   if (spec.skills.some((skill) => skill.status !== 'approved'))
     throw new Fault(422, 'skill_not_approved');
+  if (spec.capabilities?.mcp_servers?.length)
+    throw new Fault(422, 'mcp_not_enabled_in_production_release');
+  if (spec.capabilities?.knowledge_backends?.length)
+    throw new Fault(422, 'knowledge_backend_not_enabled_in_production_release');
   if (spec.llm.fallback.length) throw new Fault(422, 'fallback_requires_separate_release');
   const provider = config.providers.find(
     (p) => p.name === spec.llm.provider && p.model === spec.llm.model,
