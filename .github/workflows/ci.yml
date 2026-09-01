@@ -30,8 +30,17 @@ jobs:
         run: docker compose -f docker-compose.infrastructure.yml up -d --wait
       - name: Verify infrastructure adapters
         run: pnpm test:infrastructure
+      - name: Verify PostgreSQL production business path
+        run: pnpm test:production:postgres
+        env:
+          VERIDICAL_POSTGRES_URL: postgres://veridical:veridical-dev-only@127.0.0.1:5432/veridical
+          VERIDICAL_REDIS_URL: redis://127.0.0.1:6379
+          VERIDICAL_S3_ENDPOINT: http://127.0.0.1:9000
+          VERIDICAL_S3_BUCKET: veridical-artifacts
       - run: pnpm format:check
       - run: pnpm test:regression
+      - name: Verify production hardening
+        run: pnpm test:production
       - run: pnpm audit --prod --audit-level=moderate
       - run: node packages/server/scripts/smoke-production.mjs
       - run: node packages/server/scripts/package-runtime.mjs "$RUNNER_TEMP/veridical-runtime"
