@@ -114,10 +114,18 @@ export class ProductionService {
       }
     }
   }
+  private async assertKnowledgeManaged(tenant: string, spec: AgentSpec) {
+    for (const backendId of spec.capabilities?.knowledge_backends ?? []) {
+      const backend = await (this.db as any).get(tenant, 'knowledge_backend', backendId);
+      if (!backend || backend.status !== 'approved')
+        throw new Fault(409, 'knowledge_backend_not_approved_for_release', backendId);
+    }
+  }
   private async assertApprovedManaged(tenant: string, ref: string) {
     const spec = await this.specManaged(tenant, ref);
     await this.assertSkillsManaged(tenant, spec.body);
     await this.assertMcpManaged(tenant, spec.body);
+    await this.assertKnowledgeManaged(tenant, spec.body);
     if (
       spec.status !== 'approved' ||
       spec.meta.environment !== this.environment(spec.body) ||
@@ -422,6 +430,7 @@ export class ProductionService {
     if (!spec) throw new Fault(404, 'spec_not_found');
     await this.assertSkillsManaged(p.tenant, spec.body);
     await this.assertMcpManaged(p.tenant, spec.body);
+    await this.assertKnowledgeManaged(p.tenant, spec.body);
     if (spec.author === p.actor) throw new Fault(403, 'independent_reviewer_required');
     if (spec.status !== 'evaluated') throw new Fault(409, 'evaluated_release_required');
     const evidence = spec.meta.evaluation
@@ -483,6 +492,7 @@ export class ProductionService {
     if (!spec) throw new Fault(404, 'spec_not_found');
     await this.assertSkillsManaged(p.tenant, spec.body);
     await this.assertMcpManaged(p.tenant, spec.body);
+    await this.assertKnowledgeManaged(p.tenant, spec.body);
     if (spec.status !== 'approved') throw new Fault(409, 'release_not_approved');
     if (spec.body.name !== name) throw new Fault(422, 'release_name_mismatch');
     await (this.db as any).point(
@@ -566,6 +576,7 @@ export class ProductionService {
       throw new Fault(409, 'release_not_approved_for_environment');
     await this.assertSkillsManaged(p.tenant, spec.body);
     await this.assertMcpManaged(p.tenant, spec.body);
+    await this.assertKnowledgeManaged(p.tenant, spec.body);
     return this.enqueueManaged(
       p.tenant,
       p.actor,
