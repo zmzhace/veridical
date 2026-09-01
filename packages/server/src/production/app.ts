@@ -832,7 +832,7 @@ export async function buildProductionApp(options: {
   const productionAgent = (artifact: any) => {
     const spec = artifact.body ?? {};
     return {
-      id: artifact.key,
+      id: spec.name ?? artifact.key,
       name: spec.name ?? artifact.key,
       description: spec.description ?? spec.instructions ?? '',
       model: spec.llm?.model ?? 'configured',
@@ -858,7 +858,11 @@ export async function buildProductionApp(options: {
   app.get('/v1/agents/:name', async (req) => {
     requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
     const { name } = z.object({ name: Key }).parse(req.params);
-    const artifact = await db.get(req.principal.tenant, 'spec', name);
+    let artifact = await db.get(req.principal.tenant, 'spec', name);
+    if (!artifact) {
+      const candidates = await db.list(req.principal.tenant, 'spec', 100, 0);
+      artifact = candidates.find((candidate: any) => candidate.body?.name === name);
+    }
     if (!artifact || artifact.status !== 'approved') throw new Fault(404, 'agent_not_found');
     return productionAgent(artifact);
   });
@@ -1397,7 +1401,10 @@ export async function buildProductionApp(options: {
     const page = Page.parse(req.query);
     const sessions = await db.listSessions(req.principal.tenant, page.limit, page.offset);
     return sessions
-      .filter((session: any) => session.kind === 'run' && session.ref === name)
+      .filter(
+        (session: any) =>
+          session.kind === 'run' && (session.ref === name || session.ref?.startsWith(`${name}@`)),
+      )
       .map((session: any) => ({
         session_id: session.id,
         spec_name: name,

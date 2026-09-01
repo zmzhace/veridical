@@ -560,6 +560,28 @@ test('production Task and Turn aliases reuse the pinned run session', async () =
   expect((await drain(next.json().id)).state).toBe('completed');
   expect((await request('viewer', 'GET', `/v1/tasks/${task.session}`)).json().turns).toBe(2);
 });
+test('production Agent catalog and Studio draft are backed by governed artifacts', async () => {
+  await publish();
+  const agents = await request('viewer', 'GET', '/v1/agents');
+  expect(agents.statusCode).toBe(200);
+  expect(agents.json()).toEqual(
+    expect.arrayContaining([expect.objectContaining({ id: 'probe', status: 'published' })]),
+  );
+  const saved = await request('developer', 'PUT', '/v1/agents/probe/draft', {
+    graph: { nodes: [{ id: 'agent' }] },
+    yaml: yaml('1.0.1'),
+  });
+  expect(saved.statusCode).toBe(200);
+  expect(saved.json()).toMatchObject({ revision: 1, graph: { nodes: [{ id: 'agent' }] } });
+  const loaded = await request('developer', 'GET', '/v1/agents/probe/draft');
+  expect(loaded.json()).toMatchObject({ revision: 1, yaml: yaml('1.0.1') });
+  const candidate = await request('developer', 'POST', '/v1/agents/probe/publish', {
+    graph: {},
+    yaml: yaml('1.0.1'),
+  });
+  expect(candidate.statusCode).toBe(202);
+  expect(candidate.json()).toMatchObject({ status: 'pending_review', ref: 'probe@1.0.1' });
+});
 test('tool observations feed the next model request and history is recorded once', async () => {
   await publish();
   let count = 0;
