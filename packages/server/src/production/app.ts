@@ -163,7 +163,10 @@ export async function buildProductionApp(options: {
     try {
       return await db.put(...args);
     } catch (error) {
-      if (objectStore) await objectStore.delete(objectKey).catch(() => undefined);
+      // Never delete on a failed metadata write: the key is content-addressed
+      // and may already belong to an immutable artifact with the same body.
+      // Orphans are safely reclaimable by a digest-based garbage collector;
+      // deleting here could destroy a valid artifact after a duplicate race.
       throw error;
     }
   };
