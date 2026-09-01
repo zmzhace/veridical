@@ -36,3 +36,15 @@ test('readSseFrames tolerates a trailing partial chunk', async () => {
   await readSseFrames(new Response(body), (f) => seen.push(f));
   expect(seen).toEqual([{ type: 'token', text: 'a' }]);
 });
+
+test('readSseFrames flushes a complete final frame without a blank line', async () => {
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('data: {"type":"done","session_id":"x"}'));
+      controller.close();
+    },
+  });
+  const seen: unknown[] = [];
+  await readSseFrames(new Response(body), (f) => seen.push(f));
+  expect(seen).toEqual([{ type: 'done', session_id: 'x' }]);
+});

@@ -1,26 +1,45 @@
 export function readSseFrames(response: Response, onFrame: (frame: any) => void): Promise<void> {
   return new Promise((resolve, reject) => {
-    const reader = response.body!.getReader();
+    if (!response.body) {
+      reject(new Error('SSE response body is missing'));
+      return;
+    }
+    const reader = response.body.getReader();
     const dec = new TextDecoder();
     let buf = '';
+    const consume = (chunk: string, flush = false) => {
+      buf += chunk;
+      const parts = buf.split(/\r?\n\r?\n/);
+      buf = parts.pop() ?? '';
+      for (const part of parts) {
+        const line = part.split(/\r?\n/).find((entry) => entry.trimStart().startsWith('data:'));
+        if (!line) continue;
+        try {
+          onFrame(JSON.parse(line.replace(/^\s*data:\s*/, '')));
+        } catch {
+          // Ignore malformed or incomplete frames; the server may emit comments.
+        }
+      }
+      if (flush && buf.trim()) {
+        const line = buf.split(/\r?\n/).find((entry) => entry.trimStart().startsWith('data:'));
+        if (line) {
+          try {
+            onFrame(JSON.parse(line.replace(/^\s*data:\s*/, '')));
+            buf = '';
+          } catch {
+            // A genuinely partial trailing frame is intentionally ignored.
+          }
+        }
+      }
+    };
     (async () => {
       try {
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
-          buf += dec.decode(value, { stream: true });
-          const parts = buf.split('\n\n');
-          buf = parts.pop() ?? '';
-          for (const part of parts) {
-            const trimmed = part.trim();
-            if (!trimmed.startsWith('data:')) continue;
-            try {
-              onFrame(JSON.parse(trimmed.replace(/^data:\s*/, '')));
-            } catch {
-              // 跳过半行/非 JSON 帧
-            }
-          }
+          consume(dec.decode(value, { stream: true }));
         }
+        consume(dec.decode(), true);
         resolve();
       } catch (e) {
         reject(e);
