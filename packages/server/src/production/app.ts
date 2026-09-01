@@ -1916,7 +1916,14 @@ export async function buildProductionApp(options: {
         limit: z.coerce.number().int().min(1).max(500).default(100),
       })
       .parse(req.query);
-    return db.read(req.principal.tenant, id, query.after, query.limit);
+    const events = await db.read(req.principal.tenant, id, query.after, query.limit);
+    await db.audit(req.principal.tenant, req.principal.actor, 'trace.read', {
+      session: id,
+      after: query.after,
+      limit: query.limit,
+      request_id: req.id,
+    });
+    return events;
   });
   app.get('/v1/sessions/:id/integrity', async (req) => {
     const { id } = z.object({ id: Key }).parse(req.params);
