@@ -797,6 +797,11 @@ export async function buildProductionApp(options: {
         db.get(req.principal.tenant, 'mcp_server', id),
       ),
     );
+    const knowledgeRows = await Promise.all(
+      (spec.body.capabilities?.knowledge_backends ?? []).map((id: string) =>
+        db.get(req.principal.tenant, 'knowledge_backend', id),
+      ),
+    );
     const manifest = {
       release_artifact_hash: spec.meta.release_artifact_hash,
       spec_hash: spec.digest,
@@ -812,6 +817,12 @@ export async function buildProductionApp(options: {
         }),
       ),
       mcp_hashes: mcpRows.filter(Boolean).map((row: any) => row.digest),
+      knowledge_hashes: knowledgeRows.filter(Boolean).map((row: any) => row.digest),
+      memory_scopes: spec.body.capabilities?.memory_scopes ?? ['turn', 'task'],
+      budget: {
+        max_steps: spec.body.flow.max_steps,
+        max_tokens: config.maxOutputTokens,
+      },
       model: { provider: spec.body.llm.provider, model: spec.body.llm.model },
       environment: spec.meta.environment,
     };
