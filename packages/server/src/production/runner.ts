@@ -23,7 +23,12 @@ export interface ProductionTool {
   schema: z.ZodTypeAny;
   execute(
     args: unknown,
-    context: { tenant: string; actor: string; signal: AbortSignal },
+    context: {
+      tenant: string;
+      actor: string;
+      signal: AbortSignal;
+      allowedKnowledgeBackends?: string[];
+    },
   ): Promise<unknown>;
 }
 export const safeTools: ProductionTool[] = ['echo', 'finish'].map((name) => ({
@@ -509,7 +514,12 @@ async function executeTurnInternal(options: ExecuteTurnOptions, recorder: Invoca
               const args = tool.schema.parse(decision.tool!.args);
               await check();
               const result = await abortable(
-                tool.execute(args, { tenant: job.tenant, actor: job.actor, signal }),
+                tool.execute(args, {
+                  tenant: job.tenant,
+                  actor: job.actor,
+                  signal,
+                  allowedKnowledgeBackends: spec.capabilities?.knowledge_backends ?? [],
+                }),
                 signal,
               );
               if (Buffer.byteLength(canonical(result)) > 32000) {

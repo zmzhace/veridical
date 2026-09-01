@@ -113,6 +113,8 @@ export async function buildProductionApp(options: {
         })
         .parse(args);
       if (input.backend_id) {
+        if (!context.allowedKnowledgeBackends?.includes(input.backend_id))
+          throw new Fault(403, 'knowledge_backend_not_bound_to_release', input.backend_id);
         const backend = await db.get(context.tenant, 'knowledge_backend', input.backend_id);
         if (!backend || backend.status !== 'approved')
           throw new Fault(409, 'knowledge_backend_not_approved');
