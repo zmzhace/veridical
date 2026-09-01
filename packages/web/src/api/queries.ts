@@ -21,11 +21,28 @@ const canUseResearchFallback = (error: unknown) =>
   error instanceof ApiError && (error.status === 404 || error.status === 405);
 
 export const useAgents = () =>
-  useQuery({ queryKey: ['agents'], queryFn: () => apiFetch<AgentSummary[]>('/api/agents') });
+  useQuery({
+    queryKey: ['agents'],
+    queryFn: async () => {
+      try {
+        return await apiFetch<AgentSummary[]>('/v1/agents');
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
+        return apiFetch<AgentSummary[]>('/api/agents');
+      }
+    },
+  });
 export const useAgent = (id: string) =>
   useQuery({
     queryKey: ['agent', id],
-    queryFn: () => apiFetch<AgentSummary>(`/api/agents/${id}`),
+    queryFn: async () => {
+      try {
+        return await apiFetch<AgentSummary>(`/v1/agents/${encodeURIComponent(id)}`);
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
+        return apiFetch<AgentSummary>(`/api/agents/${id}`);
+      }
+    },
     enabled: !!id,
   });
 export const useCreateAgent = () =>
@@ -36,7 +53,14 @@ export const useCreateAgent = () =>
 export const useAgentTasks = (id: string) =>
   useQuery({
     queryKey: ['agent-tasks', id],
-    queryFn: () => apiFetch<SessionSummary[]>(`/api/agents/${id}/tasks`),
+    queryFn: async () => {
+      try {
+        return await apiFetch<SessionSummary[]>(`/v1/agents/${encodeURIComponent(id)}/tasks`);
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
+        return apiFetch<SessionSummary[]>(`/api/agents/${id}/tasks`);
+      }
+    },
     enabled: !!id,
   });
 export const useAgentDraft = (id: string) =>

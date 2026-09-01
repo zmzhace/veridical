@@ -826,6 +826,42 @@ export async function buildProductionApp(options: {
     const page = Page.parse(req.query);
     return db.list(req.principal.tenant, 'spec', page.limit, page.offset);
   });
+  // Production-facing Agent catalog. Only reviewed specs are exposed; drafts remain
+  // confined to the research/Studio API. The response intentionally mirrors the
+  // lightweight AgentSummary consumed by the Agent app.
+  const productionAgent = (artifact: any) => {
+    const spec = artifact.body ?? {};
+    return {
+      id: artifact.key,
+      name: spec.name ?? artifact.key,
+      description: spec.description ?? spec.instructions ?? '',
+      model: spec.llm?.model ?? 'configured',
+      status: artifact.status === 'revoked' ? 'archived' : 'published',
+      version: spec.version,
+      updated_at: artifact.created,
+      capabilities: {
+        tools: (spec.tools ?? []).map((tool: any) => (typeof tool === 'string' ? tool : tool.name)),
+        skills: (spec.skills ?? []).map((skill: any) =>
+          typeof skill === 'string' ? skill : skill.name,
+        ),
+        mcp: spec.capabilities?.mcp_servers ?? [],
+        memory: spec.memory?.scopes ?? [],
+      },
+    };
+  };
+  app.get('/v1/agents', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
+    const page = Page.parse(req.query);
+    const artifacts = await db.list(req.principal.tenant, 'spec', page.limit, page.offset);
+    return artifacts.filter((artifact: any) => artifact.status === 'approved').map(productionAgent);
+  });
+  app.get('/v1/agents/:name', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
+    const { name } = z.object({ name: Key }).parse(req.params);
+    const artifact = await db.get(req.principal.tenant, 'spec', name);
+    if (!artifact || artifact.status !== 'approved') throw new Fault(404, 'agent_not_found');
+    return productionAgent(artifact);
+  });
   app.get('/v1/releases/:ref/manifest', async (req) => {
     requireRole(req.principal, 'viewer', 'developer', 'reviewer', 'publisher');
     const { ref } = z.object({ ref: Ref }).parse(req.params);
@@ -1302,6 +1338,24 @@ export async function buildProductionApp(options: {
     );
     return reply.code(202).send(jobView(task));
   });
+  app.get('/v1/agents/:name/tasks', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer');
+    const { name } = z.object({ name: Key }).parse(req.params);
+    const page = Page.parse(req.query);
+    const sessions = await db.listSessions(req.principal.tenant, page.limit, page.offset);
+    return sessions
+      .filter((session: any) => session.kind === 'run' && session.ref === name)
+      .map((session: any) => ({
+        session_id: session.id,
+        spec_name: name,
+        spec_version: session.ref,
+        event_count: session.seq,
+        turn_count: 0,
+        total_duration_ms: 0,
+        first_seq: session.seq ? 1 : 0,
+        last_seq: session.seq,
+      }));
+  });
   app.get('/v1/tasks/:id', async (req) => {
     requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer');
     const { id } = z.object({ id: Key }).parse(req.params);
@@ -1466,6 +1520,35 @@ export async function buildProductionApp(options: {
       session: id,
       request_id: req.id,
     });
+    return { session: id, invocations: [...invocations.values()] };
+  });
+  app.get('/v1/tasks/:id/invocations', async (req) => {
+    const { id } = z.object({ id: Key }).parse(req.params);
+    await visibleSession(req.principal, id);
+    const events = await db.read(req.principal.tenant, id);
+    const invocations = new Map<string, any>();
+    for (const event of events) {
+      if (!event.invocation_id) continue;
+      const current = invocations.get(event.invocation_id) ?? {
+        invocation_id: event.invocation_id,
+        parent_invocation_id: event.parent_invocation_id,
+        path: event.path,
+        ordinal: event.ordinal,
+        attempt: event.attempt,
+        run_id: event.run_id,
+        fingerprint: event.fingerprint,
+        operation: event.type,
+        events: [],
+      };
+      current.events.push({
+        seq: event.seq,
+        type: event.type,
+        verb: event.verb,
+        payload: event.payload,
+        fingerprint: event.fingerprint,
+      });
+      invocations.set(event.invocation_id, current);
+    }
     return { session: id, invocations: [...invocations.values()] };
   });
   app.get('/v1/sessions/:id/trajectory', async (req) => {
