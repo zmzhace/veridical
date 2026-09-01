@@ -216,6 +216,7 @@ export async function buildProductionApp(options: {
           throw new Fault(501, 'knowledge_backend_runtime_unavailable', input.backend_id);
       }
       const terms = input.query.toLowerCase().split(/\s+/).filter(Boolean);
+      const queryEmbedding = localEmbedding(input.query);
       const files = await db.list(context.tenant, 'knowledge_file', 200, 0);
       return files
         .filter(
@@ -227,11 +228,14 @@ export async function buildProductionApp(options: {
             file_name: file.body.name,
             chunk_id: chunk.id,
             text: chunk.text,
-            score: terms.filter((term) => chunk.text.toLowerCase().includes(term)).length,
+            score: cosineSimilarity(queryEmbedding, chunk.embedding ?? localEmbedding(chunk.text)),
+            lexical_score: terms.filter((term) => chunk.text.toLowerCase().includes(term)).length,
           })),
         )
-        .filter((hit: any) => hit.score > 0)
-        .sort((a: any, b: any) => b.score - a.score)
+        .filter((hit: any) => hit.score > 0 || hit.lexical_score > 0)
+        .sort(
+          (a: any, b: any) => b.score + b.lexical_score * 0.05 - (a.score + a.lexical_score * 0.05),
+        )
         .slice(0, input.limit);
     },
   };
