@@ -14,7 +14,7 @@ const semantic = (events: TraceEvent[]) =>
 
 // Strict offline re-execution: never falls back to a live provider or tool.
 export async function replayRecorded(options: {
-  db: Pick<Ledger, 'verify' | 'read' | 'assertFence' | 'append'> & {
+  db: Pick<Ledger, 'verify' | 'read' | 'assertFence' | 'append' | 'get'> & {
     verify(tenant: string, session: string, checkpoint?: any): any | Promise<any>;
     read(
       tenant: string,
@@ -76,6 +76,11 @@ export async function replayRecorded(options: {
       input: (event.payload as any).text,
       checkRelease: options.check,
       providers: new Map([[spec.llm.provider, model]]),
+      resolveAgent: async (ref) => {
+        const artifact = await db.get(job.tenant, 'spec', ref);
+        if (!artifact || artifact.status === 'revoked') return undefined;
+        return (artifact as any).body as AgentSpec;
+      },
     });
   }
   cursor.assertConsumed();
