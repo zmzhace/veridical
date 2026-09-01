@@ -202,7 +202,15 @@ export const useSession = (id: string) =>
 export const useCheckpoints = (id: string) =>
   useQuery({
     queryKey: ['checkpoints', id],
-    queryFn: () => apiFetch<TraceEvent[]>(`/api/sessions/${id}/checkpoints`),
+    queryFn: async () => {
+      try {
+        const events = await apiFetch<TraceEvent[]>(`/v1/tasks/${encodeURIComponent(id)}/events`);
+        return events.filter((event) => event.type === 'checkpoint');
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
+        return apiFetch<TraceEvent[]>(`/api/sessions/${id}/checkpoints`);
+      }
+    },
     enabled: !!id,
   });
 export const useAddSpec = () =>
@@ -263,7 +271,19 @@ export const useReplayExecution = () =>
     },
   });
 export const useSpecs = () =>
-  useQuery({ queryKey: ['specs'], queryFn: () => apiFetch<AgentSpec[]>('/api/specs'), retry: 1 });
+  useQuery({
+    queryKey: ['specs'],
+    queryFn: async () => {
+      try {
+        const artifacts = await apiFetch<Array<{ body?: AgentSpec }>>('/v1/specs');
+        return artifacts.map((artifact) => artifact.body ?? (artifact as unknown as AgentSpec));
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
+        return apiFetch<AgentSpec[]>('/api/specs');
+      }
+    },
+    retry: 1,
+  });
 export interface Organization {
   id: string;
   name: string;
