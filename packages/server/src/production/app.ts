@@ -1948,6 +1948,38 @@ export async function buildProductionApp(options: {
     const { id } = z.object({ id: Key }).parse(req.params);
     return jobView(await service.cancel(req.principal, id));
   });
+  app.post('/v1/tasks/:id/resume', async (req, reply) => {
+    requireRole(req.principal, 'operator');
+    const { id } = z.object({ id: Key }).parse(req.params);
+    const body = z
+      .object({
+        approval_ids: z.record(Key, Key).refine((value) => Object.keys(value).length > 0),
+      })
+      .strict()
+      .parse(req.body);
+    const session = await db.session(req.principal.tenant, id);
+    if (!session || session.kind !== 'run') throw new Fault(404, 'task_not_found');
+    const spec = await db.get(req.principal.tenant, 'spec', session.ref);
+    if (!spec) throw new Fault(409, 'task_release_missing');
+    const events = await db.read(req.principal.tenant, id);
+    const latestPrompt = events
+      .filter((event: any) => event.type === 'user.message' && !event.parent_invocation_id)
+      .at(-1)?.payload?.text;
+    if (typeof latestPrompt !== 'string' || !latestPrompt)
+      throw new Fault(409, 'task_resume_checkpoint_missing');
+    const task = await service.run(
+      req.principal,
+      {
+        name: spec.body.name,
+        channel: 'production',
+        prompt: latestPrompt,
+        approval_ids: body.approval_ids as Record<string, string>,
+        session: id,
+      },
+      idem(req.headers),
+    );
+    return reply.code(202).send(jobView(task));
+  });
   app.post('/v1/improvements', async (req, reply) => {
     const body = z
       .object({
