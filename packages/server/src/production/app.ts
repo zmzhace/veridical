@@ -26,6 +26,46 @@ import { createMcpProductionTool, executeMcpTool, type McpRuntimeConfig } from '
 import type { KnowledgePort } from '@veridical/knowledge';
 import { GBrainMcpAdapter } from '@veridical/knowledge';
 
+/** Deterministic, dependency-free embedding used by the native knowledge index.
+ * It keeps indexing/replay stable while allowing a provider-backed embedder to
+ * replace it later without changing the stored chunk format. */
+function localEmbedding(value: string, dimensions = 64) {
+  const vector = Array.from({ length: dimensions }, () => 0);
+  for (const token of value.toLowerCase().split(/\W+/).filter(Boolean)) {
+    const bytes = createHash('sha256').update(token).digest();
+    for (let i = 0; i < 4; i += 1) vector[bytes[i] % dimensions] += (bytes[i + 4] / 255) * 2 - 1;
+  }
+  const norm = Math.hypot(...vector) || 1;
+  return vector.map((item) => item / norm);
+}
+function cosineSimilarity(a: number[], b: number[]) {
+  const normA = Math.hypot(...a) || 1;
+  const normB = Math.hypot(...b) || 1;
+  return a.reduce((sum, item, index) => sum + item * (b[index] ?? 0), 0) / (normA * normB);
+}
+async function extractKnowledgeText(bytes: Buffer, mime: string): Promise<string | null> {
+  if (/^(text\/|application\/(json|csv|xml)|.*\+json$)/.test(mime)) return bytes.toString('utf8');
+  if (mime === 'application/pdf' || mime === 'application/x-pdf') {
+    const { PDFParse } = await import('pdf-parse');
+    const parser = new PDFParse({ data: bytes });
+    try {
+      return (await parser.getText()).text;
+    } finally {
+      await parser.destroy();
+    }
+  }
+  if (
+    mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    mime === 'application/msword'
+  ) {
+    const mammoth = (await import('mammoth')) as unknown as {
+      extractRawText(input: { buffer: Buffer }): Promise<{ value: string }>;
+    };
+    return (await mammoth.extractRawText({ buffer: bytes })).value;
+  }
+  return null;
+}
+
 /** Create a KnowledgePort from reviewed, fixed MCP tool bindings. */
 export function createMcpKnowledgeAdapter(serverRef: string, bindings: McpRuntimeConfig[]) {
   const serverBindings = bindings.filter((binding) => binding.id === serverRef);
@@ -1335,10 +1375,7 @@ export async function buildProductionApp(options: {
     const contentHash = createHash('sha256').update(bytes).digest('hex');
     const objectKey = knowledgeObjectKey(req.principal.tenant, id, contentHash);
     await objectStore.put(objectKey, bytes, input.mime_type);
-    const text =
-      /^text\//.test(input.mime_type) || /json|csv|xml/.test(input.mime_type)
-        ? bytes.toString('utf8')
-        : '';
+    const text = (await extractKnowledgeText(bytes, input.mime_type)) ?? '';
     const chunks = [];
     for (let start = 0, n = 0; start < text.length; start += 1200, n += 1) {
       const end = Math.min(text.length, start + 1200);
@@ -1349,6 +1386,7 @@ export async function buildProductionApp(options: {
         start,
         end,
         hash: createHash('sha256').update(value).digest('hex'),
+        embedding: localEmbedding(value),
       });
     }
     const metadata = {
@@ -1459,6 +1497,7 @@ export async function buildProductionApp(options: {
       return result.hits;
     }
     const terms = query.q.toLowerCase().split(/\s+/).filter(Boolean);
+    const queryEmbedding = localEmbedding(query.q);
     const files = await db.list(req.principal.tenant, 'knowledge_file', 100, 0);
     const result = files
       .filter(
@@ -1474,11 +1513,14 @@ export async function buildProductionApp(options: {
             text: chunk.text,
             start: chunk.start,
             end: chunk.end,
-            score: terms.filter((term) => chunk.text.toLowerCase().includes(term)).length,
+            score: cosineSimilarity(queryEmbedding, chunk.embedding ?? localEmbedding(chunk.text)),
+            lexical_score: terms.filter((term) => chunk.text.toLowerCase().includes(term)).length,
           }))
-          .filter((hit: any) => hit.score > 0),
+          .filter((hit: any) => hit.score > 0 || hit.lexical_score > 0),
       )
-      .sort((a: any, b: any) => b.score - a.score)
+      .sort(
+        (a: any, b: any) => b.score + b.lexical_score * 0.05 - (a.score + a.lexical_score * 0.05),
+      )
       .slice(0, query.limit);
     await db.audit(req.principal.tenant, req.principal.actor, 'knowledge.search', {
       project_id: query.project_id,
