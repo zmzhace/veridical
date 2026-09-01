@@ -346,6 +346,12 @@ async function executeTurnInternal(options: ExecuteTurnOptions, recorder: Invoca
   await record('run.provenance', {
     spec_digest: digest(spec),
     release_artifact_hash: releaseArtifactHash,
+    replay_mode: 'strict',
+    loop: { engine: spec.flow.loop?.engine ?? 'orchestrator', version: BUILD_ID },
+    skill_hashes: spec.skills.map((skill) => digest(skill)),
+    model_versions: {
+      [spec.llm.provider]: config.providers.find((p) => p.name === spec.llm.provider)?.version,
+    },
     environment: runtimeEnvironment(spec, config, tools),
     build_id: BUILD_ID,
     release_id: config.releaseId,

@@ -781,10 +781,23 @@ export async function buildProductionApp(options: {
       session: id,
       request_id: req.id,
     });
+    const provenance = events.map((e: any) => ({ path: e.path, seq: e.seq, payload: e.payload }));
+    const latest = provenance.at(-1)?.payload as Record<string, unknown> | undefined;
+    const manifest = latest
+      ? {
+          release_artifact_hash: latest.release_artifact_hash,
+          loop: latest.loop,
+          spec_hash: latest.spec_digest,
+          skill_hashes: latest.skill_hashes ?? [],
+          model_versions: latest.model_versions ?? {},
+          replay_mode: latest.replay_mode ?? 'strict',
+        }
+      : undefined;
     return {
       session: id,
       checkpoint: await db.verify(req.principal.tenant, id),
-      provenance: events.map((e: any) => ({ path: e.path, seq: e.seq, payload: e.payload })),
+      manifest,
+      provenance,
     };
   });
   app.post('/v1/sessions/:id/integrity', async (req) => {
