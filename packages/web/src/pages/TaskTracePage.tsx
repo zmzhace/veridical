@@ -29,11 +29,18 @@ export function TaskTracePage() {
     [events],
   );
   async function exportTrajectory(format: 'jsonl' | 'grpo') {
-    const response = await fetch(`/api/sessions/${taskId}/trajectory/export`, {
+    const request = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ format }),
-    });
+      body: JSON.stringify({ format, ...(format === 'grpo' ? { group_id: taskId } : {}) }),
+    } satisfies RequestInit;
+    let response = await fetch(
+      `/v1/sessions/${encodeURIComponent(taskId)}/trajectory/export`,
+      request,
+    );
+    if ((response.status === 404 || response.status === 405) && !response.ok) {
+      response = await fetch(`/api/sessions/${taskId}/trajectory/export`, request);
+    }
     if (!response.ok) return;
     const blob = await response.blob();
     const href = URL.createObjectURL(blob);
@@ -138,7 +145,9 @@ export function TaskTracePage() {
                 key={String(item.invocation_id ?? index)}
                 onClick={() => setSelectedInvocation(item)}
                 tabIndex={0}
-                onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') setSelectedInvocation(item); }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') setSelectedInvocation(item);
+                }}
                 style={{
                   marginLeft: `${Math.max(0, String(item.path ?? '').split('/').length - 1) * 20}px`,
                 }}
@@ -183,11 +192,17 @@ export function TaskTracePage() {
       )}
       {selectedInvocation && (
         <aside className="invocation-inspector" aria-label="调用详情">
-          <button className="button" onClick={() => setSelectedInvocation(null)}>关闭</button>
+          <button className="button" onClick={() => setSelectedInvocation(null)}>
+            关闭
+          </button>
           <h2>{String(selectedInvocation.operation ?? '调用')}</h2>
           <p className="mono">{String(selectedInvocation.path ?? '')}</p>
-          <h3>Input</h3><pre>{JSON.stringify(selectedInvocation.input, null, 2)}</pre>
-          <h3>Output / Error</h3><pre>{JSON.stringify(selectedInvocation.output ?? selectedInvocation.error ?? null, null, 2)}</pre>
+          <h3>Input</h3>
+          <pre>{JSON.stringify(selectedInvocation.input, null, 2)}</pre>
+          <h3>Output / Error</h3>
+          <pre>
+            {JSON.stringify(selectedInvocation.output ?? selectedInvocation.error ?? null, null, 2)}
+          </pre>
         </aside>
       )}
       {selected && (
