@@ -623,8 +623,8 @@ export class PostgresTraceLedger implements TraceLedger {
     try {
       await client.query('BEGIN');
       const selected = await client.query<any>(
-        "SELECT * FROM jobs WHERE tenant=$1 AND id=$2 AND state='queued' FOR UPDATE",
-        [tenant, id],
+        "SELECT * FROM jobs WHERE tenant=$1 AND id=$2 AND (state='queued' OR (state='running' AND (lease_until <= $3 OR deadline <= $3))) FOR UPDATE",
+        [tenant, id, Date.now()],
       );
       const row = selected.rows[0];
       if (!row) {

@@ -101,6 +101,15 @@ if (loser) throw new Error('postgres claim selected an unexpected job');
 await trace.finish(winner, 'completed', { raced: true });
 if ((await trace.job(tenant, raceJob.id).then((value) => value?.state)) !== 'completed')
   throw new Error('postgres raced job did not finish');
+const expiredJob = await trace.enqueue(tenant, 'smoke', 'run', `idem_${randomUUID()}`, {
+  ref: 'smoke-recovery@1.0.0',
+});
+await trace.claim('dead-worker', 20, 1, tenant);
+await new Promise((resolve) => setTimeout(resolve, 30));
+const recovered = await trace.claimById(tenant, expiredJob.id, 'recovery-worker', 30_000);
+if (!recovered || recovered.owner !== 'recovery-worker')
+  throw new Error('postgres expired lease was not recoverable');
+await trace.finish(recovered, 'completed', { recovered: true });
 await trace.close();
 const key = `smoke/${randomUUID()}.txt`;
 const body = new TextEncoder().encode('veridical-infrastructure-smoke');
