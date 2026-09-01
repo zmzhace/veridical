@@ -534,6 +534,32 @@ test('idempotent API execution, tenant isolation and pinned sessions', async () 
     ).statusCode,
   ).toBe(409);
 });
+test('production Task and Turn aliases reuse the pinned run session', async () => {
+  await publish();
+  const created = await request(
+    'operator',
+    'POST',
+    '/v1/agents/probe/tasks',
+    { prompt: 'first task turn', project_id: 'proj-a' },
+    'task-create-1',
+  );
+  expect(created.statusCode).toBe(202);
+  const task = created.json();
+  expect((await drain(task.id)).state).toBe('completed');
+  const detail = await request('viewer', 'GET', `/v1/tasks/${task.session}`);
+  expect(detail.statusCode).toBe(200);
+  expect(detail.json()).toMatchObject({ session_id: task.session, turns: 1 });
+  const next = await request(
+    'operator',
+    'POST',
+    `/v1/tasks/${task.session}/turns`,
+    { prompt: 'second task turn', project_id: 'proj-a' },
+    'task-turn-2',
+  );
+  expect(next.statusCode).toBe(202);
+  expect((await drain(next.json().id)).state).toBe('completed');
+  expect((await request('viewer', 'GET', `/v1/tasks/${task.session}`)).json().turns).toBe(2);
+});
 test('tool observations feed the next model request and history is recorded once', async () => {
   await publish();
   let count = 0;

@@ -1284,6 +1284,70 @@ export async function buildProductionApp(options: {
       .parse(req.body);
     return reply.code(202).send(jobView(await service.run(req.principal, body, idem(req.headers))));
   });
+  app.post('/v1/agents/:name/tasks', async (req, reply) => {
+    requireRole(req.principal, 'operator');
+    const { name } = z.object({ name: Key }).parse(req.params);
+    const body = z
+      .object({
+        prompt: z.string().min(1).max(8000),
+        project_id: Key.optional(),
+        channel: z.enum(['production', 'canary']).default('production'),
+      })
+      .strict()
+      .parse(req.body);
+    const task = await service.run(
+      req.principal,
+      { name, channel: body.channel, prompt: body.prompt, project_id: body.project_id },
+      idem(req.headers),
+    );
+    return reply.code(202).send(jobView(task));
+  });
+  app.get('/v1/tasks/:id', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer');
+    const { id } = z.object({ id: Key }).parse(req.params);
+    const session = await db.session(req.principal.tenant, id);
+    if (!session || session.kind !== 'run') throw new Fault(404, 'task_not_found');
+    const events = await db.read(req.principal.tenant, id);
+    return {
+      id,
+      session_id: id,
+      kind: session.kind,
+      release_ref: session.ref,
+      turns: events.filter((event: any) => event.type === 'turn/end').length,
+      events: events.filter((event: any) =>
+        ['user.message', 'assistant.message', 'turn/end'].includes(event.type),
+      ),
+    };
+  });
+  app.post('/v1/tasks/:id/turns', async (req, reply) => {
+    requireRole(req.principal, 'operator');
+    const { id } = z.object({ id: Key }).parse(req.params);
+    const body = z
+      .object({ prompt: z.string().min(1).max(8000), project_id: Key.optional() })
+      .strict()
+      .parse(req.body);
+    const session = await db.session(req.principal.tenant, id);
+    if (!session || session.kind !== 'run') throw new Fault(404, 'task_not_found');
+    const spec = await db.get(req.principal.tenant, 'spec', session.ref);
+    if (!spec) throw new Fault(409, 'task_release_missing');
+    const task = await service.run(
+      req.principal,
+      {
+        name: spec.body.name,
+        channel: 'production',
+        prompt: body.prompt,
+        project_id: body.project_id,
+        session: id,
+      },
+      idem(req.headers),
+    );
+    return reply.code(202).send(jobView(task));
+  });
+  app.post('/v1/tasks/:id/cancel', async (req) => {
+    requireRole(req.principal, 'operator');
+    const { id } = z.object({ id: Key }).parse(req.params);
+    return jobView(await service.cancel(req.principal, id));
+  });
   app.post('/v1/improvements', async (req, reply) => {
     const body = z
       .object({
