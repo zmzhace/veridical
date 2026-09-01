@@ -158,6 +158,48 @@ test('production capabilities expose only configured models and registered tools
     skills: [],
   });
 });
+test('knowledge backends are versioned capabilities and require approval', async () => {
+  const created = await request('developer', 'POST', '/v1/knowledge/backends', {
+    name: 'project-index',
+    version: '1.0.0',
+    type: 'native',
+    config_hash: 'a'.repeat(64),
+    capabilities: ['search'],
+  });
+  expect(created.statusCode).toBe(201);
+  expect(created.json()).toMatchObject({
+    id: 'project-index@1.0.0',
+    status: 'draft',
+  });
+  const capabilityList = await request('viewer', 'GET', '/v1/capabilities');
+  expect(capabilityList.json().knowledge_backends).toEqual([]);
+  expect(
+    (
+      await request('reviewer', 'POST', '/v1/knowledge/backends/project-index@1.0.0/decision', {
+        status: 'approved',
+      })
+    ).statusCode,
+  ).toBe(200);
+  const listed = await request('viewer', 'GET', '/v1/knowledge/backends');
+  expect(listed.json()).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: 'project-index@1.0.0', status: 'approved' }),
+    ]),
+  );
+  expect((await request('viewer', 'GET', '/v1/capabilities')).json().knowledge_backends).toEqual(
+    expect.arrayContaining([expect.objectContaining({ id: 'project-index@1.0.0' })]),
+  );
+  expect(
+    (
+      await request('developer', 'POST', '/v1/knowledge/backends', {
+        name: 'project-index',
+        version: '1.0.0',
+        type: 'native',
+        config_hash: 'b'.repeat(64),
+      })
+    ).statusCode,
+  ).toBe(409);
+});
 test('production memories use candidate approval and tenant-scoped deletion', async () => {
   const created = await request('operator', 'POST', '/v1/memories', {
     project_id: 'proj-a',
