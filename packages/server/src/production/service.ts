@@ -102,9 +102,22 @@ export class ProductionService {
         throw new Fault(409, 'skill_content_hash_mismatch', id);
     }
   }
+  private async assertMcpManaged(tenant: string, spec: AgentSpec) {
+    for (const serverId of spec.capabilities?.mcp_servers ?? []) {
+      const registered = await (this.db as any).get(tenant, 'mcp_server', serverId);
+      if (!registered || registered.status !== 'approved')
+        throw new Fault(409, 'mcp_server_not_approved_for_release', serverId);
+      for (const tool of registered.body.tool_names ?? []) {
+        const name = `${serverId}/${tool}`;
+        if (!spec.tools.some((entry) => entry.name === name))
+          throw new Fault(409, 'mcp_tool_not_bound_to_release', name);
+      }
+    }
+  }
   private async assertApprovedManaged(tenant: string, ref: string) {
     const spec = await this.specManaged(tenant, ref);
     await this.assertSkillsManaged(tenant, spec.body);
+    await this.assertMcpManaged(tenant, spec.body);
     if (
       spec.status !== 'approved' ||
       spec.meta.environment !== this.environment(spec.body) ||
@@ -408,6 +421,7 @@ export class ProductionService {
     const spec = await (this.db as any).get(p.tenant, 'spec', ref);
     if (!spec) throw new Fault(404, 'spec_not_found');
     await this.assertSkillsManaged(p.tenant, spec.body);
+    await this.assertMcpManaged(p.tenant, spec.body);
     if (spec.author === p.actor) throw new Fault(403, 'independent_reviewer_required');
     if (spec.status !== 'evaluated') throw new Fault(409, 'evaluated_release_required');
     const evidence = spec.meta.evaluation
@@ -468,6 +482,7 @@ export class ProductionService {
     const spec = await (this.db as any).get(p.tenant, 'spec', ref);
     if (!spec) throw new Fault(404, 'spec_not_found');
     await this.assertSkillsManaged(p.tenant, spec.body);
+    await this.assertMcpManaged(p.tenant, spec.body);
     if (spec.status !== 'approved') throw new Fault(409, 'release_not_approved');
     if (spec.body.name !== name) throw new Fault(422, 'release_name_mismatch');
     await (this.db as any).point(
@@ -550,6 +565,7 @@ export class ProductionService {
     if (!spec || spec.status !== 'approved')
       throw new Fault(409, 'release_not_approved_for_environment');
     await this.assertSkillsManaged(p.tenant, spec.body);
+    await this.assertMcpManaged(p.tenant, spec.body);
     return this.enqueueManaged(
       p.tenant,
       p.actor,
