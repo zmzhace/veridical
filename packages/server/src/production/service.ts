@@ -272,6 +272,10 @@ export class ProductionService {
         name: entry.name,
         version: this.tools.find((tool) => tool.name === entry.name)?.version ?? 'unknown',
         side_effect: 'read' as const,
+        schema_hash: digest(this.tools.find((tool) => tool.name === entry.name)?.schema),
+        implementation_hash: digest(
+          String(this.tools.find((tool) => tool.name === entry.name)?.execute),
+        ),
       })),
       model: {
         provider: spec.llm.provider,

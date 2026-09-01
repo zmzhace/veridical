@@ -324,6 +324,8 @@ async function executeTurnInternal(options: ExecuteTurnOptions, recorder: Invoca
     name: t.name,
     version: tools.find((x) => x.name === t.name)!.version,
     access: t.access,
+    schema_hash: digest(tools.find((x) => x.name === t.name)!.schema),
+    implementation_hash: digest(String(tools.find((x) => x.name === t.name)!.execute)),
   }));
   const releaseArtifactHash = artifactHash({
     kind: 'release',
@@ -336,6 +338,8 @@ async function executeTurnInternal(options: ExecuteTurnOptions, recorder: Invoca
       name: tool.name,
       version: tool.version,
       side_effect: 'read' as const,
+      schema_hash: tool.schema_hash,
+      implementation_hash: tool.implementation_hash,
     })),
     model: {
       provider: spec.llm.provider,
