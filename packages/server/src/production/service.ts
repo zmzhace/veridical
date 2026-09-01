@@ -549,6 +549,7 @@ export class ProductionService {
       project_id?: string;
       session?: string;
       approval_ids?: Record<string, string>;
+      resume?: boolean;
     },
     idem: string,
   ) {
@@ -573,6 +574,7 @@ export class ProductionService {
         prompt: input.prompt,
         project_id: input.project_id,
         approval_ids: input.approval_ids,
+        resume: input.resume,
         credential: p.tokenHash,
       },
       input.session,
@@ -589,6 +591,7 @@ export class ProductionService {
       project_id?: string;
       session?: string;
       approval_ids?: Record<string, string>;
+      resume?: boolean;
     },
     idem: string,
   ) {
@@ -615,6 +618,7 @@ export class ProductionService {
         prompt: input.prompt,
         project_id: input.project_id,
         approval_ids: input.approval_ids,
+        resume: input.resume,
         credential: p.tokenHash,
       },
       input.session,
@@ -948,6 +952,7 @@ export class ProductionService {
       providers: this.providers,
       tools: this.tools,
       approvalIds: job.args.approval_ids,
+      resume: job.args.resume === true,
       resolveAgent: async (ref) => {
         const [name, version] = ref.split('@');
         const key = version ? `${name}@${version}` : ref;

@@ -1974,6 +1974,7 @@ export async function buildProductionApp(options: {
         channel: 'production',
         prompt: latestPrompt,
         approval_ids: body.approval_ids as Record<string, string>,
+        resume: true,
         session: id,
       },
       idem(req.headers),
