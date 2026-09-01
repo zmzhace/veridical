@@ -700,6 +700,33 @@ export async function buildProductionApp(options: {
     });
     return { ...updated.body, id, status: updated.status, artifact_hash: updated.digest };
   });
+  app.post('/v1/mcp/servers/:id/discover', async (req) => {
+    requireRole(req.principal, 'developer', 'reviewer', 'publisher');
+    const { id } = z.object({ id: z.string().min(3).max(160) }).parse(req.params);
+    const server = await db.get(req.principal.tenant, 'mcp_server', id);
+    if (!server || server.status === 'deleted') throw new Fault(404, 'mcp_server_not_found');
+    const bindings = (options.mcpTools ?? config.mcpTools).filter((binding) => binding.id === id);
+    const toolNames = server.body?.tool_names ?? [];
+    if (server.status === 'approved' && !bindings.length)
+      throw new Fault(503, 'mcp_fixed_bindings_missing', id);
+    await db.audit(req.principal.tenant, req.principal.actor, 'mcp.discover', {
+      server_id: id,
+      tool_count: toolNames.length,
+      dynamic_discovery: false,
+      request_id: req.id,
+    });
+    return {
+      id,
+      status: server.status,
+      dynamic_discovery: false,
+      changed: false,
+      tools: toolNames.map((name: string) => ({
+        name,
+        binding: bindings.some((b) => b.toolName === name),
+      })),
+      message: '生产环境使用已审批的固定工具清单；新增工具需要新版本并重新审批。',
+    };
+  });
   const KnowledgeBackendInput = z
     .object({
       name: Key,

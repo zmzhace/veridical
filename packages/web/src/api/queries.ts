@@ -325,8 +325,15 @@ export const useCreateMcpServer = () =>
   });
 export const useDiscoverMcpServer = () =>
   useMutation({
-    mutationFn: (id: string) =>
-      apiFetch<McpServerSummary>(`/api/mcp/servers/${id}/discover`, { method: 'POST' }),
+    mutationFn: async (id: string) => {
+      try {
+        return await apiFetch<McpServerSummary>(`/v1/mcp/servers/${id}/discover`, {
+          method: 'POST',
+        });
+      } catch {
+        return apiFetch<McpServerSummary>(`/api/mcp/servers/${id}/discover`, { method: 'POST' });
+      }
+    },
   });
 export interface ApprovalRequest {
   id: string;

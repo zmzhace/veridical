@@ -364,6 +364,13 @@ test('production MCP servers are versioned artifacts with transport validation a
       expect.objectContaining({ id: 'research-tools@1.0.0', status: 'approved' }),
     ]),
   );
+  const discovery = await request(
+    'developer',
+    'POST',
+    '/v1/mcp/servers/research-tools@1.0.0/discover',
+  );
+  expect(discovery.statusCode).toBe(503);
+  expect(discovery.json().error.code).toBe('mcp_fixed_bindings_missing');
   expect(
     (
       await request('developer', 'POST', '/v1/mcp/servers', {
