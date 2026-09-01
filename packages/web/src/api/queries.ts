@@ -219,11 +219,20 @@ export const useDuplicateAgent = () =>
   });
 export const useArchiveAgent = () =>
   useMutation({
-    mutationFn: (id: string) =>
-      apiFetch<AgentSummary>(`/api/agents/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'archived' }),
-      }),
+    mutationFn: async (id: string) => {
+      try {
+        return await apiFetch<AgentSummary>(`/v1/agents/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: 'archived' }),
+        });
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
+        return apiFetch<AgentSummary>(`/api/agents/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: 'archived' }),
+        });
+      }
+    },
   });
 
 export const useSessions = () =>

@@ -625,6 +625,18 @@ test('production Agent duplication creates an un-deployed draft', async () => {
   expect(copy.id).toMatch(/^probe-copy-/);
   expect((await request('viewer', 'GET', `/v1/agents/${copy.id}`)).statusCode).toBe(404);
 });
+test('production Agent archive revokes the immutable release with audit semantics', async () => {
+  await publish();
+  const response = await request('reviewer', 'PATCH', '/v1/agents/probe', {
+    status: 'archived',
+    reason: 'retired for replacement',
+  });
+  expect(response.statusCode).toBe(200);
+  expect(response.json()).toMatchObject({ id: 'probe', status: 'archived' });
+  expect((await request('viewer', 'GET', '/v1/agents')).json()).not.toEqual(
+    expect.arrayContaining([expect.objectContaining({ id: 'probe' })]),
+  );
+});
 test('tool observations feed the next model request and history is recorded once', async () => {
   await publish();
   let count = 0;

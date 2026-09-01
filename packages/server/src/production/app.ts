@@ -943,6 +943,21 @@ export async function buildProductionApp(options: {
       release_ref: artifact.key,
     });
   });
+  app.patch('/v1/agents/:name', async (req) => {
+    requireRole(req.principal, 'reviewer');
+    const { name } = z.object({ name: Key }).parse(req.params);
+    const body = z
+      .object({ status: z.literal('archived'), reason: Reason.optional() })
+      .strict()
+      .parse(req.body);
+    const candidates = await db.list(req.principal.tenant, 'spec', 100, 0);
+    const source = candidates.find(
+      (candidate: any) => candidate.body?.name === name && candidate.status === 'approved',
+    );
+    if (!source) throw new Fault(404, 'agent_not_found');
+    await service.revoke(req.principal, source.key, body.reason ?? 'agent archived');
+    return { id: name, name, status: 'archived', release_ref: source.key };
+  });
   app.get('/v1/agents/:name', async (req) => {
     requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
     const { name } = z.object({ name: Key }).parse(req.params);
