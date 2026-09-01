@@ -219,10 +219,10 @@ export class ProductionService {
     }
     return job;
   }
-  private async persistArtifactObject(tenant: string, artifact: Artifact) {
+  private async persistArtifactObject(tenant: string, kind: string, artifact: Artifact) {
     if (!this.objectStore) return;
     const body = Buffer.from(JSON.stringify(artifact.body));
-    const key = `tenants/${tenant}/artifacts/${artifact.key}/${artifact.digest}.json`;
+    const key = `tenants/${tenant}/artifacts/${kind}/${artifact.key}/${artifact.digest}.json`;
     let lastError: unknown;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
@@ -342,7 +342,7 @@ export class ProductionService {
     const artifact = await (this.db as any).put(p.tenant, 'spec', ref, spec, p.actor, 'draft', {
       release_artifact_hash: this.releaseArtifactHash(spec),
     });
-    await this.persistArtifactObject(p.tenant, artifact);
+    await this.persistArtifactObject(p.tenant, 'spec', artifact);
     return artifact;
   }
   setSuite(p: Principal, specName: string, raw: unknown) {
@@ -362,7 +362,7 @@ export class ProductionService {
     await this.checkCapacityManaged();
     const key = `${specName}_${randomUUID()}`;
     const artifact = await (this.db as any).put(p.tenant, 'suite', key, suite, p.actor, 'active');
-    await this.persistArtifactObject(p.tenant, artifact);
+    await this.persistArtifactObject(p.tenant, 'suite', artifact);
     await (this.db as any).point(
       p.tenant,
       'suite',
@@ -1046,7 +1046,7 @@ export class ProductionService {
       job.actor,
       'completed',
     );
-    await this.persistArtifactObject(job.tenant, evidenceArtifact);
+    await this.persistArtifactObject(job.tenant, 'evaluation', evidenceArtifact);
     const current = await this.specManaged(job.tenant, artifact.key);
     if (current.status !== 'revoked' && current.status !== 'approved')
       await (this.db as any).transition(
@@ -1146,7 +1146,7 @@ export class ProductionService {
         source_sessions: sessions.map((s: any) => s.id),
       },
     );
-    await this.persistArtifactObject(job.tenant, candidateArtifact);
+    await this.persistArtifactObject(job.tenant, 'spec', candidateArtifact);
     const suite = await (this.db as any).pointer(job.tenant, 'suite', spec.name);
     if (!suite) throw new Fault(409, 'acceptance_suite_required');
     await this.checkCredentialManaged(job);
