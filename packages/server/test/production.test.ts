@@ -642,6 +642,17 @@ test('production provenance and replay alias enforce tenant, mode and artifact b
     path: 'root',
     run_id: expect.any(String),
   });
+  const trajectory = await request('viewer', 'GET', `/v1/sessions/${source.session}/trajectory`);
+  expect(trajectory.statusCode).toBe(200);
+  expect(trajectory.json().steps.length).toBeGreaterThan(0);
+  const exportResponse = await request(
+    'reviewer',
+    'POST',
+    `/v1/sessions/${source.session}/trajectory/export`,
+    { format: 'jsonl' },
+  );
+  expect(exportResponse.statusCode).toBe(200);
+  expect(exportResponse.headers['content-type']).toContain('application/x-ndjson');
   expect(
     (await request('foreign', 'GET', `/v1/runs/${source.session}/provenance`)).statusCode,
   ).toBe(404);

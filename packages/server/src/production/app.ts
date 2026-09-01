@@ -13,6 +13,7 @@ import { resolveCredential } from './credentials';
 import { PostgresJobStore, type AsyncJobStore, type JobStore } from './job-store';
 import { RedisJobQueue } from './redis-queue';
 import { buildLedger, buildObjectStore } from './storage';
+import { exportGRPO, projectTrajectory, trajectoryJsonl } from '@veridical/replay';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -1073,6 +1074,55 @@ export async function buildProductionApp(options: {
       request_id: req.id,
     });
     return { session: id, invocations: [...invocations.values()] };
+  });
+  app.get('/v1/sessions/:id/trajectory', async (req) => {
+    const { id } = z.object({ id: Key }).parse(req.params);
+    await visibleSession(req.principal, id);
+    const query = z
+      .object({
+        path: z.string().min(1).max(500).optional(),
+        scope: z.enum(['tree', 'agent']).default('tree'),
+      })
+      .parse(req.query);
+    const events = await db.read(req.principal.tenant, id);
+    const steps = projectTrajectory(events, { path: query.path, scope: query.scope });
+    await db.audit(req.principal.tenant, req.principal.actor, 'trajectory.read', {
+      session: id,
+      path: query.path,
+      count: steps.length,
+      request_id: req.id,
+    });
+    return { session: id, steps };
+  });
+  app.post('/v1/sessions/:id/trajectory/export', async (req, reply) => {
+    const { id } = z.object({ id: Key }).parse(req.params);
+    await visibleSession(req.principal, id);
+    const body = z
+      .object({
+        format: z.enum(['json', 'jsonl', 'grpo']).default('jsonl'),
+        path: z.string().min(1).max(500).optional(),
+        scope: z.enum(['tree', 'agent']).default('tree'),
+        group_id: z.string().min(1).max(160).optional(),
+      })
+      .strict()
+      .parse(req.body);
+    const events = await db.read(req.principal.tenant, id);
+    const options = { path: body.path, scope: body.scope } as const;
+    if (body.format === 'grpo' && !body.group_id) throw new Fault(400, 'group_id_required');
+    const payload =
+      body.format === 'grpo'
+        ? exportGRPO(events, { ...options, group_id: body.group_id! })
+        : body.format === 'jsonl'
+          ? trajectoryJsonl(projectTrajectory(events, options))
+          : projectTrajectory(events, options);
+    await db.audit(req.principal.tenant, req.principal.actor, 'trajectory.export', {
+      session: id,
+      format: body.format,
+      path: body.path,
+      request_id: req.id,
+    });
+    if (body.format === 'json') return { session: id, steps: payload };
+    return reply.type('application/x-ndjson').send(payload);
   });
   app.get('/v1/runs/:id/provenance', async (req) => {
     const { id } = z.object({ id: Key }).parse(req.params);
