@@ -73,6 +73,10 @@ await trace.append(tenant, traceSession, {
   session_id: traceSession,
   actor_id: 'smoke',
   run_id: 'smoke',
+  invocation_id: 'smoke-invocation',
+  parent_invocation_id: 'smoke-parent',
+  path: 'root/tool:smoke#1',
+  ordinal: 1,
   span_id: 'smoke',
   parent_span_id: null,
   type: 'smoke',
@@ -84,6 +88,16 @@ await trace.append(tenant, traceSession, {
 });
 if ((await trace.read(tenant, traceSession)).length !== 1)
   throw new Error('postgres trace round trip mismatch');
+const projection = await trace.pool.query(
+  'SELECT run_id,invocation_id,parent_invocation_id,path,ordinal,attempt FROM events WHERE tenant=$1 AND session=$2',
+  [tenant, traceSession],
+);
+if (
+  projection.rows[0]?.invocation_id !== 'smoke-invocation' ||
+  projection.rows[0]?.path !== 'root/tool:smoke#1' ||
+  projection.rows[0]?.ordinal !== 1
+)
+  throw new Error('postgres invocation projection mismatch');
 const artifact = await trace.put(
   tenant,
   'smoke',
