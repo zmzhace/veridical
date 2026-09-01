@@ -35,6 +35,10 @@ ledger.append(tenant, session, {
   duration_ms: 0,
   payload: { source: 'migration-smoke' },
   spec_version: '1.0.0',
+  run_id: 'run-migration',
+  invocation_id: 'invoke-root',
+  path: 'root',
+  ordinal: 1,
 });
 ledger.put(
   tenant,
@@ -93,6 +97,13 @@ assert.ok(migrated.counts.events >= 2); // run/start and audit lifecycle events
 assert.equal(migrated.counts.artifacts, 1);
 assert.equal(migrated.counts.pointers, 1);
 assert.equal(migrated.counts.jobs, 1);
+const verifyPath = new Pool({ connectionString: postgres });
+const pathRow = await verifyPath.query(
+  'SELECT invocation_id,path,ordinal FROM events WHERE tenant=$1 AND session=$2 AND path=$3',
+  [tenant, session, 'root'],
+);
+assert.equal(pathRow.rows[0]?.invocation_id, 'invoke-root');
+await verifyPath.end();
 await run(['--rollback'], env);
 const rolledBack = JSON.parse(await readFile(report, 'utf8'));
 assert.equal(rolledBack.rolled_back, true);

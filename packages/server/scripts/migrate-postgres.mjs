@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import { Ledger } from '../src/production/database.ts';
 import { migratePostgres } from '../src/production/storage.ts';
 import { PostgresTraceLedger } from '../src/production/postgres-ledger.ts';
+import { canonical } from '../src/production/contracts.ts';
 
 const source = process.env.VERIDICAL_SQLITE_PATH;
 const url = process.env.VERIDICAL_POSTGRES_URL;
@@ -91,9 +92,28 @@ async function importAll() {
         .all(row.tenant, row.id);
       for (const event of events) {
         sourceHash.update(JSON.stringify(event));
+        const decoded = sqlite.decrypt(
+          event.blob,
+          canonical([event.tenant, event.session, event.seq]),
+        );
         await client.query(
-          `INSERT INTO events(tenant,session,seq,id,blob,prev,hash) VALUES($1,$2,$3,$4,$5,$6,$7)`,
-          [event.tenant, event.session, event.seq, event.id, event.blob, event.prev, event.hash],
+          `INSERT INTO events(tenant,session,seq,id,blob,prev,hash,run_id,invocation_id,parent_invocation_id,path,ordinal,attempt,fingerprint) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+          [
+            event.tenant,
+            event.session,
+            event.seq,
+            event.id,
+            event.blob,
+            event.prev,
+            event.hash,
+            decoded.run_id ?? null,
+            decoded.invocation_id ?? null,
+            decoded.parent_invocation_id ?? null,
+            decoded.path ?? null,
+            decoded.ordinal ?? null,
+            decoded.attempt ?? null,
+            decoded.payload?.fingerprint ?? null,
+          ],
         );
         report.counts.events++;
       }
