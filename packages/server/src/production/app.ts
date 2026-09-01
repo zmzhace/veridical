@@ -176,7 +176,7 @@ export async function buildProductionApp(options: {
     )
       throw new Fault(429, 'rate_limited');
   });
-  app.setErrorHandler((error, req, reply) => {
+  app.setErrorHandler(async (error, req, reply) => {
     const isValidation = error instanceof z.ZodError;
     const httpStatus =
       error &&
@@ -195,7 +195,7 @@ export async function buildProductionApp(options: {
             : 500;
     if (status === 403 && req.principal) {
       try {
-        db.audit(req.principal.tenant, req.principal.actor, 'access.denied', {
+        await db.audit(req.principal.tenant, req.principal.actor, 'access.denied', {
           request_id: req.id,
           route: req.routeOptions.url,
           code: error instanceof Fault ? error.code : 'forbidden',
