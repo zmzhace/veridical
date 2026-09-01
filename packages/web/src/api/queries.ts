@@ -108,7 +108,16 @@ export const usePublishAgent = (id: string) =>
 export const useInvocations = (id: string) =>
   useQuery({
     queryKey: ['invocations', id],
-    queryFn: () => apiFetch<InvocationResponse>(`/api/tasks/${id}/invocations`),
+    queryFn: async () => {
+      try {
+        return await apiFetch<InvocationResponse>(
+          `/v1/tasks/${encodeURIComponent(id)}/invocations`,
+        );
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
+        return apiFetch<InvocationResponse>(`/api/tasks/${id}/invocations`);
+      }
+    },
     enabled: !!id,
   });
 export const useModelProfile = () =>
@@ -180,7 +189,14 @@ export const useSessions = () =>
 export const useSession = (id: string) =>
   useQuery({
     queryKey: ['session', id],
-    queryFn: () => apiFetch<SessionEvents>(`/api/sessions/${id}`),
+    queryFn: async () => {
+      try {
+        return await apiFetch<SessionEvents>(`/v1/tasks/${encodeURIComponent(id)}/events`);
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
+        return apiFetch<SessionEvents>(`/api/sessions/${id}`);
+      }
+    },
     enabled: !!id,
   });
 export const useCheckpoints = (id: string) =>
