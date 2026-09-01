@@ -44,6 +44,7 @@ export async function buildProductionApp(options: {
   auditKey: Buffer;
   providers?: Map<string, LLMProvider>;
   tools?: ProductionTool[];
+  objectStore?: import('./object-store').S3ObjectStore;
   jobs?: JobStore;
   asyncJobs?: AsyncJobStore;
   worker?: boolean;
@@ -79,7 +80,7 @@ export async function buildProductionApp(options: {
   for (const provider of config.providers)
     if (!providers.has(provider.name)) throw new Error('provider not configured');
   const db: any = await buildLedger(config, options.dataKey, options.auditKey);
-  const objectStore = buildObjectStore(config);
+  const objectStore = options.objectStore ?? buildObjectStore(config);
   const durableJobs =
     config.storage.database === 'postgres' ? new PostgresJobStore(db) : options.jobs;
   const service = new ProductionService(
@@ -317,6 +318,108 @@ export async function buildProductionApp(options: {
       `tenants/${req.principal.tenant}/artifacts/${artifact.key}/${artifact.digest}.json`,
     );
     return reply.type('application/json').send(Buffer.from(bytes));
+  });
+  const FileUpload = z
+    .object({
+      project_id: Key,
+      name: z.string().trim().min(1).max(240),
+      mime_type: z.string().trim().min(1).max(120),
+      content_base64: z.string().min(1).max(20_000_000),
+    })
+    .strict();
+  const fileObjectKey = (tenant: string, id: string, hash: string) =>
+    `tenants/${tenant}/files/${id}/${hash}`;
+  app.post('/v1/files', async (req, reply) => {
+    requireRole(req.principal, 'operator', 'developer', 'reviewer');
+    if (!objectStore) throw new Fault(503, 's3_object_store_required');
+    const input = FileUpload.parse(req.body);
+    const bytes = Buffer.from(input.content_base64, 'base64');
+    if (!bytes.length || bytes.length > 25 * 1024 * 1024) throw new Fault(413, 'file_too_large');
+    const id = randomUUID();
+    const contentHash = createHash('sha256').update(bytes).digest('hex');
+    const objectKey = fileObjectKey(req.principal.tenant, id, contentHash);
+    await objectStore.put(objectKey, bytes, input.mime_type);
+    const metadata = {
+      id,
+      project_id: input.project_id,
+      name: input.name,
+      mime_type: input.mime_type,
+      size: bytes.length,
+      content_hash: contentHash,
+      object_key: objectKey,
+      created_at: new Date().toISOString(),
+    };
+    try {
+      const artifact = await db.put(
+        req.principal.tenant,
+        'file',
+        id,
+        metadata,
+        req.principal.actor,
+        'active',
+      );
+      await db.audit(req.principal.tenant, req.principal.actor, 'file.created', {
+        file_id: id,
+        project_id: input.project_id,
+        digest: artifact.digest,
+        request_id: req.id,
+      });
+      return reply.code(201).send({ ...metadata, artifact_digest: artifact.digest });
+    } catch (error) {
+      await objectStore.delete(objectKey).catch(() => undefined);
+      throw error;
+    }
+  });
+  app.get('/v1/files', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer');
+    const query = z.object({ project_id: Key }).parse(req.query);
+    const files = await db.list(req.principal.tenant, 'file', 100, 0);
+    const result = files
+      .filter(
+        (file: any) => file?.status === 'active' && file.body?.project_id === query.project_id,
+      )
+      .map((file: any) => ({ ...file.body, artifact_digest: file.digest }));
+    await db.audit(req.principal.tenant, req.principal.actor, 'file.list', {
+      project_id: query.project_id,
+      count: result.length,
+      request_id: req.id,
+    });
+    return result;
+  });
+  app.get('/v1/files/:id/content', async (req, reply) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer');
+    const { id } = z.object({ id: Key }).parse(req.params);
+    const file = await db.get(req.principal.tenant, 'file', id);
+    if (!file || file.status !== 'active') throw new Fault(404, 'file_not_found');
+    if (!objectStore) throw new Fault(503, 's3_object_store_required');
+    const bytes = await objectStore.get(file.body.object_key);
+    await db.audit(req.principal.tenant, req.principal.actor, 'file.content_read', {
+      file_id: id,
+      project_id: file.body.project_id,
+      request_id: req.id,
+    });
+    return reply.type(file.body.mime_type).send(Buffer.from(bytes));
+  });
+  app.delete('/v1/files/:id', async (req) => {
+    requireRole(req.principal, 'developer', 'reviewer');
+    const { id } = z.object({ id: Key }).parse(req.params);
+    const file = await db.get(req.principal.tenant, 'file', id);
+    if (!file || file.status !== 'active') throw new Fault(404, 'file_not_found');
+    await db.transition(
+      req.principal.tenant,
+      'file',
+      id,
+      'deleted',
+      { ...file.meta, deleted_at: new Date().toISOString() },
+      req.principal.actor,
+    );
+    if (objectStore) await objectStore.delete(file.body.object_key).catch(() => undefined);
+    await db.audit(req.principal.tenant, req.principal.actor, 'file.deleted', {
+      file_id: id,
+      project_id: file.body.project_id,
+      request_id: req.id,
+    });
+    return { deleted: true, id };
   });
   const KnowledgeUpload = z
     .object({
