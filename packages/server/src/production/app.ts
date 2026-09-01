@@ -1023,6 +1023,48 @@ export async function buildProductionApp(options: {
       manifest_url: `/v1/releases/${encodeURIComponent(ref)}/manifest`,
     };
   });
+  app.get('/v1/agents/:name/manifest', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
+    const { name } = z.object({ name: Key }).parse(req.params);
+    const channel = z
+      .object({ channel: z.enum(['production', 'canary']).default('production') })
+      .parse(req.query).channel;
+    const ref = await db.pointer(req.principal.tenant, 'deployment', `${channel}.${name}`);
+    if (!ref) throw new Fault(404, 'agent_not_deployed');
+    const spec = await db.get(req.principal.tenant, 'spec', ref);
+    if (!spec || spec.status !== 'approved') throw new Fault(409, 'release_not_approved');
+    const skillRows = await Promise.all(
+      (spec.body.skills ?? []).map((skill: any) =>
+        db.get(req.principal.tenant, 'skill', `${skill.name}@${skill.version}`),
+      ),
+    );
+    const mcpRows = await Promise.all(
+      (spec.body.capabilities?.mcp_servers ?? []).map((id: string) =>
+        db.get(req.principal.tenant, 'mcp_server', id),
+      ),
+    );
+    const knowledgeRows = await Promise.all(
+      (spec.body.capabilities?.knowledge_backends ?? []).map((id: string) =>
+        db.get(req.principal.tenant, 'knowledge_backend', id),
+      ),
+    );
+    return {
+      release_artifact_hash: spec.meta.release_artifact_hash,
+      spec_hash: spec.digest,
+      ref,
+      channel,
+      loop: {
+        engine: spec.body.flow.loop?.engine ?? 'orchestrator',
+        strategy: spec.body.flow.loop?.strategy ?? spec.body.flow.mode,
+      },
+      skill_hashes: skillRows.filter(Boolean).map((row: any) => row.digest),
+      mcp_hashes: mcpRows.filter(Boolean).map((row: any) => row.digest),
+      knowledge_hashes: knowledgeRows.filter(Boolean).map((row: any) => row.digest),
+      memory_scopes: spec.body.capabilities?.memory_scopes ?? ['turn', 'task'],
+      model: { provider: spec.body.llm.provider, model: spec.body.llm.model },
+      budget: { max_steps: spec.body.flow.max_steps, max_tokens: config.maxOutputTokens },
+    };
+  });
   app.put('/v1/agents/:name/draft', async (req) => {
     requireRole(req.principal, 'developer');
     const { name } = z.object({ name: Key }).parse(req.params);
