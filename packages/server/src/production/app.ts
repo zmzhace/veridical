@@ -558,7 +558,7 @@ export async function buildProductionApp(options: {
       })
       .parse(req.query);
     const events = await db.read(req.principal.tenant, id, query.after, query.limit);
-    db.audit(req.principal.tenant, req.principal.actor, 'trace.read', {
+    await db.audit(req.principal.tenant, req.principal.actor, 'trace.read', {
       session: id,
       after: query.after,
       limit: query.limit,
@@ -577,7 +577,7 @@ export async function buildProductionApp(options: {
     const events = (await db.read(req.principal.tenant, id)).filter(
       (e: any) => e.type === 'run.provenance',
     );
-    db.audit(req.principal.tenant, req.principal.actor, 'provenance.read', {
+    await db.audit(req.principal.tenant, req.principal.actor, 'provenance.read', {
       session: id,
       request_id: req.id,
     });
