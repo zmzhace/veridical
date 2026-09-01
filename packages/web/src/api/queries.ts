@@ -185,7 +185,33 @@ export const useArchiveAgent = () =>
   });
 
 export const useSessions = () =>
-  useQuery({ queryKey: ['sessions'], queryFn: () => apiFetch<SessionSummary[]>('/api/sessions') });
+  useQuery({
+    queryKey: ['sessions'],
+    queryFn: async () => {
+      try {
+        const sessions =
+          await apiFetch<Array<{ id: string; ref?: string; seq?: number; created?: string }>>(
+            '/v1/sessions',
+          );
+        // Keep compatibility with research mocks and older gateways that already
+        // return the UI summary shape from the production path.
+        if (sessions.some((session) => !(session as any).id && (session as any).session_id))
+          return sessions as unknown as SessionSummary[];
+        return sessions.map<SessionSummary>((session) => ({
+          session_id: session.id,
+          spec_name: session.ref?.split('@')[0],
+          spec_version: session.ref?.split('@')[1] ?? '',
+          event_count: session.seq ?? 0,
+          total_duration_ms: 0,
+          first_seq: session.seq ? 1 : 0,
+          last_seq: session.seq ?? 0,
+        }));
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
+        return apiFetch<SessionSummary[]>('/api/sessions');
+      }
+    },
+  });
 export const useSession = (id: string) =>
   useQuery({
     queryKey: ['session', id],
