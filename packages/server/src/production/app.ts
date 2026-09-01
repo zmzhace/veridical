@@ -717,9 +717,26 @@ export async function buildProductionApp(options: {
     });
     return {
       id,
+      name: server.body?.name,
+      transport: server.body?.transport,
+      url: server.body?.endpoint,
+      command: server.body?.command,
       status: server.status,
       dynamic_discovery: false,
       changed: false,
+      discovered_tools: toolNames.map((name: string) => ({
+        id: `${id}/${name}`,
+        name,
+        version: server.body?.version ?? 'unknown',
+        source: 'mcp',
+        description: `MCP ${server.body?.name ?? id} · ${name}`,
+        side_effect: 'read',
+        status: 'approved',
+        implementation_hash: server.digest,
+        binding: bindings.some((b) => b.toolName === name),
+      })),
+      discovered_resources: [],
+      discovered_prompts: [],
       tools: toolNames.map((name: string) => ({
         name,
         binding: bindings.some((b) => b.toolName === name),
