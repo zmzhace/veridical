@@ -176,10 +176,18 @@ export const useModels = () =>
 export const useCredentialStatus = () =>
   useQuery({
     queryKey: ['credential-status'],
-    queryFn: () =>
-      apiFetch<{
-        provider: { configured: boolean; provider?: string; model?: string; error?: string };
-      }>('/api/credentials/status'),
+    queryFn: async () => {
+      try {
+        return await apiFetch<{
+          provider: { configured: boolean; provider?: string; model?: string; error?: string };
+        }>('/v1/credentials/status');
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
+        return apiFetch<{
+          provider: { configured: boolean; provider?: string; model?: string; error?: string };
+        }>('/api/credentials/status');
+      }
+    },
     staleTime: 60_000,
   });
 export const useDuplicateAgent = () =>

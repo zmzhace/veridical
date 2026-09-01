@@ -744,6 +744,20 @@ export async function buildProductionApp(options: {
       message: '生产环境使用已审批的固定工具清单；新增工具需要新版本并重新审批。',
     };
   });
+  app.get('/v1/credentials/status', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
+    const providersStatus = config.providers.map((provider) => ({
+      provider: provider.name,
+      model: provider.model,
+      configured: providers.has(provider.name),
+      credential_ref: provider.apiKeyEnv,
+    }));
+    return {
+      provider: providersStatus[0] ?? { configured: false },
+      providers: providersStatus,
+      secrets_exposed: false,
+    };
+  });
   const KnowledgeBackendInput = z
     .object({
       name: Key,
