@@ -1769,7 +1769,9 @@ export async function buildProductionApp(options: {
     const result = await Promise.all(
       matching.map(async (session: any) => {
         const events = await db.read(req.principal.tenant, session.id);
-        const turnEnds = events.filter((event: any) => event.type === 'turn/end');
+        const turnEnds = events.filter(
+          (event: any) => event.type === 'turn/end' && !event.parent_invocation_id,
+        );
         const durations = events.reduce(
           (total: number, event: any) => total + Number(event.duration_ms ?? 0),
           0,
@@ -1806,9 +1808,12 @@ export async function buildProductionApp(options: {
       session_id: id,
       kind: session.kind,
       release_ref: session.ref,
-      turns: events.filter((event: any) => event.type === 'turn/end').length,
-      events: events.filter((event: any) =>
-        ['user.message', 'assistant.message', 'turn/end'].includes(event.type),
+      turns: events.filter((event: any) => event.type === 'turn/end' && !event.parent_invocation_id)
+        .length,
+      events: events.filter(
+        (event: any) =>
+          !event.parent_invocation_id &&
+          ['user.message', 'assistant.message', 'turn/end'].includes(event.type),
       ),
     };
   });

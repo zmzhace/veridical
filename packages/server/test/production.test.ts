@@ -161,7 +161,7 @@ test('production capabilities expose only configured models and registered tools
 
 test('production supervisor records an isolated child-agent invocation path', async () => {
   answer = async (req) => {
-    const hasChildTask = req.messages.some((message) => message.content.includes('child-task'));
+    const hasChildTask = req.messages.at(-1)?.content === 'child-task';
     const hasPriorAssistant = req.messages.some((message) => message.role === 'assistant');
     if (hasChildTask) return reply('child-result');
     if (!hasPriorAssistant)
@@ -170,7 +170,7 @@ test('production supervisor records an isolated child-agent invocation path', as
   };
   const supervisor = `name: hub\nversion: 1.0.0\nschema_version: 1\ninstruction: {system: Delegate safely}\nflow: {mode: supervisor, max_steps: 4}\nllm: {provider: fixture, model: fixture-model}\ntools: [{name: finish, access: allow}]\nskills: []\nagents:\n  - name: researcher\n    inline:\n      instruction: {system: Return the child result}\n      llm: {provider: fixture, model: fixture-model}\n      tools: [{name: finish, access: allow}]`;
   env.service.createSpec(principal('developer'), supervisor);
-  env.service.setSuite(principal('reviewer'), 'hub', suite('child-result'));
+  env.service.setSuite(principal('reviewer'), 'hub', suite('parent-result'));
   const evaluation = env.service.evaluate(principal('developer'), 'hub@1.0.0', 'evaluate-hub');
   expect(await drain(evaluation.id)).toMatchObject({
     state: 'completed',
