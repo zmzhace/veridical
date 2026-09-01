@@ -90,7 +90,13 @@ export function AgentPage() {
       ),
     [tasks.data, taskQuery],
   );
-  const merged = useMemo(() => [...events, ...liveEvents], [events, liveEvents]);
+  const merged = useMemo(() => {
+    // SSE and the session query can deliver the same event concurrently. Keep
+    // one logical event so an assistant response is rendered exactly once.
+    const byId = new Map<string, TraceEvent>();
+    for (const event of [...events, ...liveEvents]) byId.set(event.id, event);
+    return [...byId.values()].sort((a, b) => a.seq - b.seq);
+  }, [events, liveEvents]);
   const chat = useMemo(
     () => buildChat(merged, []).filter((item) => item.kind === 'bubble'),
     [merged],
