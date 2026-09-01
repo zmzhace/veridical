@@ -18,9 +18,14 @@ export function compileWorkspaceSpec(graph: WorkspaceGraph, version = '1.0.0'): 
     .map((edge) => graph.nodes.find((node) => node.id === edge.target))
     .filter(Boolean);
   const memories = graph.nodes.filter((node) => node.type === 'memory');
-  const knowledge = graph.nodes.filter((node) => node.type === 'condition' && String(node.config.kind ?? '') === 'knowledge');
+  const knowledge = graph.nodes.filter(
+    (node) => node.type === 'condition' && String(node.config.kind ?? '') === 'knowledge',
+  );
   const mcpServers = tools
-    .filter((tool) => tool!.title.includes('.') || tool!.config.source === 'mcp')
+    .filter(
+      (tool) =>
+        tool!.title.includes('/') || tool!.title.includes('.') || tool!.config.source === 'mcp',
+    )
     .map((tool) => String(tool!.config.serverRef ?? tool!.title.split('.')[0]))
     .filter(Boolean);
   const strategy = String(agent.config.strategy ?? 'direct');
@@ -52,15 +57,22 @@ export function compileWorkspaceSpec(graph: WorkspaceGraph, version = '1.0.0'): 
     },
     capabilities: {
       mcp_servers: [...new Set(mcpServers)],
-      knowledge_backends: knowledge.map((node) => String(node!.config.backendId ?? node!.title)).filter(Boolean),
+      knowledge_backends: knowledge
+        .map((node) => String(node!.config.backendId ?? node!.title))
+        .filter(Boolean),
       memory_scopes: memories.length ? ['turn', 'task', 'project'] : ['turn', 'task'],
     },
     tools: tools.map((tool) => {
-      const slug = tool!.title
+      const configuredName = String(tool!.config.name ?? tool!.title).trim();
+      const slug = configuredName
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-|-$/g, '');
-      return { name: slug || tool!.id, access: String(tool!.config.access ?? 'ask') };
+      const name =
+        tool!.config.source === 'mcp' || configuredName.includes('/')
+          ? configuredName
+          : slug || tool!.id;
+      return { name, access: String(tool!.config.access ?? 'ask') };
     }),
     skills: skills.map((skill) => ({
       name: skill!.title,
