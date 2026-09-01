@@ -921,6 +921,15 @@ export class ProductionService {
       config: this.config,
       providers: this.providers,
       tools: this.tools,
+      resolveAgent: async (ref) => {
+        const [name, version] = ref.split('@');
+        const key = version ? `${name}@${version}` : ref;
+        const artifact = this.managed
+          ? await (this.db as any).get(job.tenant, 'spec', key)
+          : this.db.get<AgentSpec>(job.tenant, 'spec', key);
+        if (!artifact || artifact.status === 'revoked') return undefined;
+        return artifact.body as AgentSpec;
+      },
     });
   }
   private async evaluateJob(job: Job, signal: AbortSignal) {

@@ -158,6 +158,42 @@ test('production capabilities expose only configured models and registered tools
     skills: [],
   });
 });
+
+test('production supervisor records an isolated child-agent invocation path', async () => {
+  answer = async (req) => {
+    const hasChildTask = req.messages.some((message) => message.content.includes('child-task'));
+    const hasPriorAssistant = req.messages.some((message) => message.role === 'assistant');
+    if (hasChildTask) return reply('child-result');
+    if (!hasPriorAssistant)
+      return reply(JSON.stringify({ delegate: 'researcher', task: 'child-task' }));
+    return reply('parent-result');
+  };
+  const supervisor = `name: hub\nversion: 1.0.0\nschema_version: 1\ninstruction: {system: Delegate safely}\nflow: {mode: supervisor, max_steps: 4}\nllm: {provider: fixture, model: fixture-model}\ntools: [{name: finish, access: allow}]\nskills: []\nagents:\n  - name: researcher\n    inline:\n      instruction: {system: Return the child result}\n      llm: {provider: fixture, model: fixture-model}\n      tools: [{name: finish, access: allow}]`;
+  env.service.createSpec(principal('developer'), supervisor);
+  env.service.setSuite(principal('reviewer'), 'hub', suite('child-result'));
+  const evaluation = env.service.evaluate(principal('developer'), 'hub@1.0.0', 'evaluate-hub');
+  expect(await drain(evaluation.id)).toMatchObject({
+    state: 'completed',
+    result: { passed: true },
+  });
+  env.service.approve(principal('reviewer'), 'hub@1.0.0', 'supervisor review');
+  env.service.deploy(
+    principal('publisher'),
+    'hub',
+    'hub@1.0.0',
+    'production',
+    'supervisor rollout',
+  );
+  const job = env.service.run(
+    principal('operator'),
+    { name: 'hub', channel: 'production', prompt: 'delegate this' },
+    'supervisor-run',
+  );
+  expect(await drain(job.id)).toMatchObject({ state: 'completed' });
+  const events = env.db.read('acme', job.session);
+  expect(events.some((event) => event.path === 'root/delegate:researcher')).toBe(true);
+  expect(events.some((event) => event.type === 'agent.result')).toBe(true);
+});
 test('production model profile never exposes browser credentials', async () => {
   const response = await request('viewer', 'GET', '/v1/model-profile');
   expect(response.statusCode).toBe(200);

@@ -102,8 +102,6 @@ export function validateSpec(
   const spec = AgentSpecSchema.parse(raw);
   Key.parse(spec.name);
   if (spec.version.length > 80) throw new Fault(422, 'version_too_long');
-  if (spec.flow.mode === 'supervisor' || spec.agents.length)
-    throw new Fault(422, 'supervisor_not_supported_in_production');
   if (
     spec.flow.max_steps > 32 ||
     spec.instruction.system.length > 16000 ||
@@ -111,7 +109,11 @@ export function validateSpec(
   )
     throw new Fault(422, 'spec_limits_exceeded');
   if (spec.schema_version !== 1) throw new Fault(422, 'unsupported_schema');
-  if (spec.flow.loop && spec.flow.loop.engine !== 'direct')
+  if (
+    spec.flow.loop &&
+    spec.flow.loop.engine !== 'direct' &&
+    spec.flow.loop.strategy !== 'supervisor'
+  )
     throw new Fault(422, 'loop_not_enabled_in_production');
   if (spec.skills.some((skill) => skill.status !== 'approved'))
     throw new Fault(422, 'skill_not_approved');
@@ -211,6 +213,8 @@ const Decision = z
     text: z.string().max(16000).optional(),
     done: z.boolean().optional(),
     tool: z.object({ name: Key, args: z.unknown() }).strict().optional(),
+    delegate: Key.optional(),
+    task: z.string().max(16000).optional(),
   })
   .strict();
 export function messagesFrom(
@@ -259,6 +263,8 @@ export interface ExecuteTurnOptions {
   signal: AbortSignal;
   input: string;
   checkRelease: () => void | Promise<void>;
+  /** Resolve a version-pinned child Agent Spec from the durable registry. */
+  resolveAgent?: (ref: string) => Promise<AgentSpec | undefined>;
   invocationInterceptor?: InvocationInterceptor;
 }
 
@@ -453,6 +459,66 @@ async function executeTurnInternal(options: ExecuteTurnOptions, recorder: Invoca
       throw error;
     }
   };
+  const dispatch = async (delegate: string, task: string) => {
+    const ref = spec.agents.find((candidate) => candidate.name === delegate);
+    if (!ref) throw new Fault(422, 'replay_child_agent_missing', delegate);
+    let childSpec: AgentSpec | undefined;
+    if (ref.inline) {
+      childSpec = AgentSpecSchema.parse({
+        name: `${spec.name}-${delegate}`,
+        version: '0.0.0',
+        schema_version: spec.schema_version,
+        description: `Child agent ${delegate}`,
+        instruction: ref.inline.instruction,
+        flow: { mode: 'single-loop', max_steps: spec.flow.max_steps },
+        llm: { ...ref.inline.llm, fallback: [] },
+        output: {
+          profile: 'conversational',
+          message_format: 'markdown',
+          strict: true,
+          repair_attempts: 1,
+        },
+        tools: ref.inline.tools,
+        skills: [],
+        agents: [],
+      });
+    } else if (options.resolveAgent) {
+      childSpec = await options.resolveAgent(ref.spec_ref!);
+    }
+    if (!childSpec) throw new Fault(422, 'replay_child_agent_missing', ref.spec_ref ?? delegate);
+    const checked = validateSpec(childSpec, config, tools);
+    return recorder.invoke(
+      'agent',
+      'agent.dispatch',
+      `delegate:${encodeURIComponent(delegate)}`,
+      {
+        delegate,
+        task,
+        spec_ref: ref.spec_ref ?? null,
+        spec_hash: digest(checked),
+      },
+      async (scope) => {
+        await scope.event('agent.dispatch', 'request', {
+          delegate,
+          task,
+          spec_ref: ref.spec_ref ?? null,
+          spec_hash: digest(checked),
+        });
+        const child = await executeTurnInternal(
+          { ...options, spec: checked, input: task, resolveAgent: options.resolveAgent },
+          scope,
+        );
+        await scope.event('agent.result', 'response', {
+          delegate,
+          task,
+          outcome: child.outcome,
+          status: child.status,
+        });
+        return child.outcome;
+      },
+      { agent: checked.name, specVersion: checked.version },
+    );
+  };
   try {
     for (let step = 1; step <= spec.flow.max_steps; step++) {
       await check();
@@ -489,7 +555,9 @@ async function executeTurnInternal(options: ExecuteTurnOptions, recorder: Invoca
         trimmed.startsWith('{') ? JSON.parse(trimmed) : { text: response.text, done: true },
       );
       await record('assistant.message', { text: decision.text ?? '', model_text: response.text });
-      if (decision.tool) {
+      if (decision.delegate) {
+        outcome = await dispatch(decision.delegate, decision.task ?? decision.text ?? '');
+      } else if (decision.tool) {
         const tool = tools.find((t) => t.name === decision.tool!.name);
         outcome = await recorder.invoke(
           'tool',
@@ -613,7 +681,7 @@ async function executeTurnInternal(options: ExecuteTurnOptions, recorder: Invoca
       const done =
         spec.flow.mode === 'stage-gate'
           ? stages.every((s) => completed.has(s.id))
-          : decision.done === true || (!decision.tool && !!decision.text);
+          : decision.done === true || (!decision.tool && !decision.delegate && !!decision.text);
       if (done) {
         outcome = await finalizeTurn(outcome);
         await record('turn/end', { outcome, status: 'completed' });
