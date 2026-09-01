@@ -2072,7 +2072,14 @@ export async function buildProductionApp(options: {
       request_id: req.id,
     });
     if (body.format === 'json') return { session: id, steps: payload };
-    return reply.type('application/x-ndjson').send(payload);
+    const exportBytes = Buffer.from(String(payload));
+    if (objectStore) {
+      const exportHash = createHash('sha256').update(exportBytes).digest('hex');
+      const objectKey = `tenants/${req.principal.tenant}/exports/${id}/${exportHash}.${body.format}`;
+      await objectStore.put(objectKey, exportBytes, 'application/x-ndjson');
+      reply.header('x-export-object-key', objectKey).header('x-export-sha256', exportHash);
+    }
+    return reply.type('application/x-ndjson').send(exportBytes);
   });
   app.get('/v1/runs/:id/provenance', async (req) => {
     const { id } = z.object({ id: Key }).parse(req.params);
