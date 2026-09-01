@@ -2213,6 +2213,35 @@ export async function buildProductionApp(options: {
       provenance,
     };
   });
+  app.get('/v1/tasks/:id/provenance', async (req) => {
+    const { id } = z.object({ id: Key }).parse(req.params);
+    await visibleSession(req.principal, id);
+    const events = (await db.read(req.principal.tenant, id)).filter(
+      (e: any) => e.type === 'run.provenance',
+    );
+    const provenance = events.map((e: any) => ({ path: e.path, seq: e.seq, payload: e.payload }));
+    const latest = provenance.at(-1)?.payload as Record<string, unknown> | undefined;
+    const manifest = latest
+      ? {
+          release_artifact_hash: latest.release_artifact_hash,
+          loop: latest.loop,
+          spec_hash: latest.spec_digest,
+          skill_hashes: latest.skill_hashes ?? [],
+          model_versions: latest.model_versions ?? {},
+          replay_mode: latest.replay_mode ?? 'strict',
+        }
+      : undefined;
+    await db.audit(req.principal.tenant, req.principal.actor, 'provenance.read', {
+      session: id,
+      request_id: req.id,
+    });
+    return {
+      session: id,
+      checkpoint: await db.verify(req.principal.tenant, id),
+      manifest,
+      provenance,
+    };
+  });
   app.post('/v1/sessions/:id/integrity', async (req) => {
     const { id } = z.object({ id: Key }).parse(req.params);
     await visibleSession(req.principal, id);

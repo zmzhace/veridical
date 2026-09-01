@@ -885,6 +885,9 @@ test('production provenance and replay alias enforce tenant, mode and artifact b
     spec_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
     loop: expect.objectContaining({ engine: 'orchestrator' }),
   });
+  const taskProvenance = await request('viewer', 'GET', `/v1/tasks/${source.session}/provenance`);
+  expect(taskProvenance.statusCode).toBe(200);
+  expect(taskProvenance.json().manifest).toMatchObject({ replay_mode: 'strict' });
   const invocations = await request('viewer', 'GET', `/v1/sessions/${source.session}/invocations`);
   expect(invocations.statusCode).toBe(200);
   expect(invocations.json().invocations[0]).toMatchObject({
@@ -907,6 +910,9 @@ test('production provenance and replay alias enforce tenant, mode and artifact b
   expect(exportResponse.headers['content-type']).toContain('application/x-ndjson');
   expect(
     (await request('foreign', 'GET', `/v1/runs/${source.session}/provenance`)).statusCode,
+  ).toBe(404);
+  expect(
+    (await request('foreign', 'GET', `/v1/tasks/${source.session}/provenance`)).statusCode,
   ).toBe(404);
   expect(
     (
