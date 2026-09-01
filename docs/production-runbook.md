@@ -93,6 +93,8 @@ pnpm build
 
 生产只接受已审批的 Release Artifact。任何 Spec、Skill、Tool、MCP、Model、Loop 或 Knowledge 版本变化都必须生成新 Release 并重新评测。
 
+gbrain Knowledge Backend 还必须在服务启动时注入与其 `server_ref` 对应的固定 MCP tool bindings，运行时不会执行动态发现。缺少绑定时该 Backend 会明确报告不可用，不会降级到 native 检索。
+
 ## 5. 故障处理
 
 - Redis 短暂不可用：readiness 失败；PostgreSQL 中的 queued Job 会在 Worker 重启时重新投递。
