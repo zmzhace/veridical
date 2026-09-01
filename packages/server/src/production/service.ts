@@ -836,7 +836,12 @@ export class ProductionService {
       const result = await this.execute(job, controller.signal);
       this.jobs.finish(job, 'completed', result);
     } catch (error) {
-      this.jobs.finish(job, this.stopped ? 'interrupted' : 'failed', {
+      const state = this.stopped
+        ? 'interrupted'
+        : error instanceof Fault && error.code === 'approval_required'
+          ? 'blocked'
+          : 'failed';
+      this.jobs.finish(job, state, {
         code: error instanceof Fault ? error.code : 'execution_failed',
       });
     } finally {
@@ -921,7 +926,11 @@ export class ProductionService {
           return result;
         },
         async (error) => {
-          const state = this.stopped ? 'interrupted' : 'failed';
+          const state = this.stopped
+            ? 'interrupted'
+            : error instanceof Fault && error.code === 'approval_required'
+              ? 'blocked'
+              : 'failed';
           const result = { code: error instanceof Fault ? error.code : 'execution_failed' };
           if (this.managed) await (this.db as any).finish(job, state, result);
           else this.jobs.finish(job, state, result);

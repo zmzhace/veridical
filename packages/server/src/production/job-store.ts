@@ -14,7 +14,7 @@ export interface JobStore {
   ): Job;
   claim(owner: string, leaseMs: number, limit?: number): Job | undefined;
   heartbeat(job: Job): void;
-  finish(job: Job, state: 'completed' | 'failed' | 'interrupted', result: unknown): void;
+  finish(job: Job, state: 'completed' | 'failed' | 'blocked' | 'interrupted', result: unknown): void;
   cancel(tenant: string, id: string, actor: string): Job;
   job(tenant: string, id: string): Job | undefined;
   recover(): void;
@@ -57,7 +57,7 @@ export interface AsyncJobStore {
   finish(
     id: string,
     owner: string,
-    state: 'completed' | 'failed' | 'cancelled',
+    state: 'completed' | 'failed' | 'blocked' | 'cancelled',
     result?: unknown,
   ): Promise<boolean>;
   recoverExpired?(): Promise<number>;
@@ -122,7 +122,7 @@ export class PostgresJobStore implements AsyncJobStore {
   async finish(
     id: string,
     owner: string,
-    state: 'completed' | 'failed' | 'cancelled',
+    state: 'completed' | 'failed' | 'blocked' | 'cancelled',
     result?: unknown,
   ) {
     const row = await this.find(id);
@@ -217,7 +217,7 @@ export class AsyncSqliteJobStore implements AsyncJobStore {
   async finish(
     id: string,
     owner: string,
-    state: 'completed' | 'failed' | 'cancelled',
+    state: 'completed' | 'failed' | 'blocked' | 'cancelled',
     result?: unknown,
   ) {
     const row = this.ledger.sql.prepare('SELECT tenant FROM jobs WHERE id=?').get(id) as

@@ -717,7 +717,7 @@ export class PostgresTraceLedger implements TraceLedger {
   }
   async cancel(tenant: string, id: string, actor: string) {
     const result = await this.pool.query(
-      "UPDATE jobs SET state='cancelled' WHERE tenant=$1 AND id=$2 AND state IN ('queued','running') RETURNING *",
+      "UPDATE jobs SET state='cancelled' WHERE tenant=$1 AND id=$2 AND state IN ('queued','running','blocked') RETURNING *",
       [tenant, id],
     );
     if (!result.rows[0]) {

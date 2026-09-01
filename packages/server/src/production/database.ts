@@ -590,7 +590,9 @@ export class Ledger {
       if (!job) throw new Fault(404, 'job_not_found');
       if (['queued', 'running'].includes(job.state)) {
         this.sql
-          .prepare("UPDATE jobs SET state='cancelled' WHERE tenant=? AND id=?")
+          .prepare(
+            "UPDATE jobs SET state='cancelled' WHERE tenant=? AND id=? AND state IN ('queued','running','blocked')",
+          )
           .run(tenant, id);
         this.terminal(job, 'cancelled', { code: 'cancelled' });
         this.audit(tenant, actor, 'job.cancelled', { id });
