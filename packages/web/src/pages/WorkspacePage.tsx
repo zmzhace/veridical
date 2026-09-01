@@ -231,8 +231,12 @@ export function WorkspacePage() {
     if (errors.length) return setNotice(errors[0]);
     try {
       await saveDraft();
-      await publish.mutateAsync({ graph, yaml });
-      setNotice('验证通过，Release 已发布。');
+      const release = (await publish.mutateAsync({ graph, yaml })) as { status?: string };
+      setNotice(
+        release.status === 'pending_review'
+          ? '候选 Release 已创建，等待评测与独立审批。'
+          : '验证通过，Release 已发布。',
+      );
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '发布失败');
     }
