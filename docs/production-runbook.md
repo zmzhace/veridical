@@ -20,7 +20,16 @@
     "s3Bucket": "veridical-artifacts",
     "s3AccessKeyEnv": "VERIDICAL_S3_ACCESS",
     "s3SecretKeyEnv": "VERIDICAL_S3_SECRET"
-  }
+  },
+  "mcpTools": [
+    {
+      "id": "research-tools@1.0.0",
+      "transport": "streamable-http",
+      "endpoint": "https://mcp.example.com/mcp",
+      "credentialRef": "VERIDICAL_MCP_TOKEN",
+      "toolName": "search"
+    }
+  ]
 }
 ```
 
@@ -32,6 +41,7 @@ export VERIDICAL_DATA_KEY=<64 hex characters>
 export VERIDICAL_AUDIT_KEY=<64 hex characters>
 export VERIDICAL_S3_ACCESS=<access key>
 export VERIDICAL_S3_SECRET=<secret key>
+export VERIDICAL_MCP_TOKEN=<mcp credential>
 export VERIDICAL_MODE=production
 ```
 
