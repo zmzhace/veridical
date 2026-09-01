@@ -158,6 +158,28 @@ test('production capabilities expose only configured models and registered tools
     skills: [],
   });
 });
+test('production memories use candidate approval and tenant-scoped deletion', async () => {
+  const created = await request('operator', 'POST', '/v1/memories', {
+    project_id: 'proj-a',
+    scope: 'project',
+    kind: 'fact',
+    content: { term: 'veridical' },
+    sensitivity: 'normal',
+  });
+  expect(created.statusCode).toBe(201);
+  const id = created.json().id;
+  expect(created.json().status).toBe('candidate');
+  expect((await request('viewer', 'GET', '/v1/memories?project_id=proj-a')).json()).toHaveLength(1);
+  expect(
+    (await request('reviewer', 'POST', `/v1/memories/${id}/decision`, { status: 'active' }))
+      .statusCode,
+  ).toBe(200);
+  expect((await request('developer', 'DELETE', `/v1/memories/${id}`)).json()).toMatchObject({
+    deleted: true,
+    id,
+  });
+  expect((await request('viewer', 'GET', '/v1/memories?project_id=proj-a')).json()).toHaveLength(0);
+});
 test('revoked tokens remain revoked and admin cannot revoke another tenant token', async () => {
   expect(
     (

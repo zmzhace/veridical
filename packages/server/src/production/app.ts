@@ -281,6 +281,120 @@ export async function buildProductionApp(options: {
     });
     return { models, tools, mcp_servers: [], skills: [] };
   });
+  const MemoryInput = z
+    .object({
+      project_id: Key,
+      user_id: Key.optional(),
+      agent_id: Key.optional(),
+      scope: z.enum(['task', 'project', 'user', 'agent']),
+      kind: z.enum(['fact', 'preference', 'summary', 'candidate']).default('candidate'),
+      content: z.unknown(),
+      summary: z.string().max(1000).optional(),
+      source_refs: z.array(z.string().max(500)).max(50).default([]),
+      confidence: z.number().min(0).max(1).default(1),
+      sensitivity: z.enum(['normal', 'sensitive', 'restricted']).default('normal'),
+      expires_at: z.string().datetime().optional(),
+    })
+    .strict();
+  app.get('/v1/memories', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer');
+    const query = z
+      .object({
+        project_id: Key,
+        user_id: Key.optional(),
+        scope: z.enum(['task', 'project', 'user', 'agent']).optional(),
+      })
+      .parse(req.query);
+    const now = Date.now();
+    const records = await db.list(req.principal.tenant, 'memory', 200, 0);
+    const result = records
+      .filter(
+        (record: any) =>
+          record?.status !== 'deleted' &&
+          record?.body?.project_id === query.project_id &&
+          (!record.body.expires_at || Date.parse(record.body.expires_at) > now) &&
+          (!query.user_id || record.body.user_id === query.user_id) &&
+          (!query.scope || record.body.scope === query.scope),
+      )
+      .map((record: any) => ({
+        ...record.body,
+        id: record.key,
+        status: record.status,
+        content_hash: record.digest,
+      }));
+    await db.audit(req.principal.tenant, req.principal.actor, 'memory.list', {
+      project_id: query.project_id,
+      count: result.length,
+      request_id: req.id,
+    });
+    return result;
+  });
+  app.post('/v1/memories', async (req, reply) => {
+    requireRole(req.principal, 'operator', 'developer', 'reviewer');
+    const input = MemoryInput.parse(req.body);
+    const id = randomUUID();
+    const body = { ...input, created_at: new Date().toISOString() };
+    const record = await db.put(
+      req.principal.tenant,
+      'memory',
+      id,
+      body,
+      req.principal.actor,
+      'candidate',
+    );
+    await db.audit(req.principal.tenant, req.principal.actor, 'memory.candidate_created', {
+      memory_id: id,
+      project_id: input.project_id,
+      sensitivity: input.sensitivity,
+      request_id: req.id,
+    });
+    return reply
+      .code(201)
+      .send({ ...body, id, status: record.status, content_hash: record.digest });
+  });
+  app.post('/v1/memories/:id/decision', async (req) => {
+    requireRole(req.principal, 'reviewer', 'developer');
+    const { id } = z.object({ id: Key }).parse(req.params);
+    const decision = z
+      .object({ status: z.enum(['active', 'rejected']) })
+      .strict()
+      .parse(req.body);
+    const current = await db.get(req.principal.tenant, 'memory', id);
+    if (!current || current.status === 'deleted') throw new Fault(404, 'memory_not_found');
+    const updated = await db.transition(
+      req.principal.tenant,
+      'memory',
+      id,
+      decision.status,
+      { ...current.meta, decided_at: new Date().toISOString() },
+      req.principal.actor,
+    );
+    await db.audit(req.principal.tenant, req.principal.actor, 'memory.decision', {
+      memory_id: id,
+      status: decision.status,
+      request_id: req.id,
+    });
+    return { ...updated.body, id, status: updated.status, content_hash: updated.digest };
+  });
+  app.delete('/v1/memories/:id', async (req) => {
+    requireRole(req.principal, 'developer', 'reviewer');
+    const { id } = z.object({ id: Key }).parse(req.params);
+    const current = await db.get(req.principal.tenant, 'memory', id);
+    if (!current || current.status === 'deleted') throw new Fault(404, 'memory_not_found');
+    await db.transition(
+      req.principal.tenant,
+      'memory',
+      id,
+      'deleted',
+      { ...current.meta, deleted_at: new Date().toISOString() },
+      req.principal.actor,
+    );
+    await db.audit(req.principal.tenant, req.principal.actor, 'memory.deleted', {
+      memory_id: id,
+      request_id: req.id,
+    });
+    return { deleted: true, id };
+  });
   app.get('/v1/specs', async (req) => {
     requireRole(req.principal, 'viewer', 'developer', 'reviewer', 'publisher');
     const page = Page.parse(req.query);
