@@ -262,6 +262,26 @@ async function verifyTarget() {
     for (const [name, value] of Object.entries(result.rows[0]))
       if (Number(value) !== report.counts[name])
         throw new Error(`migration_${name}_count_mismatch`);
+    const artifactRows = await target.pool.query(
+      'SELECT tenant,kind,key,digest FROM artifacts ORDER BY tenant,kind,key',
+    );
+    for (const row of artifactRows.rows) {
+      const artifact = await target.get(row.tenant, row.kind, row.key);
+      if (!artifact || artifact.digest !== row.digest)
+        throw new Error(`migration_artifact_digest_mismatch:${row.tenant}/${row.kind}/${row.key}`);
+    }
+    const pointerRows = await target.pool.query(
+      'SELECT tenant,kind,name,ref FROM pointers ORDER BY tenant,kind,name',
+    );
+    for (const row of pointerRows.rows) {
+      const referenced = await target.get(
+        row.tenant,
+        row.kind === 'release' ? 'spec' : row.kind,
+        row.ref,
+      );
+      if (!referenced)
+        throw new Error(`migration_pointer_target_missing:${row.tenant}/${row.kind}/${row.name}`);
+    }
     const audit = await target.pool.query(
       "SELECT count(*) FROM events e JOIN sessions s ON s.tenant=e.tenant AND s.id=e.session WHERE s.kind='audit'",
     );
