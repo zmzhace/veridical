@@ -77,7 +77,6 @@ export class PostgresJobStore implements AsyncJobStore {
     return this.ledger.enqueue(tenant, actor, kind, idempotencyKey, args, session);
   }
   async enqueue(job: any, idempotencyKey: string) {
-    const existing = await this.ledger.job(job.tenant, job.id);
     const created = await this.ledger.enqueue(
       job.tenant,
       job.actor,
@@ -86,7 +85,9 @@ export class PostgresJobStore implements AsyncJobStore {
       job.args,
       job.session,
     );
-    return { id: created.id, duplicate: Boolean(existing) };
+    // The ledger resolves idempotency inside its transaction and may return a
+    // previously persisted job with a different id than this delivery envelope.
+    return { id: created.id, duplicate: created.id !== job.id };
   }
   async claim(owner: string, leaseMs: number) {
     const job = await this.ledger.claim(owner, leaseMs);
