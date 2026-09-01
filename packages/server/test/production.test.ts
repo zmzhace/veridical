@@ -145,6 +145,19 @@ test('production is authenticated, has no research routes, and never trusts a ca
   expect(response.headers['access-control-allow-origin']).toBeUndefined();
   expect(response.headers['cache-control']).toBe('no-store');
 });
+test('production capabilities expose only configured models and registered tools', async () => {
+  const response = await request('viewer', 'GET', '/v1/capabilities');
+  expect(response.statusCode).toBe(200);
+  expect(response.json()).toMatchObject({
+    models: [{ provider: 'fixture', model: 'fixture-model', configured: true }],
+    tools: expect.arrayContaining([
+      expect.objectContaining({ name: 'finish', approved: true }),
+      expect.objectContaining({ name: 'echo', approved: true }),
+    ]),
+    mcp_servers: [],
+    skills: [],
+  });
+});
 test('revoked tokens remain revoked and admin cannot revoke another tenant token', async () => {
   expect(
     (
