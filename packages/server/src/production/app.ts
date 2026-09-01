@@ -23,6 +23,7 @@ import { RedisJobQueue } from './redis-queue';
 import { buildLedger, buildObjectStore } from './storage';
 import { exportGRPO, projectTrajectory, trajectoryJsonl } from '@veridical/replay';
 import { createMcpProductionTool, type McpRuntimeConfig } from './mcp-runtime';
+import type { KnowledgePort } from '@veridical/knowledge';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -55,6 +56,7 @@ export async function buildProductionApp(options: {
   providers?: Map<string, LLMProvider>;
   tools?: ProductionTool[];
   mcpTools?: McpRuntimeConfig[];
+  knowledgeBackends?: Map<string, KnowledgePort>;
   objectStore?: import('./object-store').S3ObjectStore;
   jobs?: JobStore;
   asyncJobs?: AsyncJobStore;
@@ -92,6 +94,7 @@ export async function buildProductionApp(options: {
     if (!providers.has(provider.name)) throw new Error('provider not configured');
   const db: any = await buildLedger(config, options.dataKey, options.auditKey);
   const objectStore = options.objectStore ?? buildObjectStore(config);
+  const knowledgeBackends = options.knowledgeBackends ?? new Map<string, KnowledgePort>();
   const knowledgeSearchTool: ProductionTool = {
     name: 'knowledge_search',
     version: '1.0.0',
@@ -118,6 +121,16 @@ export async function buildProductionApp(options: {
         const backend = await db.get(context.tenant, 'knowledge_backend', input.backend_id);
         if (!backend || backend.status !== 'approved')
           throw new Fault(409, 'knowledge_backend_not_approved');
+        const adapter = knowledgeBackends.get(input.backend_id);
+        if (adapter) {
+          const result = await adapter.search({
+            organization_id: context.tenant,
+            project_id: input.project_id,
+            query: input.query,
+            limit: input.limit,
+          });
+          return result.hits;
+        }
         if (backend.body?.type !== 'native')
           throw new Fault(501, 'knowledge_backend_runtime_unavailable', input.backend_id);
       }
@@ -1047,8 +1060,24 @@ export async function buildProductionApp(options: {
       const backend = await db.get(req.principal.tenant, 'knowledge_backend', query.backend_id);
       if (!backend || backend.status !== 'approved')
         throw new Fault(409, 'knowledge_backend_not_approved');
-      if (backend.body?.type !== 'native')
+      if (backend.body?.type !== 'native' && !knowledgeBackends.has(query.backend_id))
         throw new Fault(501, 'knowledge_backend_runtime_unavailable', query.backend_id);
+    }
+    if (query.backend_id && knowledgeBackends.has(query.backend_id)) {
+      const result = await knowledgeBackends.get(query.backend_id)!.search({
+        organization_id: req.principal.tenant,
+        project_id: query.project_id,
+        query: query.q,
+        limit: query.limit,
+      });
+      await db.audit(req.principal.tenant, req.principal.actor, 'knowledge.search', {
+        project_id: query.project_id,
+        backend_id: query.backend_id,
+        query_hash: createHash('sha256').update(query.q).digest('hex'),
+        count: result.hits.length,
+        request_id: req.id,
+      });
+      return result.hits;
     }
     const terms = query.q.toLowerCase().split(/\s+/).filter(Boolean);
     const files = await db.list(req.principal.tenant, 'knowledge_file', 100, 0);
