@@ -9,6 +9,7 @@
     "test:regression": "pnpm -r test && pnpm build && node packages/server/scripts/smoke-production.mjs",
     "test:production": "pnpm --filter @veridical/server test:production",
     "test:production:postgres": "pnpm --filter @veridical/server test:production:postgres",
+    "test:production:live": "pnpm --filter @veridical/server test:production:live",
     "test:infrastructure": "pnpm --filter @veridical/server test:infrastructure",
     "test:llm:live": "pnpm -F @veridical/server test:llm:live",
     "dev": "pnpm -r --parallel -F @veridical/server -F @veridical/web dev",
