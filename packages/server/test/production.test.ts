@@ -180,6 +180,43 @@ test('production memories use candidate approval and tenant-scoped deletion', as
   });
   expect((await request('viewer', 'GET', '/v1/memories?project_id=proj-a')).json()).toHaveLength(0);
 });
+test('production skills are immutable versioned artifacts requiring approval', async () => {
+  const created = await request('developer', 'POST', '/v1/skills', {
+    name: 'research',
+    version: '1.0.0',
+    description: 'research workflow',
+    content: '# Research\nUse cited sources.',
+    tool_dependencies: ['echo'],
+  });
+  expect(created.statusCode).toBe(201);
+  expect(created.json()).toMatchObject({ id: 'research@1.0.0', status: 'draft' });
+  expect(
+    (
+      await request('reviewer', 'POST', '/v1/skills/research@1.0.0/decision', {
+        status: 'approved',
+      })
+    ).statusCode,
+  ).toBe(200);
+  const listed = await request('viewer', 'GET', '/v1/skills');
+  expect(listed.json()).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        id: 'research@1.0.0',
+        status: 'approved',
+        content_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    ]),
+  );
+  expect(
+    (
+      await request('developer', 'POST', '/v1/skills', {
+        name: 'research',
+        version: '1.0.0',
+        content: 'changed',
+      })
+    ).statusCode,
+  ).toBe(409);
+});
 test('revoked tokens remain revoked and admin cannot revoke another tenant token', async () => {
   expect(
     (

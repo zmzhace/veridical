@@ -395,6 +395,82 @@ export async function buildProductionApp(options: {
     });
     return { deleted: true, id };
   });
+  const SkillInput = z
+    .object({
+      name: Key,
+      version: z.string().min(1).max(80),
+      description: z.string().max(2000).default(''),
+      content: z.string().min(1).max(100_000),
+      tool_dependencies: z.array(Key).max(100).default([]),
+      source: z.string().max(500).default('local'),
+    })
+    .strict();
+  app.get('/v1/skills', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
+    const rows = await db.list(req.principal.tenant, 'skill', 200, 0);
+    const result = rows
+      .filter((row: any) => row?.status !== 'deleted')
+      .map((row: any) => ({
+        ...row.body,
+        id: row.key,
+        status: row.status,
+        content_hash: row.digest,
+      }));
+    await db.audit(req.principal.tenant, req.principal.actor, 'skill.list', {
+      count: result.length,
+      request_id: req.id,
+    });
+    return result;
+  });
+  app.post('/v1/skills', async (req, reply) => {
+    requireRole(req.principal, 'developer', 'reviewer');
+    const input = SkillInput.parse(req.body);
+    const id = `${input.name}@${input.version}`;
+    if (await db.get(req.principal.tenant, 'skill', id)) throw new Fault(409, 'skill_exists');
+    const record = await db.put(
+      req.principal.tenant,
+      'skill',
+      id,
+      input,
+      req.principal.actor,
+      'draft',
+    );
+    await db.audit(req.principal.tenant, req.principal.actor, 'skill.created', {
+      skill_id: id,
+      content_hash: record.digest,
+      request_id: req.id,
+    });
+    return reply
+      .code(201)
+      .send({ ...input, id, status: record.status, content_hash: record.digest });
+  });
+  app.post('/v1/skills/:id/decision', async (req) => {
+    requireRole(req.principal, 'reviewer', 'publisher');
+    const { id } = z.object({ id: z.string().min(3).max(160) }).parse(req.params);
+    const decision = z
+      .object({ status: z.enum(['approved', 'deprecated', 'revoked']) })
+      .strict()
+      .parse(req.body);
+    const current = await db.get(req.principal.tenant, 'skill', id);
+    if (!current || current.status === 'deleted') throw new Fault(404, 'skill_not_found');
+    const updated = await db.transition(
+      req.principal.tenant,
+      'skill',
+      id,
+      decision.status,
+      {
+        ...current.meta,
+        decided_at: new Date().toISOString(),
+      },
+      req.principal.actor,
+    );
+    await db.audit(req.principal.tenant, req.principal.actor, 'skill.decision', {
+      skill_id: id,
+      status: decision.status,
+      request_id: req.id,
+    });
+    return { ...updated.body, id, status: updated.status, content_hash: updated.digest };
+  });
   app.get('/v1/specs', async (req) => {
     requireRole(req.principal, 'viewer', 'developer', 'reviewer', 'publisher');
     const page = Page.parse(req.query);
