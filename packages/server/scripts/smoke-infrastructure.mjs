@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { migratePostgres, probePostgres, probeRedis } from '../src/production/storage.ts';
 import { S3ObjectStore } from '../src/production/object-store.ts';
 import { PostgresTraceLedger } from '../src/production/postgres-ledger.ts';
+import { RedisJobQueue } from '../src/production/redis-queue.ts';
 
 const postgres =
   process.env.VERIDICAL_POSTGRES_URL ??
@@ -21,6 +22,26 @@ if (!rd.ok) throw new Error(`redis unavailable: ${rd.error}`);
 await s3.ensureBucket();
 const trace = new PostgresTraceLedger(postgres, Buffer.alloc(32, 7), Buffer.alloc(32, 9));
 const tenant = `infra_${randomUUID().slice(0, 8)}`;
+const queue = new RedisJobQueue(redis, `veridical:infra:${randomUUID()}`);
+const duplicateKey = `duplicate_${randomUUID()}`;
+const duplicateJobs = await Promise.all(
+  ['a', 'b'].map((suffix) =>
+    queue.enqueue(
+      {
+        id: `redis-${suffix}-${randomUUID()}`,
+        tenant,
+        actor: 'smoke',
+        kind: 'run',
+        args: {},
+        created: Date.now(),
+      },
+      duplicateKey,
+    ),
+  ),
+);
+if (duplicateJobs[0].id !== duplicateJobs[1].id || !duplicateJobs.some((item) => item.duplicate))
+  throw new Error('redis duplicate enqueue is not idempotent');
+await queue.close();
 const traceSession = `infra_${randomUUID()}`;
 await trace.createSession(tenant, traceSession);
 await trace.append(tenant, traceSession, {

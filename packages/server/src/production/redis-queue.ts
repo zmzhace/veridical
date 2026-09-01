@@ -38,27 +38,35 @@ export class RedisJobQueue implements AsyncJobStore {
     const idem = this.key(`idem:${job.tenant}:${idempotencyKey}`);
     const existing = await this.redis.get(idem);
     if (existing) return { id: existing, duplicate: true };
-    const multi = this.redis.multi();
-    multi.set(idem, job.id, 'EX', 86400, 'NX');
-    multi.hset(this.key(`job:${job.id}`), {
-      id: job.id,
-      tenant: job.tenant,
-      actor: job.actor,
-      kind: job.kind,
-      args: JSON.stringify(job.args),
-      created: String(job.created),
-      ...(job.session ? { session: job.session } : {}),
-      deadline: job.deadline === undefined ? '' : String(job.deadline),
-      state: 'queued',
-    });
-    multi.zadd(this.key('ready'), job.created, job.id);
-    const result = await multi.exec();
-    if (!result || result[0]?.[1] !== 'OK') {
-      const id = await this.redis.get(idem);
-      if (id) return { id, duplicate: true };
-      throw new Error('redis_enqueue_failed');
-    }
-    return { id: job.id, duplicate: false };
+    const result = await this.redis.eval(
+      `
+      local existing = redis.call('GET', KEYS[1])
+      if existing then return {0, existing} end
+      redis.call('SET', KEYS[1], ARGV[1], 'EX', 86400)
+      redis.call('HSET', KEYS[2],
+        'id', ARGV[1], 'tenant', ARGV[2], 'actor', ARGV[3], 'kind', ARGV[4],
+        'args', ARGV[5], 'created', ARGV[6], 'session', ARGV[7],
+        'deadline', ARGV[8], 'state', 'queued')
+      redis.call('ZADD', KEYS[3], ARGV[6], ARGV[1])
+      return {1, ARGV[1]}
+      `,
+      3,
+      idem,
+      this.key(`job:${job.id}`),
+      this.key('ready'),
+      job.id,
+      job.tenant,
+      job.actor,
+      job.kind,
+      JSON.stringify(job.args),
+      String(job.created),
+      job.session ?? '',
+      job.deadline === undefined ? '' : String(job.deadline),
+    );
+    if (!Array.isArray(result) || result.length !== 2) throw new Error('redis_enqueue_failed');
+    const [created, id] = result;
+    if (created === 1) return { id: String(id), duplicate: false };
+    return { id: String(id), duplicate: true };
   }
   async claim(
     owner: string,
