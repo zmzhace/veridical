@@ -101,6 +101,7 @@ export async function buildProductionApp(options: {
       project_id: Key,
       query: z.string().min(1).max(1000),
       limit: z.number().int().min(1).max(20).default(8),
+      backend_id: z.string().min(3).max(160).optional(),
     }),
     execute: async (args, context) => {
       const input = z
@@ -108,8 +109,14 @@ export async function buildProductionApp(options: {
           project_id: Key,
           query: z.string().min(1).max(1000),
           limit: z.number().int().min(1).max(20).default(8),
+          backend_id: z.string().min(3).max(160).optional(),
         })
         .parse(args);
+      if (input.backend_id) {
+        const backend = await db.get(context.tenant, 'knowledge_backend', input.backend_id);
+        if (!backend || backend.status !== 'approved')
+          throw new Fault(409, 'knowledge_backend_not_approved');
+      }
       const terms = input.query.toLowerCase().split(/\s+/).filter(Boolean);
       const files = await db.list(context.tenant, 'knowledge_file', 200, 0);
       return files
