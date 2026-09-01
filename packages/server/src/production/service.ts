@@ -180,10 +180,21 @@ export class ProductionService {
   private async persistArtifactObject(tenant: string, artifact: Artifact) {
     if (!this.objectStore) return;
     const body = Buffer.from(JSON.stringify(artifact.body));
-    await this.objectStore.put(
-      `tenants/${tenant}/artifacts/${artifact.key}/${artifact.digest}.json`,
-      body,
-      'application/json',
+    const key = `tenants/${tenant}/artifacts/${artifact.key}/${artifact.digest}.json`;
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        await this.objectStore.put(key, body, 'application/json');
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 50 * 2 ** attempt));
+      }
+    }
+    throw new Fault(
+      503,
+      'artifact_object_persist_failed',
+      lastError instanceof Error ? lastError.message : undefined,
     );
   }
   environment(spec: AgentSpec) {
