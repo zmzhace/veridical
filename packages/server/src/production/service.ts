@@ -90,8 +90,21 @@ export class ProductionService {
     if (!artifact) throw new Fault(404, 'spec_not_found');
     return artifact;
   }
+  private async assertSkillsManaged(tenant: string, spec: AgentSpec) {
+    for (const skill of spec.skills ?? []) {
+      const id = `${skill.name}@${skill.version}`;
+      const registered = (await (this.db as any).get(tenant, 'skill', id)) as
+        | Artifact<{ content?: string }>
+        | undefined;
+      if (!registered || registered.status !== 'approved')
+        throw new Fault(409, 'skill_not_approved_for_release', id);
+      if (skill.content_hash && digest(registered.body.content ?? '') !== skill.content_hash)
+        throw new Fault(409, 'skill_content_hash_mismatch', id);
+    }
+  }
   private async assertApprovedManaged(tenant: string, ref: string) {
     const spec = await this.specManaged(tenant, ref);
+    await this.assertSkillsManaged(tenant, spec.body);
     if (
       spec.status !== 'approved' ||
       spec.meta.environment !== this.environment(spec.body) ||
@@ -390,6 +403,7 @@ export class ProductionService {
   private async approveManaged(p: Principal, ref: string, reason: string) {
     const spec = await (this.db as any).get(p.tenant, 'spec', ref);
     if (!spec) throw new Fault(404, 'spec_not_found');
+    await this.assertSkillsManaged(p.tenant, spec.body);
     if (spec.author === p.actor) throw new Fault(403, 'independent_reviewer_required');
     if (spec.status !== 'evaluated') throw new Fault(409, 'evaluated_release_required');
     const evidence = spec.meta.evaluation
@@ -449,6 +463,7 @@ export class ProductionService {
   ) {
     const spec = await (this.db as any).get(p.tenant, 'spec', ref);
     if (!spec) throw new Fault(404, 'spec_not_found');
+    await this.assertSkillsManaged(p.tenant, spec.body);
     if (spec.status !== 'approved') throw new Fault(409, 'release_not_approved');
     if (spec.body.name !== name) throw new Fault(422, 'release_name_mismatch');
     await (this.db as any).point(
@@ -530,6 +545,7 @@ export class ProductionService {
     const spec = await (this.db as any).get(p.tenant, 'spec', ref);
     if (!spec || spec.status !== 'approved')
       throw new Fault(409, 'release_not_approved_for_environment');
+    await this.assertSkillsManaged(p.tenant, spec.body);
     return this.enqueueManaged(
       p.tenant,
       p.actor,
