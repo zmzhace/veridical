@@ -200,6 +200,15 @@ async function importAll() {
     }
     report.tenants = [...tenantSet].sort();
     report.source_hash = sourceHash.digest('hex');
+    report.migration_hash = createHash('sha256')
+      .update(
+        JSON.stringify({
+          source_hash: report.source_hash,
+          counts: report.counts,
+          tenants: report.tenants,
+        }),
+      )
+      .digest('hex');
     await client.query(
       `UPDATE migration_checkpoints SET status='completed',tenants=$2::jsonb,counts=$3::jsonb,source_hash=$4,completed_at=now() WHERE id=$1`,
       [id, JSON.stringify(report.tenants), JSON.stringify(report.counts), report.source_hash],

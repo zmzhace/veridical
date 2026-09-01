@@ -92,6 +92,7 @@ const env = {
 await run([], env);
 const migrated = JSON.parse(await readFile(report, 'utf8'));
 assert.equal(migrated.ok, true);
+assert.match(migrated.migration_hash, /^[a-f0-9]{64}$/);
 assert.equal(migrated.counts.sessions, 2); // run session plus immutable audit session
 assert.ok(migrated.counts.events >= 2); // run/start and audit lifecycle events
 assert.equal(migrated.counts.artifacts, 1);
