@@ -1766,7 +1766,7 @@ export async function buildProductionApp(options: {
       (session: any) =>
         session.kind === 'run' && (session.ref === name || session.ref?.startsWith(`${name}@`)),
     );
-    return Promise.all(
+    const result = await Promise.all(
       matching.map(async (session: any) => {
         const events = await db.read(req.principal.tenant, session.id);
         const turnEnds = events.filter((event: any) => event.type === 'turn/end');
@@ -1786,6 +1786,14 @@ export async function buildProductionApp(options: {
         };
       }),
     );
+    await db.audit(req.principal.tenant, req.principal.actor, 'tasks.list', {
+      agent: name,
+      offset: page.offset,
+      limit: page.limit,
+      count: result.length,
+      request_id: req.id,
+    });
+    return result;
   });
   app.get('/v1/tasks/:id', async (req) => {
     requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer');
