@@ -542,7 +542,14 @@ export class ProductionService {
   }
   run(
     p: Principal,
-    input: { name: string; channel: string; prompt: string; project_id?: string; session?: string },
+    input: {
+      name: string;
+      channel: string;
+      prompt: string;
+      project_id?: string;
+      session?: string;
+      approval_ids?: Record<string, string>;
+    },
     idem: string,
   ) {
     requireRole(p, 'operator');
@@ -561,7 +568,13 @@ export class ProductionService {
       p.actor,
       'run',
       idem,
-      { ref, prompt: input.prompt, project_id: input.project_id, credential: p.tokenHash },
+      {
+        ref,
+        prompt: input.prompt,
+        project_id: input.project_id,
+        approval_ids: input.approval_ids,
+        credential: p.tokenHash,
+      },
       input.session,
     );
     this.kick();
@@ -569,7 +582,14 @@ export class ProductionService {
   }
   private async runManaged(
     p: Principal,
-    input: { name: string; channel: string; prompt: string; project_id?: string; session?: string },
+    input: {
+      name: string;
+      channel: string;
+      prompt: string;
+      project_id?: string;
+      session?: string;
+      approval_ids?: Record<string, string>;
+    },
     idem: string,
   ) {
     await this.checkCapacityManaged();
@@ -590,7 +610,13 @@ export class ProductionService {
       p.actor,
       'run',
       idem,
-      { ref, prompt: input.prompt, project_id: input.project_id, credential: p.tokenHash },
+      {
+        ref,
+        prompt: input.prompt,
+        project_id: input.project_id,
+        approval_ids: input.approval_ids,
+        credential: p.tokenHash,
+      },
       input.session,
     );
   }
@@ -921,6 +947,7 @@ export class ProductionService {
       config: this.config,
       providers: this.providers,
       tools: this.tools,
+      approvalIds: job.args.approval_ids,
       resolveAgent: async (ref) => {
         const [name, version] = ref.split('@');
         const key = version ? `${name}@${version}` : ref;

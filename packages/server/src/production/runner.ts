@@ -125,7 +125,6 @@ export function validateSpec(
   for (const entry of spec.tools) {
     const tool = tools.find((t) => t.name === entry.name);
     if (!tool || tool.readOnly !== true) throw new Fault(422, 'unregistered_or_mutating_tool');
-    if (entry.access === 'ask') throw new Fault(422, 'interactive_tool_approval_not_supported');
   }
   if (new Set(spec.flow.stages?.map((s) => s.id)).size !== (spec.flow.stages?.length ?? 0))
     throw new Fault(422, 'duplicate_stage');
@@ -249,7 +248,7 @@ export function messagesFrom(
 }
 
 export interface ExecuteTurnOptions {
-  ledger: Pick<Ledger, 'assertFence' | 'read' | 'append'> & {
+  ledger: Pick<Ledger, 'assertFence' | 'read' | 'append' | 'get'> & {
     assertFence(tenant: string, fence: Fence): void | Promise<void>;
     read(
       tenant: string,
@@ -275,6 +274,8 @@ export interface ExecuteTurnOptions {
   checkRelease: () => void | Promise<void>;
   /** Resolve a version-pinned child Agent Spec from the durable registry. */
   resolveAgent?: (ref: string) => Promise<AgentSpec | undefined>;
+  /** Approved runtime requests keyed by tool name for a resumed turn. */
+  approvalIds?: Record<string, string>;
   invocationInterceptor?: InvocationInterceptor;
 }
 
@@ -604,6 +605,7 @@ async function executeTurnInternal(options: ExecuteTurnOptions, recorder: Invoca
             const allowed = spec.tools.some(
               (t) => t.name === decision.tool!.name && t.access === 'allow',
             );
+            const declared = spec.tools.find((t) => t.name === decision.tool!.name);
             const futureGate =
               stage &&
               stages.some((s) => s.gate?.tool_called === decision.tool!.name) &&
@@ -618,7 +620,21 @@ async function executeTurnInternal(options: ExecuteTurnOptions, recorder: Invoca
               allowed: !!tool && allowed && !futureGate,
               spec_digest: digest(spec),
             });
-            if (!tool || !allowed || futureGate) {
+            let approval: any;
+            if (declared?.access === 'ask') {
+              const approvalId = options.approvalIds?.[decision.tool!.name];
+              if (!approvalId) throw new Fault(409, 'approval_required', decision.tool!.name);
+              approval = await ledger.get?.(job.tenant, 'approval_request', approvalId);
+              if (
+                !approval ||
+                approval.status !== 'approved' ||
+                approval.body?.tool !== decision.tool!.name ||
+                approval.body?.session !== session ||
+                approval.body?.args_hash !== digest(decision.tool!.args)
+              )
+                throw new Fault(403, 'approval_mismatch');
+            }
+            if (!tool || (!allowed && !approval) || futureGate) {
               await toolRecord(
                 'tool.result',
                 {

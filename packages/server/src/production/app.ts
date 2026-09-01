@@ -1823,6 +1823,7 @@ export async function buildProductionApp(options: {
         prompt: z.string().min(1).max(8000),
         project_id: Key.optional(),
         session: Key.optional(),
+        approval_ids: z.record(Key, Key).optional(),
       })
       .strict()
       .parse(req.body);
@@ -1835,13 +1836,20 @@ export async function buildProductionApp(options: {
       .object({
         prompt: z.string().min(1).max(8000),
         project_id: Key.optional(),
+        approval_ids: z.record(Key, Key).optional(),
         channel: z.enum(['production', 'canary']).default('production'),
       })
       .strict()
       .parse(req.body);
     const task = await service.run(
       req.principal,
-      { name, channel: body.channel, prompt: body.prompt, project_id: body.project_id },
+      {
+        name,
+        channel: body.channel,
+        prompt: body.prompt,
+        project_id: body.project_id,
+        approval_ids: body.approval_ids,
+      },
       idem(req.headers),
     );
     return reply.code(202).send(jobView(task));
@@ -1910,7 +1918,11 @@ export async function buildProductionApp(options: {
     requireRole(req.principal, 'operator');
     const { id } = z.object({ id: Key }).parse(req.params);
     const body = z
-      .object({ prompt: z.string().min(1).max(8000), project_id: Key.optional() })
+      .object({
+        prompt: z.string().min(1).max(8000),
+        project_id: Key.optional(),
+        approval_ids: z.record(Key, Key).optional(),
+      })
       .strict()
       .parse(req.body);
     const session = await db.session(req.principal.tenant, id);
@@ -1924,6 +1936,7 @@ export async function buildProductionApp(options: {
         channel: 'production',
         prompt: body.prompt,
         project_id: body.project_id,
+        approval_ids: body.approval_ids,
         session: id,
       },
       idem(req.headers),

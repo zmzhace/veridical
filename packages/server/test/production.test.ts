@@ -898,13 +898,27 @@ test('audit data encrypted at rest; backup reopens and append-only guards reject
   expect(() => env.db.verify('acme', job.session)).toThrow('broken audit chain');
 });
 test('guarded profile rejects unsupported or undeclared tools and unknown model configuration', async () => {
-  for (const spec of [
-    yaml().replace('name: echo', 'name: shell'),
-    yaml().replace('access: allow', 'access: ask'),
-    yaml().replace('fixture-model', 'arbitrary-model'),
-  ]) {
-    expect((await request('developer', 'POST', '/v1/specs', { yaml: spec })).statusCode).toBe(422);
-  }
+  expect(
+    (
+      await request('developer', 'POST', '/v1/specs', {
+        yaml: yaml().replace('name: echo', 'name: shell'),
+      })
+    ).statusCode,
+  ).toBe(422);
+  expect(
+    (
+      await request('developer', 'POST', '/v1/specs', {
+        yaml: yaml().replace('fixture-model', 'arbitrary-model'),
+      })
+    ).statusCode,
+  ).toBe(422);
+  expect(
+    (
+      await request('developer', 'POST', '/v1/specs', {
+        yaml: yaml().replace('access: allow', 'access: ask'),
+      })
+    ).statusCode,
+  ).toBe(201);
 });
 test('production replay verifies the checkpoint and reproduces history with zero live calls', async () => {
   await publish();
