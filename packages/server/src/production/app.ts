@@ -113,6 +113,7 @@ export async function buildProductionApp(options: {
   const db: any = await buildLedger(config, options.dataKey, options.auditKey);
   const objectStore = options.objectStore ?? buildObjectStore(config);
   const knowledgeBackends = new Map(options.knowledgeBackends ?? []);
+  const fixedMcpBindings = options.mcpTools ?? config.mcpTools;
   const knowledgeSearchTool: ProductionTool = {
     name: 'knowledge_search',
     version: '1.0.0',
@@ -139,7 +140,14 @@ export async function buildProductionApp(options: {
         const backend = await db.get(context.tenant, 'knowledge_backend', input.backend_id);
         if (!backend || backend.status !== 'approved')
           throw new Fault(409, 'knowledge_backend_not_approved');
-        const adapter = knowledgeBackends.get(input.backend_id);
+        let adapter = knowledgeBackends.get(input.backend_id);
+        if (!adapter && backend.body?.type === 'gbrain' && backend.body.server_ref) {
+          const candidate = createMcpKnowledgeAdapter(backend.body.server_ref, fixedMcpBindings);
+          if (fixedMcpBindings.some((binding) => binding.id === backend.body.server_ref)) {
+            knowledgeBackends.set(input.backend_id, candidate);
+            adapter = candidate;
+          }
+        }
         if (adapter) {
           const result = await adapter.search({
             organization_id: context.tenant,
@@ -1078,8 +1086,25 @@ export async function buildProductionApp(options: {
       const backend = await db.get(req.principal.tenant, 'knowledge_backend', query.backend_id);
       if (!backend || backend.status !== 'approved')
         throw new Fault(409, 'knowledge_backend_not_approved');
-      if (backend.body?.type !== 'native' && !knowledgeBackends.has(query.backend_id))
+      if (
+        backend.body?.type !== 'native' &&
+        !knowledgeBackends.has(query.backend_id) &&
+        !fixedMcpBindings.some((binding) => binding.id === backend.body?.server_ref)
+      )
         throw new Fault(501, 'knowledge_backend_runtime_unavailable', query.backend_id);
+    }
+    if (query.backend_id) {
+      const backend = await db.get(req.principal.tenant, 'knowledge_backend', query.backend_id);
+      if (
+        backend?.body?.type === 'gbrain' &&
+        backend.body.server_ref &&
+        !knowledgeBackends.has(query.backend_id)
+      ) {
+        knowledgeBackends.set(
+          query.backend_id,
+          createMcpKnowledgeAdapter(backend.body.server_ref, fixedMcpBindings),
+        );
+      }
     }
     if (query.backend_id && knowledgeBackends.has(query.backend_id)) {
       const result = await knowledgeBackends.get(query.backend_id)!.search({
