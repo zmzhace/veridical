@@ -2164,6 +2164,26 @@ export async function buildProductionApp(options: {
     }
     return reply.type('application/x-ndjson').send(exportBytes);
   });
+  app.get('/v1/tasks/:id/trajectory/exports/:format/:hash', async (req, reply) => {
+    const { id, format, hash } = z
+      .object({
+        id: Key,
+        format: z.enum(['jsonl', 'grpo']),
+        hash: z.string().regex(/^[a-f0-9]{64}$/),
+      })
+      .parse(req.params);
+    await visibleSession(req.principal, id);
+    if (!objectStore) throw new Fault(503, 's3_object_store_required');
+    const objectKey = `tenants/${req.principal.tenant}/exports/${id}/${hash}.${format}`;
+    const bytes = await objectStore.get(objectKey);
+    await db.audit(req.principal.tenant, req.principal.actor, 'trajectory.export.read', {
+      session: id,
+      format,
+      hash,
+      request_id: req.id,
+    });
+    return reply.type('application/x-ndjson').send(Buffer.from(bytes));
+  });
   app.get('/v1/runs/:id/provenance', async (req) => {
     const { id } = z.object({ id: Key }).parse(req.params);
     await visibleSession(req.principal, id);
