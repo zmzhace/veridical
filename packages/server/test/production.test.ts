@@ -891,6 +891,9 @@ test('production provenance and replay alias enforce tenant, mode and artifact b
     path: 'root',
     run_id: expect.any(String),
   });
+  const taskInvocations = await request('viewer', 'GET', `/v1/tasks/${source.session}/invocations`);
+  expect(taskInvocations.statusCode).toBe(200);
+  expect(taskInvocations.json().invocations).toHaveLength(invocations.json().invocations.length);
   const trajectory = await request('viewer', 'GET', `/v1/sessions/${source.session}/trajectory`);
   expect(trajectory.statusCode).toBe(200);
   expect(trajectory.json().steps.length).toBeGreaterThan(0);
