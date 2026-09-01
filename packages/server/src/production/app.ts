@@ -96,7 +96,7 @@ export async function buildProductionApp(options: {
     config.storage.database === 'postgres' ? new PostgresJobStore(db) : options.jobs;
   const registeredTools = [
     ...(options.tools ?? safeTools),
-    ...(options.mcpTools ?? []).map(createMcpProductionTool),
+    ...(options.mcpTools ?? config.mcpTools).map(createMcpProductionTool),
   ];
   const service = new ProductionService(
     db as any,

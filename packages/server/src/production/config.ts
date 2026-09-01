@@ -81,6 +81,28 @@ export const ProductionConfigSchema = z
       )
       .min(1)
       .max(20),
+    mcpTools: z
+      .array(
+        z
+          .object({
+            id: z.string().regex(/^[A-Za-z0-9_.@:-]{1,160}$/),
+            transport: z.enum(['streamable-http', 'stdio']),
+            endpoint: z.string().url().optional(),
+            command: z.string().min(1).max(500).optional(),
+            args: z.array(z.string().max(500)).max(32).default([]),
+            credentialRef: Key.optional(),
+            toolName: Key,
+          })
+          .strict()
+          .superRefine((value, ctx) => {
+            if (value.transport === 'streamable-http' && !value.endpoint)
+              ctx.addIssue({ code: 'custom', path: ['endpoint'], message: 'endpoint required' });
+            if (value.transport === 'stdio' && !value.command)
+              ctx.addIssue({ code: 'custom', path: ['command'], message: 'command required' });
+          }),
+      )
+      .max(200)
+      .default([]),
     timeoutMs: z.number().int().min(1000).max(300000).default(60000),
     concurrency: z.number().int().min(1).max(4).default(2),
     maxOutputTokens: z.number().int().min(64).max(4096).default(1024),

@@ -88,4 +88,25 @@ describe('production storage profile', () => {
       }).storage.s3Bucket,
     ).toBe('veridical');
   });
+  test('validates fixed MCP tool bindings', () => {
+    expect(() =>
+      ProductionConfigSchema.parse({
+        ...base,
+        mcpTools: [{ id: 'research@1.0.0', transport: 'streamable-http', toolName: 'search' }],
+      }),
+    ).toThrow();
+    expect(
+      ProductionConfigSchema.parse({
+        ...base,
+        mcpTools: [
+          {
+            id: 'research@1.0.0',
+            transport: 'streamable-http',
+            endpoint: 'https://mcp.test',
+            toolName: 'search',
+          },
+        ],
+      }).mcpTools[0].toolName,
+    ).toBe('search');
+  });
 });
