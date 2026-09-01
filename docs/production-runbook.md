@@ -91,7 +91,26 @@ pnpm build
 - Replay miss：生产 Strict Replay 直接失败，不得自动调用 live 外部服务。
 - 数据链校验失败：停止流量，保留快照，禁止强行切换。
 
-## 6. 关闭与回滚
+## 6. 能力、轨迹与发布核验
+
+生产控制台使用以下只读接口读取服务端真实能力，不要求浏览器填写凭据：
+
+```bash
+curl -H "Authorization: Bearer $OPERATOR_TOKEN" \
+  http://127.0.0.1:8787/v1/capabilities
+curl -H "Authorization: Bearer $OPERATOR_TOKEN" \
+  http://127.0.0.1:8787/v1/releases/probe@1.0.0/manifest
+curl -H "Authorization: Bearer $OPERATOR_TOKEN" \
+  http://127.0.0.1:8787/v1/sessions/$SESSION/trajectory
+curl -H "Authorization: Bearer $REVIEWER_TOKEN" \
+  -X POST -H 'content-type: application/json' \
+  -d '{"format":"grpo","group_id":"research-v1"}' \
+  http://127.0.0.1:8787/v1/sessions/$SESSION/trajectory/export
+```
+
+`capabilities` 只返回已注册能力；`manifest` 是发布时的不可变版本快照；轨迹导出只生成训练数据，不在 Veridical 内执行训练。
+
+## 7. 关闭与回滚
 
 1. 停止入口流量。
 2. 等待 `/health/ready` 变为不可用并 drain Worker。
