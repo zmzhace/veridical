@@ -193,6 +193,19 @@ test('production supervisor records an isolated child-agent invocation path', as
   const events = env.db.read('acme', job.session);
   expect(events.some((event) => event.path === 'root/delegate:researcher')).toBe(true);
   expect(events.some((event) => event.type === 'agent.result')).toBe(true);
+  const replay = await request(
+    'operator',
+    'POST',
+    '/v1/replay',
+    { session: job.session },
+    'supervisor-replay',
+  );
+  expect(replay.statusCode).toBe(202);
+  expect((await drain(replay.json().id)).result).toMatchObject({
+    mode: 'strict',
+    identical: true,
+    degraded: false,
+  });
 });
 test('production model profile never exposes browser credentials', async () => {
   const response = await request('viewer', 'GET', '/v1/model-profile');

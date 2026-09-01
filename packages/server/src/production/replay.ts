@@ -38,8 +38,8 @@ export async function replayRecorded(options: {
   if (
     !source.length ||
     source.some((e) => e.verb === 'error') ||
-    source.filter((e) => e.type === 'user.message').length !==
-      source.filter((e) => e.type === 'turn/end').length
+    source.filter((e) => e.type === 'user.message' && !e.parent_invocation_id).length !==
+      source.filter((e) => e.type === 'turn/end' && !e.parent_invocation_id).length
   )
     throw new Fault(422, 'replay_requires_completed_successful_session');
   if (
@@ -62,7 +62,10 @@ export async function replayRecorded(options: {
     },
   };
   let turn = 0;
-  for (const event of source.filter((e) => e.type === 'user.message')) {
+  // Child-agent task prompts are recorded in the same physical session, but
+  // are not user turns. Only root-level messages drive the replay scheduler;
+  // dispatch() replays child messages through their path-scoped cursor.
+  for (const event of source.filter((e) => e.type === 'user.message' && !e.parent_invocation_id)) {
     cursor.markRoot(turn++ === 0 ? 'root' : `root/turn#${turn}`);
     await executeTurn({
       ledger: db,
