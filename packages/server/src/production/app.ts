@@ -92,10 +92,49 @@ export async function buildProductionApp(options: {
     if (!providers.has(provider.name)) throw new Error('provider not configured');
   const db: any = await buildLedger(config, options.dataKey, options.auditKey);
   const objectStore = options.objectStore ?? buildObjectStore(config);
+  const knowledgeSearchTool: ProductionTool = {
+    name: 'knowledge_search',
+    version: '1.0.0',
+    description: '在当前租户授权的知识文件中检索相关片段',
+    readOnly: true,
+    schema: z.object({
+      project_id: Key,
+      query: z.string().min(1).max(1000),
+      limit: z.number().int().min(1).max(20).default(8),
+    }),
+    execute: async (args, context) => {
+      const input = z
+        .object({
+          project_id: Key,
+          query: z.string().min(1).max(1000),
+          limit: z.number().int().min(1).max(20).default(8),
+        })
+        .parse(args);
+      const terms = input.query.toLowerCase().split(/\s+/).filter(Boolean);
+      const files = await db.list(context.tenant, 'knowledge_file', 200, 0);
+      return files
+        .filter(
+          (file: any) => file?.status === 'active' && file.body?.project_id === input.project_id,
+        )
+        .flatMap((file: any) =>
+          (file.body?.chunks ?? []).map((chunk: any) => ({
+            file_id: file.key,
+            file_name: file.body.name,
+            chunk_id: chunk.id,
+            text: chunk.text,
+            score: terms.filter((term) => chunk.text.toLowerCase().includes(term)).length,
+          })),
+        )
+        .filter((hit: any) => hit.score > 0)
+        .sort((a: any, b: any) => b.score - a.score)
+        .slice(0, input.limit);
+    },
+  };
   const durableJobs =
     config.storage.database === 'postgres' ? new PostgresJobStore(db) : options.jobs;
   const registeredTools = [
     ...(options.tools ?? safeTools),
+    knowledgeSearchTool,
     ...(options.mcpTools ?? config.mcpTools).map(createMcpProductionTool),
   ];
   const service = new ProductionService(
