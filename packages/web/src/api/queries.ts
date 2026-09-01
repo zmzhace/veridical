@@ -66,24 +66,43 @@ export const useAgentTasks = (id: string) =>
 export const useAgentDraft = (id: string) =>
   useQuery({
     queryKey: ['agent-draft', id],
-    queryFn: () => apiFetch<AgentDraft>(`/api/agents/${id}/draft`),
+    queryFn: async () => {
+      try {
+        return await apiFetch<AgentDraft>(`/v1/agents/${encodeURIComponent(id)}/draft`);
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
+        return apiFetch<AgentDraft>(`/api/agents/${id}/draft`);
+      }
+    },
     enabled: !!id,
     retry: false,
   });
 export const useSaveAgentDraft = (id: string) =>
   useMutation({
     mutationFn: (body: { graph: unknown; yaml?: string }) =>
-      apiFetch<AgentDraft>(`/api/agents/${id}/draft`, {
+      apiFetch<AgentDraft>(`/v1/agents/${encodeURIComponent(id)}/draft`, {
         method: 'PUT',
         body: JSON.stringify(body),
+      }).catch((error) => {
+        if (!canUseResearchFallback(error)) throw error;
+        return apiFetch<AgentDraft>(`/api/agents/${id}/draft`, {
+          method: 'PUT',
+          body: JSON.stringify(body),
+        });
       }),
   });
 export const usePublishAgent = (id: string) =>
   useMutation({
     mutationFn: (body: { graph: unknown; yaml: string }) =>
-      apiFetch<unknown>(`/api/agents/${id}/publish`, {
+      apiFetch<unknown>(`/v1/agents/${encodeURIComponent(id)}/publish`, {
         method: 'POST',
         body: JSON.stringify(body),
+      }).catch((error) => {
+        if (!canUseResearchFallback(error)) throw error;
+        return apiFetch<unknown>(`/api/agents/${id}/publish`, {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
       }),
   });
 export const useInvocations = (id: string) =>

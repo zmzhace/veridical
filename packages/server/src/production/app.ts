@@ -862,6 +862,59 @@ export async function buildProductionApp(options: {
     if (!artifact || artifact.status !== 'approved') throw new Fault(404, 'agent_not_found');
     return productionAgent(artifact);
   });
+  app.get('/v1/agents/:name/draft', async (req) => {
+    requireRole(req.principal, 'developer', 'reviewer', 'publisher');
+    const { name } = z.object({ name: Key }).parse(req.params);
+    const draft = await db.get(req.principal.tenant, 'agent_draft', name);
+    if (!draft) return { graph: null, revision: 0 };
+    return {
+      ...(draft.body as any),
+      revision: Number((draft.meta as any)?.revision ?? 1),
+      digest: draft.digest,
+    };
+  });
+  app.put('/v1/agents/:name/draft', async (req) => {
+    requireRole(req.principal, 'developer');
+    const { name } = z.object({ name: Key }).parse(req.params);
+    const body = z
+      .object({ graph: z.unknown(), yaml: z.string().max(32000).optional() })
+      .strict()
+      .parse(req.body);
+    const previous = await db.get(req.principal.tenant, 'agent_draft', name);
+    const revision = Number((previous?.meta as any)?.revision ?? 0) + 1;
+    const draft = await db.put(
+      req.principal.tenant,
+      'agent_draft',
+      name,
+      body,
+      req.principal.actor,
+      'draft',
+      { revision },
+    );
+    await db.audit(req.principal.tenant, req.principal.actor, 'agent_draft.updated', {
+      name,
+      revision,
+      digest: draft.digest,
+      request_id: req.id,
+    });
+    return { ...body, revision, digest: draft.digest };
+  });
+  app.post('/v1/agents/:name/publish', async (req, reply) => {
+    requireRole(req.principal, 'developer');
+    const { name } = z.object({ name: Key }).parse(req.params);
+    const body = z
+      .object({ yaml: z.string().min(1).max(32000), graph: z.unknown().optional() })
+      .strict()
+      .parse(req.body);
+    const artifact = await service.createSpec(req.principal, body.yaml);
+    if (artifact.body.name !== name) throw new Fault(409, 'agent_spec_mismatch');
+    // Publishing is intentionally a governed two-step operation in production:
+    // this endpoint creates the immutable candidate; evaluation, review and
+    // deployment remain explicit actions and cannot be bypassed by the UI.
+    return reply
+      .code(202)
+      .send({ status: 'pending_review', ref: artifact.key, digest: artifact.digest });
+  });
   app.get('/v1/releases/:ref/manifest', async (req) => {
     requireRole(req.principal, 'viewer', 'developer', 'reviewer', 'publisher');
     const { ref } = z.object({ ref: Ref }).parse(req.params);
