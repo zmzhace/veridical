@@ -663,6 +663,16 @@ test('production Task and Turn aliases reuse the pinned run session', async () =
   expect(next.statusCode).toBe(202);
   expect((await drain(next.json().id)).state).toBe('completed');
   expect((await request('viewer', 'GET', `/v1/tasks/${task.session}`)).json().turns).toBe(2);
+  const resumed = await request(
+    'operator',
+    'POST',
+    `/v1/tasks/${task.session}/resume`,
+    { approval_ids: { finish: 'approval_not_needed_for_fixture' } },
+    'task-resume-3',
+  );
+  expect(resumed.statusCode).toBe(202);
+  expect((await drain(resumed.json().id)).state).toBe('completed');
+  expect((await request('viewer', 'GET', `/v1/tasks/${task.session}`)).json().turns).toBe(3);
 });
 test('production Agent catalog and Studio draft are backed by governed artifacts', async () => {
   await publish();
