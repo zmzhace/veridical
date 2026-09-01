@@ -230,11 +230,37 @@ export interface ReplayExecution {
 }
 export const useReplayExecution = () =>
   useMutation({
-    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
-      apiFetch<ReplayExecution>(`/api/sessions/${id}/replay`, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      }),
+    mutationFn: async ({ id, body }: { id: string; body: Record<string, unknown> }) => {
+      try {
+        const created = await apiFetch<{ id: string; state: string; result?: unknown }>(
+          '/v1/replay',
+          {
+            method: 'POST',
+            headers: { 'idempotency-key': `replay-${crypto.randomUUID()}` },
+            body: JSON.stringify({ session: id, mode: body.mode ?? 'strict' }),
+          },
+        );
+        for (let attempt = 0; attempt < 600; attempt += 1) {
+          const job = await apiFetch<{ state: string; result?: unknown }>(
+            `/v1/jobs/${encodeURIComponent(created.id)}`,
+          );
+          if (job.state === 'queued' || job.state === 'running') {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            continue;
+          }
+          if (job.state !== 'completed')
+            throw new Error(String((job.result as any)?.code ?? job.state));
+          return (job.result ?? { mode: body.mode ?? 'strict' }) as ReplayExecution;
+        }
+        throw new Error('回放等待超时');
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
+        return apiFetch<ReplayExecution>(`/api/sessions/${id}/replay`, {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+      }
+    },
   });
 export const useSpecs = () =>
   useQuery({ queryKey: ['specs'], queryFn: () => apiFetch<AgentSpec[]>('/api/specs'), retry: 1 });
