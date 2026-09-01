@@ -45,6 +45,8 @@ const duplicateClaim = await queue.claim('duplicate-worker', 30_000);
 if (!duplicateClaim || duplicateClaim.id !== duplicateJobs[0].id)
   throw new Error('redis duplicate delivery mismatch');
 await queue.finish(duplicateClaim.id, 'duplicate-worker', 'completed', { duplicate: true });
+if (await queue.finish(duplicateClaim.id, 'duplicate-worker', 'completed', { overwrite: true }))
+  throw new Error('redis terminal job was mutable');
 const redisLeaseJob = await queue.enqueue(
   {
     id: `redis-lease-${randomUUID()}`,

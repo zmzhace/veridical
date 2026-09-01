@@ -173,7 +173,7 @@ export class RedisJobQueue implements AsyncJobStore {
     const changed = await this.redis.eval(
       `
       local job = KEYS[1] .. ':job:' .. ARGV[1]
-      if redis.call('HGET', job, 'owner') ~= ARGV[2] then return 0 end
+      if redis.call('HGET', job, 'state') ~= 'running' or redis.call('HGET', job, 'owner') ~= ARGV[2] then return 0 end
       redis.call('HSET', job, 'state', ARGV[3], 'result', ARGV[4])
       redis.call('ZREM', KEYS[1] .. ':leases', ARGV[1])
       return 1
