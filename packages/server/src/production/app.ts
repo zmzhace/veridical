@@ -2007,35 +2007,6 @@ export async function buildProductionApp(options: {
     });
     return { session: id, invocations: [...invocations.values()] };
   });
-  app.get('/v1/tasks/:id/invocations', async (req) => {
-    const { id } = z.object({ id: Key }).parse(req.params);
-    await visibleSession(req.principal, id);
-    const events = await db.read(req.principal.tenant, id);
-    const invocations = new Map<string, any>();
-    for (const event of events) {
-      if (!event.invocation_id) continue;
-      const current = invocations.get(event.invocation_id) ?? {
-        invocation_id: event.invocation_id,
-        parent_invocation_id: event.parent_invocation_id,
-        path: event.path,
-        ordinal: event.ordinal,
-        attempt: event.attempt,
-        run_id: event.run_id,
-        fingerprint: event.fingerprint,
-        operation: event.type,
-        events: [],
-      };
-      current.events.push({
-        seq: event.seq,
-        type: event.type,
-        verb: event.verb,
-        payload: event.payload,
-        fingerprint: event.fingerprint,
-      });
-      invocations.set(event.invocation_id, current);
-    }
-    return { session: id, invocations: [...invocations.values()] };
-  });
   app.get('/v1/sessions/:id/trajectory', async (req) => {
     const { id } = z.object({ id: Key }).parse(req.params);
     await visibleSession(req.principal, id);
