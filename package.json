@@ -5,6 +5,7 @@
   "engines": { "node": ">=22.14.0" },
   "scripts": {
     "build": "pnpm -r build",
+    "typecheck": "pnpm -r exec tsc -p tsconfig.json --noEmit",
     "test": "pnpm -r test",
     "test:regression": "pnpm -r test && pnpm build && node packages/server/scripts/smoke-production.mjs",
     "test:production": "pnpm --filter @veridical/server test:production",
