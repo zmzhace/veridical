@@ -326,6 +326,15 @@ test('publication requires evidence, independent reviewer and publisher; version
       })
     ).statusCode,
   ).toBe(200);
+  const manifest = await request('viewer', 'GET', '/v1/releases/probe@1.0.0/manifest');
+  expect(manifest.statusCode).toBe(200);
+  expect(manifest.json()).toMatchObject({
+    spec_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+    tool_versions: expect.objectContaining({
+      echo: expect.any(Object),
+      finish: expect.any(Object),
+    }),
+  });
 });
 test('failed evaluation, changed suite and changed runtime invalidate release eligibility', async () => {
   env.service.createSpec(principal('developer'), yaml());

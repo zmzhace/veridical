@@ -3,7 +3,15 @@ import { timingSafeEqual, randomUUID, createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { LLMProvider } from '@veridical/llm';
 import { Ledger } from './database';
-import { Fault, Key, requireRole, tokenDigest, type Principal, type Job } from './contracts';
+import {
+  Fault,
+  Key,
+  digest,
+  requireRole,
+  tokenDigest,
+  type Principal,
+  type Job,
+} from './contracts';
 import { assertProductionStorage, ProductionConfigSchema, type ProductionConfig } from './config';
 import { ProductionService } from './service';
 import { SecureProvider, type ProductionTool } from './runner';
@@ -589,6 +597,45 @@ export async function buildProductionApp(options: {
     requireRole(req.principal, 'viewer', 'developer', 'reviewer', 'publisher');
     const page = Page.parse(req.query);
     return db.list(req.principal.tenant, 'spec', page.limit, page.offset);
+  });
+  app.get('/v1/releases/:ref/manifest', async (req) => {
+    requireRole(req.principal, 'viewer', 'developer', 'reviewer', 'publisher');
+    const { ref } = z.object({ ref: Ref }).parse(req.params);
+    const spec = await db.get(req.principal.tenant, 'spec', ref);
+    if (!spec || spec.status === 'revoked') throw new Fault(404, 'release_not_found');
+    const skillRows = await Promise.all(
+      (spec.body.skills ?? []).map((skill: any) =>
+        db.get(req.principal.tenant, 'skill', `${skill.name}@${skill.version}`),
+      ),
+    );
+    const mcpRows = await Promise.all(
+      (spec.body.capabilities?.mcp_servers ?? []).map((id: string) =>
+        db.get(req.principal.tenant, 'mcp_server', id),
+      ),
+    );
+    const manifest = {
+      release_artifact_hash: spec.meta.release_artifact_hash,
+      spec_hash: spec.digest,
+      loop: { engine: spec.body.flow.loop?.engine ?? 'orchestrator', version: BUILD_ID },
+      skill_hashes: skillRows.filter(Boolean).map((row: any) => row.digest),
+      tool_versions: Object.fromEntries(
+        spec.body.tools.map((entry: any) => {
+          const tool = service.tools.find((candidate) => candidate.name === entry.name);
+          return [
+            entry.name,
+            { version: tool?.version ?? 'unknown', schema_hash: tool ? digest(tool.schema) : null },
+          ];
+        }),
+      ),
+      mcp_hashes: mcpRows.filter(Boolean).map((row: any) => row.digest),
+      model: { provider: spec.body.llm.provider, model: spec.body.llm.model },
+      environment: spec.meta.environment,
+    };
+    await db.audit(req.principal.tenant, req.principal.actor, 'release.manifest_read', {
+      ref,
+      request_id: req.id,
+    });
+    return manifest;
   });
   app.get('/v1/artifacts/:kind/:key', async (req) => {
     requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
