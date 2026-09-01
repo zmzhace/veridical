@@ -391,7 +391,11 @@ export const useKnowledgeFiles = (organizationId: string, projectId: string) =>
     queryKey: ['knowledge-files', organizationId, projectId],
     queryFn: () =>
       apiFetch<KnowledgeFile[]>(
-        `/api/knowledge/files?organization_id=${encodeURIComponent(organizationId)}&project_id=${encodeURIComponent(projectId)}`,
+        `/v1/knowledge/files?project_id=${encodeURIComponent(projectId)}`,
+      ).catch(() =>
+        apiFetch<KnowledgeFile[]>(
+          `/api/knowledge/files?organization_id=${encodeURIComponent(organizationId)}&project_id=${encodeURIComponent(projectId)}`,
+        ),
       ),
     enabled: !!organizationId && !!projectId,
   });
@@ -405,7 +409,10 @@ export interface KnowledgeBackendSummary {
 export const useKnowledgeBackends = () =>
   useQuery({
     queryKey: ['knowledge-backends'],
-    queryFn: () => apiFetch<KnowledgeBackendSummary[]>('/api/knowledge/backends'),
+    queryFn: () =>
+      apiFetch<KnowledgeBackendSummary[]>('/v1/knowledge/backends').catch(() =>
+        apiFetch<KnowledgeBackendSummary[]>('/api/knowledge/backends'),
+      ),
     staleTime: 30_000,
   });
 export const useRun = () =>
