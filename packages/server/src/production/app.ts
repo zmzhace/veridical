@@ -1752,21 +1752,30 @@ export async function buildProductionApp(options: {
     const { name } = z.object({ name: Key }).parse(req.params);
     const page = Page.parse(req.query);
     const sessions = await db.listSessions(req.principal.tenant, page.limit, page.offset);
-    return sessions
-      .filter(
-        (session: any) =>
-          session.kind === 'run' && (session.ref === name || session.ref?.startsWith(`${name}@`)),
-      )
-      .map((session: any) => ({
-        session_id: session.id,
-        spec_name: name,
-        spec_version: session.ref,
-        event_count: session.seq,
-        turn_count: 0,
-        total_duration_ms: 0,
-        first_seq: session.seq ? 1 : 0,
-        last_seq: session.seq,
-      }));
+    const matching = sessions.filter(
+      (session: any) =>
+        session.kind === 'run' && (session.ref === name || session.ref?.startsWith(`${name}@`)),
+    );
+    return Promise.all(
+      matching.map(async (session: any) => {
+        const events = await db.read(req.principal.tenant, session.id);
+        const turnEnds = events.filter((event: any) => event.type === 'turn/end');
+        const durations = events.reduce(
+          (total: number, event: any) => total + Number(event.duration_ms ?? 0),
+          0,
+        );
+        return {
+          session_id: session.id,
+          spec_name: name,
+          spec_version: session.ref,
+          event_count: session.seq,
+          turn_count: turnEnds.length,
+          total_duration_ms: durations,
+          first_seq: session.seq ? 1 : 0,
+          last_seq: session.seq,
+        };
+      }),
+    );
   });
   app.get('/v1/tasks/:id', async (req) => {
     requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer');
