@@ -585,13 +585,16 @@ export async function buildProductionApp(options: {
         ordinal: event.ordinal,
         attempt: event.attempt,
         run_id: event.run_id,
+        fingerprint: event.fingerprint,
+        operation: event.type,
         events: [],
       };
       current.events.push({
         seq: event.seq,
         type: event.type,
         verb: event.verb,
-        status: event.payload,
+        payload: event.payload,
+        fingerprint: event.fingerprint,
       });
       invocations.set(event.invocation_id, current);
     }
