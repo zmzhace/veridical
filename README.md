@@ -152,10 +152,11 @@ pnpm test:production:postgres
 ```bash
 VERIDICAL_RUN_LIVE_E2E=1 \
 VERIDICAL_LIVE_E2E_RUNS=5 \
+VERIDICAL_LIVE_E2E_CONCURRENCY=2 \
 pnpm -F @veridical/server test:production:live
 ```
 
-测试会从 `.env.local` 读取 Qwen 配置，并验证 PostgreSQL、Redis、S3、发布、评估和多次运行。
+测试会从 `.env.local` 读取 Qwen 配置，并验证 PostgreSQL、Redis、S3、发布、评估和多次运行；输出每次延迟、均值、P95、成功率和并发度。并发默认是 1，压测时可逐步提高。
 
 ## SQLite → PostgreSQL 迁移
 

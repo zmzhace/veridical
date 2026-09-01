@@ -88,6 +88,10 @@ const request = (role, method, url, payload, idem) =>
     },
   });
 const runs = Number(process.env.VERIDICAL_LIVE_E2E_RUNS ?? 3);
+const concurrency = Math.max(
+  1,
+  Math.min(Number(process.env.VERIDICAL_LIVE_E2E_CONCURRENCY ?? 1), runs),
+);
 async function waitJob(id) {
   for (let i = 0; i < 1200; i += 1) {
     const job = await env.db.job('live', id);
@@ -142,31 +146,54 @@ try {
     ).statusCode,
     200,
   );
-  const latencies = [];
-  for (let i = 0; i < runs; i += 1) {
+  const samples = [];
+  const runOne = async (i) => {
     const started = Date.now();
-    const response = await request(
-      'operator',
-      'POST',
-      '/v1/runs',
-      { name, channel: 'production', prompt: `live-soak-${i}` },
-      `live-run-${name}-${i}`,
-    );
-    assert.equal(response.statusCode, 202);
-    const job = await waitJob((await response.json()).id);
-    assert.equal(job.state, 'completed');
-    latencies.push(Date.now() - started);
-  }
+    try {
+      const response = await request(
+        'operator',
+        'POST',
+        '/v1/runs',
+        { name, channel: 'production', prompt: `live-soak-${i}` },
+        `live-run-${name}-${i}`,
+      );
+      assert.equal(response.statusCode, 202);
+      const job = await waitJob((await response.json()).id);
+      assert.equal(job.state, 'completed');
+      samples.push({ index: i, latency_ms: Date.now() - started, state: job.state });
+    } catch (error) {
+      samples.push({
+        index: i,
+        latency_ms: Date.now() - started,
+        state: 'failed',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+  let cursor = 0;
+  await Promise.all(
+    Array.from({ length: concurrency }, async () => {
+      while (cursor < runs) await runOne(cursor++);
+    }),
+  );
+  samples.sort((a, b) => a.index - b.index);
+  const latencies = samples.map((sample) => sample.latency_ms);
+  const failed = samples.filter((sample) => sample.state !== 'completed');
+  assert.equal(failed.length, 0, JSON.stringify(failed));
+  const sorted = latencies.slice().sort((a, b) => a - b);
   console.log(
     JSON.stringify({
       passed: true,
       model,
       runs,
+      concurrency,
       evaluation: evaluated.id,
+      samples,
       latencies_ms: latencies,
-      p95_ms: latencies.slice().sort((a, b) => a - b)[
-        Math.min(latencies.length - 1, Math.ceil(latencies.length * 0.95) - 1)
-      ],
+      min_ms: sorted[0],
+      max_ms: sorted.at(-1),
+      mean_ms: Math.round(latencies.reduce((sum, value) => sum + value, 0) / latencies.length),
+      p95_ms: sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1)],
     }),
   );
 } finally {
