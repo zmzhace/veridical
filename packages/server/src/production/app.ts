@@ -289,9 +289,10 @@ export async function buildProductionApp(options: {
       version: provider.version,
       configured: providers.has(provider.name),
     }));
-    const [skillRows, mcpRows] = await Promise.all([
+    const [skillRows, mcpRows, knowledgeRows] = await Promise.all([
       db.list(req.principal.tenant, 'skill', 200, 0),
       db.list(req.principal.tenant, 'mcp_server', 100, 0),
+      db.list(req.principal.tenant, 'knowledge_backend', 100, 0),
     ]);
     const skills = skillRows
       .filter((row: any) => row?.status === 'approved')
@@ -311,14 +312,25 @@ export async function buildProductionApp(options: {
         schema_hash: row.body.schema_hash,
         artifact_hash: row.digest,
       }));
+    const knowledge_backends = knowledgeRows
+      .filter((row: any) => row?.status === 'approved')
+      .map((row: any) => ({
+        id: row.key,
+        name: row.body.name,
+        version: row.body.version,
+        type: row.body.type,
+        config_hash: row.body.config_hash,
+        artifact_hash: row.digest,
+      }));
     await db.audit(req.principal.tenant, req.principal.actor, 'capabilities.read', {
       tools: tools.length,
       models: models.length,
       skills: skills.length,
       mcp_servers: mcp_servers.length,
+      knowledge_backends: knowledge_backends.length,
       request_id: req.id,
     });
-    return { models, tools, mcp_servers, skills };
+    return { models, tools, mcp_servers, skills, knowledge_backends };
   });
   const MemoryInput = z
     .object({
@@ -594,6 +606,83 @@ export async function buildProductionApp(options: {
     );
     await db.audit(req.principal.tenant, req.principal.actor, 'mcp.decision', {
       server_id: id,
+      status: decision.status,
+      request_id: req.id,
+    });
+    return { ...updated.body, id, status: updated.status, artifact_hash: updated.digest };
+  });
+  const KnowledgeBackendInput = z
+    .object({
+      name: Key,
+      version: z.string().min(1).max(80),
+      type: z.enum(['native', 'gbrain', 'hybrid']),
+      config_hash: z.string().regex(/^[a-f0-9]{64}$/),
+      capabilities: z.array(Key).max(32).default([]),
+    })
+    .strict();
+  app.get('/v1/knowledge/backends', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
+    const rows = await db.list(req.principal.tenant, 'knowledge_backend', 100, 0);
+    const result = rows
+      .filter((row: any) => row?.status !== 'deleted')
+      .map((row: any) => ({
+        ...row.body,
+        id: row.key,
+        status: row.status,
+        artifact_hash: row.digest,
+      }));
+    await db.audit(req.principal.tenant, req.principal.actor, 'knowledge_backend.list', {
+      count: result.length,
+      request_id: req.id,
+    });
+    return result;
+  });
+  app.post('/v1/knowledge/backends', async (req, reply) => {
+    requireRole(req.principal, 'developer', 'reviewer');
+    const input = KnowledgeBackendInput.parse(req.body);
+    const id = `${input.name}@${input.version}`;
+    if (await db.get(req.principal.tenant, 'knowledge_backend', id))
+      throw new Fault(409, 'knowledge_backend_exists');
+    const record = await db.put(
+      req.principal.tenant,
+      'knowledge_backend',
+      id,
+      input,
+      req.principal.actor,
+      'draft',
+    );
+    await db.audit(req.principal.tenant, req.principal.actor, 'knowledge_backend.created', {
+      backend_id: id,
+      artifact_hash: record.digest,
+      request_id: req.id,
+    });
+    return reply
+      .code(201)
+      .send({ ...input, id, status: record.status, artifact_hash: record.digest });
+  });
+  app.post('/v1/knowledge/backends/:id/decision', async (req) => {
+    requireRole(req.principal, 'reviewer', 'publisher');
+    const { id } = z.object({ id: z.string().min(3).max(160) }).parse(req.params);
+    const decision = z
+      .object({ status: z.enum(['approved', 'deprecated', 'revoked']) })
+      .strict()
+      .parse(req.body);
+    const current = await db.get(req.principal.tenant, 'knowledge_backend', id);
+    if (!current || current.status === 'deleted')
+      throw new Fault(404, 'knowledge_backend_not_found');
+    const updated = await db.transition(
+      req.principal.tenant,
+      'knowledge_backend',
+      id,
+      decision.status,
+      {
+        ...current.meta,
+        decided_at: new Date().toISOString(),
+      },
+      req.principal.actor,
+    );
+    await db.audit(req.principal.tenant, req.principal.actor, 'knowledge_backend.decision', {
+      backend_id: id,
       status: decision.status,
       request_id: req.id,
     });
