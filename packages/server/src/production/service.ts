@@ -51,6 +51,14 @@ export class ProductionService {
     asyncJobs?: AsyncJobStore,
     readonly objectStore?: S3ObjectStore,
   ) {
+    // A managed (PostgreSQL) ledger must never silently acquire a SQLite job
+    // store.  Doing so creates two competing sources of truth and can execute
+    // the same job twice.  The application factory injects PostgresJobStore in
+    // production; fail closed here as a defensive boundary for every other
+    // construction path (tests, scripts and future workers).
+    if (!jobs && (db as any).pool) {
+      throw new Error('postgres_job_store_required_for_managed_storage');
+    }
     this.jobs = jobs ?? new SqliteJobStore(db);
     this.asyncJobs = asyncJobs;
     this.tools = tools;
