@@ -24,6 +24,7 @@ export class AsyncWorker {
     private readonly leaseMs = 30_000,
   ) {}
   async tick(execute: (job: AsyncWorkItem, signal: AbortSignal) => Promise<unknown>) {
+    await this.store.recoverExpired?.();
     while (!this.stopped && this.active.size < this.concurrency) {
       const job = await this.store.claim(this.owner, this.leaseMs);
       if (!job) break;

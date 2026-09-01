@@ -60,6 +60,7 @@ export interface AsyncJobStore {
     state: 'completed' | 'failed' | 'cancelled',
     result?: unknown,
   ): Promise<boolean>;
+  recoverExpired?(): Promise<number>;
 }
 
 /** PostgreSQL is the source of truth; Redis only delivers wake-up notifications. */

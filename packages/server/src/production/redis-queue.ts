@@ -34,6 +34,38 @@ export class RedisJobQueue implements AsyncJobStore {
   async ping() {
     return (await this.redis.ping()) === 'PONG';
   }
+  /** Return expired deliveries to ready; PostgreSQL remains the execution fence. */
+  async recoverExpired() {
+    const now = Date.now();
+    const ids = await this.redis.zrangebyscore(this.key('leases'), '-inf', now);
+    if (!ids.length) return 0;
+    const result = await this.redis.eval(
+      `
+      local recovered = 0
+      for _, id in ipairs(ARGV) do
+        local job = KEYS[1] .. ':job:' .. id
+        if redis.call('HGET', job, 'state') == 'running' then
+          local lease = tonumber(redis.call('HGET', job, 'lease_until') or '0')
+          if lease <= tonumber(KEYS[2]) then
+            redis.call('HSET', job, 'state', 'queued')
+            redis.call('HDEL', job, 'owner', 'lease_until')
+            redis.call('ZREM', KEYS[1] .. ':leases', id)
+            redis.call('ZADD', KEYS[1] .. ':ready', KEYS[2], id)
+            recovered = recovered + 1
+          end
+        else
+          redis.call('ZREM', KEYS[1] .. ':leases', id)
+        end
+      end
+      return recovered
+      `,
+      2,
+      this.prefix,
+      String(now),
+      ...ids,
+    );
+    return Number(result ?? 0);
+  }
   async enqueue(
     job: QueueJob,
     idempotencyKey: string,

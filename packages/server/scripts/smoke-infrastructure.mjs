@@ -41,6 +41,30 @@ const duplicateJobs = await Promise.all(
 );
 if (duplicateJobs[0].id !== duplicateJobs[1].id || !duplicateJobs.some((item) => item.duplicate))
   throw new Error('redis duplicate enqueue is not idempotent');
+const duplicateClaim = await queue.claim('duplicate-worker', 30_000);
+if (!duplicateClaim || duplicateClaim.id !== duplicateJobs[0].id)
+  throw new Error('redis duplicate delivery mismatch');
+await queue.finish(duplicateClaim.id, 'duplicate-worker', 'completed', { duplicate: true });
+const redisLeaseJob = await queue.enqueue(
+  {
+    id: `redis-lease-${randomUUID()}`,
+    tenant,
+    actor: 'smoke',
+    kind: 'run',
+    args: {},
+    created: Date.now(),
+  },
+  `lease_${randomUUID()}`,
+);
+const redisClaimed = await queue.claim('crashed-worker', 20);
+if (!redisClaimed || redisClaimed.id !== redisLeaseJob.id)
+  throw new Error('redis lease claim mismatch');
+await new Promise((resolve) => setTimeout(resolve, 30));
+if ((await queue.recoverExpired()) !== 1) throw new Error('redis lease recovery mismatch');
+const redisRecovered = await queue.claim('recovery-worker', 30_000);
+if (!redisRecovered || redisRecovered.id !== redisLeaseJob.id)
+  throw new Error('redis recovered delivery mismatch');
+await queue.finish(redisLeaseJob.id, 'recovery-worker', 'completed', { recovered: true });
 await queue.close();
 const traceSession = `infra_${randomUUID()}`;
 await trace.createSession(tenant, traceSession);
