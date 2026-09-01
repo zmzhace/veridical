@@ -35,9 +35,15 @@ export function TaskTracePage() {
       body: JSON.stringify({ format, ...(format === 'grpo' ? { group_id: taskId } : {}) }),
     } satisfies RequestInit;
     let response = await fetch(
-      `/v1/sessions/${encodeURIComponent(taskId)}/trajectory/export`,
+      `/v1/tasks/${encodeURIComponent(taskId)}/trajectory/export`,
       request,
     );
+    if ((response.status === 404 || response.status === 405) && !response.ok) {
+      response = await fetch(
+        `/v1/sessions/${encodeURIComponent(taskId)}/trajectory/export`,
+        request,
+      );
+    }
     if ((response.status === 404 || response.status === 405) && !response.ok) {
       response = await fetch(`/api/sessions/${taskId}/trajectory/export`, request);
     }
