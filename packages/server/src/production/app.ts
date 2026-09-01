@@ -758,6 +758,18 @@ export async function buildProductionApp(options: {
       secrets_exposed: false,
     };
   });
+  app.get('/v1/model-profile', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
+    const provider = config.providers[0];
+    return {
+      configured: Boolean(provider && providers.has(provider.name)),
+      provider: provider?.name,
+      model: provider?.model,
+      version: provider?.version,
+      base_url: provider?.baseUrl,
+      source: 'server',
+    };
+  });
   const KnowledgeBackendInput = z
     .object({
       name: Key,

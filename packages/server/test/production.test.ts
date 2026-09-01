@@ -158,6 +158,17 @@ test('production capabilities expose only configured models and registered tools
     skills: [],
   });
 });
+test('production model profile never exposes browser credentials', async () => {
+  const response = await request('viewer', 'GET', '/v1/model-profile');
+  expect(response.statusCode).toBe(200);
+  expect(response.json()).toMatchObject({
+    configured: true,
+    provider: 'fixture',
+    model: 'fixture-model',
+    source: 'server',
+  });
+  expect(JSON.stringify(response.json())).not.toContain('FIXTURE_KEY');
+});
 test('knowledge backends are versioned capabilities and require approval', async () => {
   const created = await request('developer', 'POST', '/v1/knowledge/backends', {
     name: 'project-index',

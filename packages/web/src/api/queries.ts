@@ -135,10 +135,24 @@ export const useInvocations = (id: string) =>
 export const useModelProfile = () =>
   useQuery({
     queryKey: ['model-profile'],
-    queryFn: () =>
-      apiFetch<{ configured: boolean; provider?: string; model?: string; base_url?: string }>(
-        '/api/model-profile',
-      ),
+    queryFn: async () => {
+      try {
+        return await apiFetch<{
+          configured: boolean;
+          provider?: string;
+          model?: string;
+          base_url?: string;
+        }>('/v1/model-profile');
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
+        return apiFetch<{
+          configured: boolean;
+          provider?: string;
+          model?: string;
+          base_url?: string;
+        }>('/api/model-profile');
+      }
+    },
     staleTime: 60_000,
   });
 export interface ModelSummary {
