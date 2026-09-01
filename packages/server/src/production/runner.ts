@@ -394,7 +394,11 @@ async function executeTurnInternal(options: ExecuteTurnOptions, recorder: Invoca
         row?.status === 'active' &&
         row.body?.kind !== 'candidate' &&
         (row.body?.scope === 'organization' ||
-          (job.args.project_id && row.body?.project_id === job.args.project_id)),
+          (row.body?.scope === 'project' &&
+            job.args.project_id &&
+            row.body?.project_id === job.args.project_id) ||
+          (row.body?.scope === 'user' && row.body?.user_id === job.actor) ||
+          (row.body?.scope === 'agent' && row.body?.agent_id === spec.name)),
     )
     .slice(0, 20);
   const memoryText = memoryRows

@@ -283,6 +283,27 @@ test('production turns inject only organization or matching project memory', asy
   expect(requests.slice(before).at(-1)?.messages?.[0]?.content).not.toContain(
     'PROJECT_A_SECRET_CONTEXT',
   );
+  const userMemory = await request('operator', 'POST', '/v1/memories', {
+    project_id: 'proj-a',
+    user_id: 'another-user',
+    scope: 'user',
+    kind: 'preference',
+    content: 'OTHER_USER_SECRET_CONTEXT',
+    sensitivity: 'normal',
+  });
+  await request('reviewer', 'POST', `/v1/memories/${userMemory.json().id}/decision`, {
+    status: 'active',
+  });
+  const beforeUser = requests.length;
+  const third = env.service.run(
+    principal('operator'),
+    { name: 'probe', channel: 'production', prompt: 'hello', project_id: 'proj-a' },
+    'memory-run-user',
+  );
+  expect((await drain(third.id)).state).toBe('completed');
+  expect(requests.slice(beforeUser).at(-1)?.messages?.[0]?.content).not.toContain(
+    'OTHER_USER_SECRET_CONTEXT',
+  );
 });
 test('production skills are immutable versioned artifacts requiring approval', async () => {
   const created = await request('developer', 'POST', '/v1/skills', {
