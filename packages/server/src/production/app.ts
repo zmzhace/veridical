@@ -571,6 +571,36 @@ export async function buildProductionApp(options: {
     await visibleSession(req.principal, id);
     return db.verify(req.principal.tenant, id);
   });
+  app.get('/v1/sessions/:id/invocations', async (req) => {
+    const { id } = z.object({ id: Key }).parse(req.params);
+    await visibleSession(req.principal, id);
+    const events = await db.read(req.principal.tenant, id);
+    const invocations = new Map<string, any>();
+    for (const event of events) {
+      if (!event.invocation_id) continue;
+      const current = invocations.get(event.invocation_id) ?? {
+        invocation_id: event.invocation_id,
+        parent_invocation_id: event.parent_invocation_id,
+        path: event.path,
+        ordinal: event.ordinal,
+        attempt: event.attempt,
+        run_id: event.run_id,
+        events: [],
+      };
+      current.events.push({
+        seq: event.seq,
+        type: event.type,
+        verb: event.verb,
+        status: event.payload,
+      });
+      invocations.set(event.invocation_id, current);
+    }
+    await db.audit(req.principal.tenant, req.principal.actor, 'invocations.read', {
+      session: id,
+      request_id: req.id,
+    });
+    return { session: id, invocations: [...invocations.values()] };
+  });
   app.get('/v1/runs/:id/provenance', async (req) => {
     const { id } = z.object({ id: Key }).parse(req.params);
     await visibleSession(req.principal, id);
