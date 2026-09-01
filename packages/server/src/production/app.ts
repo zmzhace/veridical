@@ -481,6 +481,26 @@ export async function buildProductionApp(options: {
     actor: req.principal.actor,
     roles: req.principal.roles,
   }));
+  app.get('/v1/models', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
+    return config.providers.map((provider) => ({
+      provider: provider.name,
+      model: provider.model,
+      version: provider.version,
+      configured: providers.has(provider.name),
+    }));
+  });
+  app.get('/v1/tools', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
+    return service.tools.map((tool) => ({
+      name: tool.name,
+      version: tool.version,
+      description: tool.description,
+      source: 'builtin' as const,
+      side_effect: tool.readOnly ? 'read' : 'write',
+      approved: tool.readOnly === true,
+    }));
+  });
   app.get('/v1/capabilities', async (req) => {
     requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
     const tools = service.tools.map((tool) => ({
