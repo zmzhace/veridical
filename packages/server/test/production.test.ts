@@ -254,6 +254,36 @@ test('production memories use candidate approval and tenant-scoped deletion', as
   });
   expect((await request('viewer', 'GET', '/v1/memories?project_id=proj-a')).json()).toHaveLength(0);
 });
+test('production turns inject only organization or matching project memory', async () => {
+  await publish();
+  const created = await request('operator', 'POST', '/v1/memories', {
+    project_id: 'proj-a',
+    scope: 'project',
+    kind: 'fact',
+    content: 'PROJECT_A_SECRET_CONTEXT',
+    sensitivity: 'normal',
+  });
+  const memoryId = created.json().id;
+  await request('reviewer', 'POST', `/v1/memories/${memoryId}/decision`, { status: 'active' });
+  const first = env.service.run(
+    principal('operator'),
+    { name: 'probe', channel: 'production', prompt: 'hello', project_id: 'proj-a' },
+    'memory-run-a',
+  );
+  expect((await drain(first.id)).state).toBe('completed');
+  const firstRequest = requests.at(-1);
+  expect(firstRequest?.messages?.[0]?.content).toContain('PROJECT_A_SECRET_CONTEXT');
+  const before = requests.length;
+  const second = env.service.run(
+    principal('operator'),
+    { name: 'probe', channel: 'production', prompt: 'hello', project_id: 'proj-b' },
+    'memory-run-b',
+  );
+  expect((await drain(second.id)).state).toBe('completed');
+  expect(requests.slice(before).at(-1)?.messages?.[0]?.content).not.toContain(
+    'PROJECT_A_SECRET_CONTEXT',
+  );
+});
 test('production skills are immutable versioned artifacts requiring approval', async () => {
   const created = await request('developer', 'POST', '/v1/skills', {
     name: 'research',

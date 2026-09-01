@@ -389,7 +389,13 @@ async function executeTurnInternal(options: ExecuteTurnOptions, recorder: Invoca
   const memoryRows = (
     ((await ledger.list?.(job.tenant, 'memory', 100, 0)) as any[] | undefined) ?? []
   )
-    .filter((row) => row?.status === 'active' && row.body?.kind !== 'candidate')
+    .filter(
+      (row) =>
+        row?.status === 'active' &&
+        row.body?.kind !== 'candidate' &&
+        (row.body?.scope === 'organization' ||
+          (job.args.project_id && row.body?.project_id === job.args.project_id)),
+    )
     .slice(0, 20);
   const memoryText = memoryRows
     .map((row) =>

@@ -534,7 +534,7 @@ export class ProductionService {
   }
   run(
     p: Principal,
-    input: { name: string; channel: string; prompt: string; session?: string },
+    input: { name: string; channel: string; prompt: string; project_id?: string; session?: string },
     idem: string,
   ) {
     requireRole(p, 'operator');
@@ -553,7 +553,7 @@ export class ProductionService {
       p.actor,
       'run',
       idem,
-      { ref, prompt: input.prompt, credential: p.tokenHash },
+      { ref, prompt: input.prompt, project_id: input.project_id, credential: p.tokenHash },
       input.session,
     );
     this.kick();
@@ -561,7 +561,7 @@ export class ProductionService {
   }
   private async runManaged(
     p: Principal,
-    input: { name: string; channel: string; prompt: string; session?: string },
+    input: { name: string; channel: string; prompt: string; project_id?: string; session?: string },
     idem: string,
   ) {
     await this.checkCapacityManaged();
@@ -582,7 +582,7 @@ export class ProductionService {
       p.actor,
       'run',
       idem,
-      { ref, prompt: input.prompt, credential: p.tokenHash },
+      { ref, prompt: input.prompt, project_id: input.project_id, credential: p.tokenHash },
       input.session,
     );
   }

@@ -1222,6 +1222,7 @@ export async function buildProductionApp(options: {
         name: Key,
         channel: z.enum(['production', 'canary']).default('production'),
         prompt: z.string().min(1).max(8000),
+        project_id: Key.optional(),
         session: Key.optional(),
       })
       .strict()
