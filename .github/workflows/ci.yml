@@ -37,6 +37,10 @@ jobs:
           VERIDICAL_REDIS_URL: redis://127.0.0.1:6379
           VERIDICAL_S3_ENDPOINT: http://127.0.0.1:9000
           VERIDICAL_S3_BUCKET: veridical-artifacts
+      - name: Verify PostgreSQL migration and rollback
+        run: pnpm test:production:migration
+        env:
+          VERIDICAL_POSTGRES_URL: postgres://veridical:veridical-dev-only@127.0.0.1:5432/veridical
       - run: pnpm format:check
       - run: pnpm test:regression
       - name: Verify production hardening
