@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const InvocationActorSchema = z.enum(['agent', 'llm', 'tool', 'memory', 'loop', 'join']);
+export const InvocationActorSchema = z.enum(['agent', 'llm', 'tool', 'memory', 'knowledge', 'mcp', 'skill', 'loop', 'join', 'checkpoint', 'approval']);
 export const InvocationStatusSchema = z.enum([
   'started',
   'success',

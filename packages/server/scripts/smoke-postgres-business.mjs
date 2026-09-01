@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { buildProductionApp } from '../src/production/app.ts';
+import { Pool } from 'pg';
 import { ProductionConfigSchema } from '../src/production/config.ts';
 import { RedisJobQueue } from '../src/production/redis-queue.ts';
 import { safeTools } from '../src/production/runner.ts';
@@ -55,6 +56,14 @@ const config = ProductionConfigSchema.parse({
     },
   ],
 });
+// This smoke uses fresh random encryption keys on every invocation. Reset only the
+// dedicated local acceptance database so stale ciphertext cannot be mistaken for
+// a production ledger failure. Production never runs this reset path.
+const resetPool = new Pool({ connectionString: postgres });
+await resetPool.query(
+  'TRUNCATE jobs, artifacts, pointers, events, sessions, rate_limits, revoked_tokens, migration_checkpoints CASCADE',
+);
+await resetPool.end();
 const provider = {
   complete: async () => ({
     text: '{"text":"E2E OK","done":true}',
@@ -203,18 +212,16 @@ try {
     ).body,
     'PostgreSQL S3 knowledge assertion',
   );
-  assert.equal(
-    (
-      await request(
-        'GET',
-        '/v1/knowledge/search?project_id=e2e-project&q=knowledge',
-        undefined,
-        undefined,
-        'operator',
-      )
-    ).statusCode,
-    200,
+  const searchResponse = await request(
+    'GET',
+    '/v1/knowledge/search?project_id=e2e-project&q=knowledge',
+    undefined,
+    undefined,
+    'operator',
   );
+  if (searchResponse.statusCode !== 200)
+    console.error('knowledge search response', searchResponse.statusCode, searchResponse.body);
+  assert.equal(searchResponse.statusCode, 200);
   assert.equal(
     (await request('DELETE', `/v1/knowledge/files/${file.id}`, undefined, undefined, 'reviewer'))
       .statusCode,

@@ -182,6 +182,8 @@ export const useDecideMemory = () => useMutation({ mutationFn: ({ id, status }: 
 export const useDeleteMemory = () => useMutation({ mutationFn: (id: string) => apiFetch<{ deleted: boolean }>(`/api/memories/${id}`, { method: 'DELETE' }) });
 export interface KnowledgeFile { id: string; organization_id: string; project_id: string; name: string; mime_type: string; size: number; content_hash: string; status: string; created_at: string }
 export const useKnowledgeFiles = (organizationId: string, projectId: string) => useQuery({ queryKey: ['knowledge-files', organizationId, projectId], queryFn: () => apiFetch<KnowledgeFile[]>(`/api/knowledge/files?organization_id=${encodeURIComponent(organizationId)}&project_id=${encodeURIComponent(projectId)}`), enabled: !!organizationId && !!projectId });
+export interface KnowledgeBackendSummary { id: string; name: string; type: 'native' | 'gbrain' | 'hybrid'; status: string; capabilities: string[]; }
+export const useKnowledgeBackends = () => useQuery({ queryKey: ['knowledge-backends'], queryFn: () => apiFetch<KnowledgeBackendSummary[]>('/api/knowledge/backends'), staleTime: 30_000 });
 export const useRun = () =>
   useMutation({
     mutationFn: (body: unknown) =>

@@ -1,0 +1,14 @@
+{
+  "name": "@veridical/knowledge",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.0.0"
+  },
+  "scripts": { "build": "tsc -p tsconfig.json", "test": "vitest run" }
+}

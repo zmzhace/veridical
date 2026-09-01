@@ -29,13 +29,14 @@ interface AgentRow {
 }
 
 function specCapabilities(spec: AgentSpec) {
+  const configured = spec.capabilities;
   return {
     model: { provider: spec.llm.provider, name: spec.llm.model },
     tools: spec.tools.map((tool) => ({ name: tool.name, access: tool.access })),
     skills: spec.skills.map((skill) => ({ name: skill.name, version: skill.version, status: skill.status })),
-    memory: { enabled: true, scopes: ['task'] },
-    knowledge_bases: [] as string[],
-    mcp_servers: [...new Set(spec.tools.map((tool) => tool.name.split('.')[0]).filter((name) => name && !['echo', 'finish'].includes(name)))],
+    memory: { enabled: (configured?.memory_scopes?.length ?? 0) > 0, scopes: configured?.memory_scopes ?? ['turn', 'task'] },
+    knowledge_bases: configured?.knowledge_backends ?? [],
+    mcp_servers: configured?.mcp_servers ?? [...new Set(spec.tools.map((tool) => tool.name.split('.')[0]).filter((name) => name && !['echo', 'finish'].includes(name)))],
     child_agents: spec.agents.map((agent) => agent.name),
   };
 }

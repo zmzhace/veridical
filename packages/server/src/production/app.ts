@@ -204,7 +204,14 @@ export async function buildProductionApp(options: {
       }
     }
     if (status >= 500)
-      req.log.error({ requestId: req.id, code: 'internal_error' }, 'request failed');
+      req.log.error(
+        {
+          requestId: req.id,
+          code: 'internal_error',
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'request failed',
+      );
     reply.code(status).send({
       error: {
         code:
@@ -354,7 +361,10 @@ export async function buildProductionApp(options: {
     const query = z.object({ project_id: Key }).parse(req.query);
     const files = await db.list(req.principal.tenant, 'knowledge_file', 100, 0);
     return files
-      .filter((file: any) => file.status === 'active' && file.body.project_id === query.project_id)
+      .filter(
+        (file: any) =>
+          file && file.status === 'active' && file.body?.project_id === query.project_id,
+      )
       .map((file: any) => ({ ...file.body, artifact_digest: file.digest }));
   });
   app.get('/v1/knowledge/files/:id/content', async (req, reply) => {
@@ -378,9 +388,12 @@ export async function buildProductionApp(options: {
     const terms = query.q.toLowerCase().split(/\s+/).filter(Boolean);
     const files = await db.list(req.principal.tenant, 'knowledge_file', 100, 0);
     return files
-      .filter((file: any) => file.status === 'active' && file.body.project_id === query.project_id)
+      .filter(
+        (file: any) =>
+          file && file.status === 'active' && file.body?.project_id === query.project_id,
+      )
       .flatMap((file: any) =>
-        file.body.chunks
+        (file.body?.chunks ?? [])
           .map((chunk: any) => ({
             file_id: file.key,
             file_name: file.body.name,

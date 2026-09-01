@@ -21,6 +21,10 @@ export interface SpecFormState {
   agents: AgentRow[];
   tools: ToolRow[];
   skills: SkillRow[];
+  outputProfile?: 'conversational' | 'structured' | 'report' | 'artifact';
+  outputSchema?: unknown;
+  outputStrict?: boolean;
+  outputRepairAttempts?: number;
 }
 
 const q = JSON.stringify;
@@ -64,6 +68,12 @@ export function formToYaml(f: SpecFormState): string {
       out.push(`      model: ${q(fb.model)}`);
     }
   }
+  out.push(`output:`);
+  out.push(`  profile: ${q(f.outputProfile ?? 'conversational')}`);
+  out.push(`  message_format: "markdown"`);
+  out.push(`  strict: ${f.outputStrict !== false}`);
+  out.push(`  repair_attempts: ${f.outputRepairAttempts ?? 1}`);
+  if (f.outputSchema !== undefined) out.push(`  schema: ${q(f.outputSchema)}`);
   const tools = f.tools.filter(r => has(r.name));
   if (tools.length) {
     out.push(`tools:`);

@@ -38,6 +38,9 @@ export function blankSpec(): SpecFormState {
     agents: [],
     tools: [],
     skills: [],
+    outputProfile: 'conversational',
+    outputStrict: true,
+    outputRepairAttempts: 1,
   };
 }
 
@@ -72,6 +75,10 @@ export function specToForm(s: AgentSpec): SpecFormState {
       procedure: r.procedure ?? '',
       tags: r.tags ?? [],
     })),
+    outputProfile: s.output.profile,
+    outputSchema: s.output.schema,
+    outputStrict: s.output.strict,
+    outputRepairAttempts: s.output.repair_attempts,
   };
 }
 
@@ -84,6 +91,13 @@ export function formToSpec(f: SpecFormState): AgentSpec {
     ...(f.description ? { description: f.description } : {}),
     instruction: { system: f.system },
     llm: { provider: f.llmProvider, model: f.llmModel, fallback: f.fallbacks },
+    output: {
+      profile: f.outputProfile ?? 'conversational',
+      message_format: 'markdown',
+      strict: f.outputStrict !== false,
+      repair_attempts: f.outputRepairAttempts ?? 1,
+      ...(f.outputSchema !== undefined ? { schema: f.outputSchema } : {}),
+    },
     flow: {
       mode: f.mode,
       ...(f.loop?.trim() ? { loop: { engine: f.loop.trim(), strategy: f.loopStrategy ?? 'direct' } } : {}),

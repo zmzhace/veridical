@@ -23,6 +23,7 @@
     "@fastify/cors": "11.3.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@veridical/eval": "workspace:*",
+    "@veridical/knowledge": "workspace:*",
     "@veridical/llm": "workspace:*",
     "@veridical/memory": "workspace:*",
     "@veridical/replay": "workspace:*",

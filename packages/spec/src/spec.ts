@@ -14,6 +14,26 @@ export type Stage = z.infer<typeof StageSchema>;
 
 const FallbackSchema = z.object({ provider: z.string().min(1), model: z.string().min(1) });
 
+/** Controls the final user-visible output without exposing raw Spec complexity. */
+export const OutputProfileSchema = z
+  .object({
+    profile: z.enum(['conversational', 'structured', 'report', 'artifact']).default('conversational'),
+    message_format: z.enum(['markdown', 'text']).default('markdown'),
+    schema: z.unknown().optional(),
+    strict: z.boolean().default(true),
+    repair_attempts: z.number().int().min(0).max(2).default(1),
+    artifact_mime_type: z.string().min(1).max(160).optional(),
+  })
+  .default({ profile: 'conversational', message_format: 'markdown', strict: true, repair_attempts: 1 });
+export type SpecOutputProfile = z.infer<typeof OutputProfileSchema>;
+
+export const AgentCapabilitiesSchema = z.object({
+  mcp_servers: z.array(z.string().min(1).max(120)).max(32).default([]),
+  knowledge_backends: z.array(z.string().min(1).max(120)).max(32).default([]),
+  memory_scopes: z.array(z.enum(['turn', 'task', 'project', 'user', 'agent'])).max(8).default(['turn', 'task']),
+}).optional();
+export type AgentCapabilities = z.infer<typeof AgentCapabilitiesSchema>;
+
 /** A reusable, auditable capability pack. Skills add instructions only; tools remain governed by spec.tools. */
 export const SkillSchema = z.object({
   name: z.string().min(1).max(80),
@@ -84,6 +104,8 @@ export const AgentSpecSchema = z
       model: z.string().min(1),
       fallback: z.array(FallbackSchema).default([]),
     }),
+    output: OutputProfileSchema,
+    capabilities: AgentCapabilitiesSchema,
     tools: z.array(
       z.object({
         name: z.string().min(1),

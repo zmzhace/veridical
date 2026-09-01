@@ -17,4 +17,13 @@ describe('workspace graph', () => {
     expect(graph.nodes.map((node) => node.type)).toEqual(['input', 'agent', 'tool', 'output']);
     expect(graph.edges.map((edge) => edge.kind)).toEqual(['message', 'capability', 'message']);
   });
+
+  it('compiles capability bindings and output policy into the spec', () => {
+    const graph = structuredClone(simpleAgentGraph);
+    graph.nodes.find((node) => node.type === 'agent')!.config.outputProfile = 'structured';
+    graph.nodes.push({ id: 'kb', type: 'condition', label: 'Knowledge', title: 'project-kb', description: '', position: { x: 30, y: 80 }, config: { kind: 'knowledge', backendId: 'native' } });
+    const spec = parse(compileWorkspaceSpec(graph));
+    expect(spec.output.profile).toBe('structured');
+    expect(spec.capabilities.knowledge_backends).toEqual(['native']);
+  });
 });

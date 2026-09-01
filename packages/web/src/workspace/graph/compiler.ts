@@ -17,6 +17,12 @@ export function compileWorkspaceSpec(graph: WorkspaceGraph, version = '1.0.0'): 
     .filter((edge) => edge.kind === 'delegate' && edge.source === agent.id)
     .map((edge) => graph.nodes.find((node) => node.id === edge.target))
     .filter(Boolean);
+  const memories = graph.nodes.filter((node) => node.type === 'memory');
+  const knowledge = graph.nodes.filter((node) => node.type === 'condition' && String(node.config.kind ?? '') === 'knowledge');
+  const mcpServers = tools
+    .filter((tool) => tool!.title.includes('.') || tool!.config.source === 'mcp')
+    .map((tool) => String(tool!.config.serverRef ?? tool!.title.split('.')[0]))
+    .filter(Boolean);
   const strategy = String(agent.config.strategy ?? 'direct');
   const mode =
     strategy === 'supervisor'
@@ -37,6 +43,18 @@ export function compileWorkspaceSpec(graph: WorkspaceGraph, version = '1.0.0'): 
       ...(mode === 'stage-gate' ? { stages: [{ id: 'main' }] } : {}),
     },
     llm: { provider: 'local', model: String(agent.config.model ?? 'configured'), fallback: [] },
+    output: {
+      profile: String(agent.config.outputProfile ?? 'conversational'),
+      message_format: String(agent.config.messageFormat ?? 'markdown'),
+      strict: agent.config.outputStrict !== false,
+      repair_attempts: Number(agent.config.outputRepairAttempts ?? 1),
+      ...(agent.config.outputSchema ? { schema: agent.config.outputSchema } : {}),
+    },
+    capabilities: {
+      mcp_servers: [...new Set(mcpServers)],
+      knowledge_backends: knowledge.map((node) => String(node!.config.backendId ?? node!.title)).filter(Boolean),
+      memory_scopes: memories.length ? ['turn', 'task', 'project'] : ['turn', 'task'],
+    },
     tools: tools.map((tool) => {
       const slug = tool!.title
         .toLowerCase()
@@ -103,6 +121,11 @@ export function workspaceFromSpec(spec: AgentSpec): WorkspaceGraph {
           provider: spec.llm.provider,
           instruction: spec.instruction.system,
           maxSteps: spec.flow.max_steps,
+          outputProfile: spec.output.profile,
+          messageFormat: spec.output.message_format,
+          outputStrict: spec.output.strict,
+          outputRepairAttempts: spec.output.repair_attempts,
+          outputSchema: spec.output.schema,
         },
       },
       ...spec.tools.map((tool, index) => ({

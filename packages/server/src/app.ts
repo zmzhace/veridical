@@ -17,6 +17,7 @@ import { registerAgentRoutes } from './routes/agents.js';
 import { registerCapabilityRoutes } from './routes/capabilities.js';
 import { registerMemoryRoutes } from './routes/memories.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
+import { registerKnowledgeBrainRoutes } from './routes/knowledge-brain.js';
 import { registerOrganizationRoutes } from './routes/organizations.js';
 import { localModelMetadata } from './local-model.js';
 
@@ -54,6 +55,7 @@ export async function buildApp(tracesDir?: string, specsDir?: string) {
   await registerCapabilityRoutes(app, specsDir ?? CONFIG.specsDir);
   await registerMemoryRoutes(app, { dataDir: specsDir ?? CONFIG.specsDir });
   await registerKnowledgeRoutes(app, { dataDir: specsDir ?? CONFIG.specsDir });
+  await registerKnowledgeBrainRoutes(app, specsDir ?? CONFIG.specsDir);
   await registerOrganizationRoutes(app, { dataDir: specsDir ?? CONFIG.specsDir });
   app.get('/api/models', async () => {
     const model = localModelMetadata();

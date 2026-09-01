@@ -51,6 +51,21 @@ describe('runSpec', () => {
     expect(result.outcome).toBe('hi');
   });
 
+  it('injects governed knowledge context and records a path-aware knowledge invocation', async () => {
+    const store = new InMemoryTraceStore();
+    const spec = parseSpecYaml(SPEC_YAML);
+    let requestSystem = '';
+    const result = await runSpec({
+      store,
+      providers: new Map([['main', { complete: async (req) => { requestSystem = String(req.messages[0]?.content); return { text: 'knowledge answer', usage }; } }]]),
+      tools: [], tenant_id: 't1', session_id: 'knowledge-session',
+      knowledge: { contextPack: async () => ({ summary: '事实证据：项目使用 Postgres。', citations: [{ source_id: 'doc-1' }], snapshot_hash: 'snapshot-1' }) },
+    }, spec, '项目存储是什么？');
+    expect(requestSystem).toContain('事实证据');
+    expect(result.events.some((event) => event.type === 'invocation.start' && (event.payload as any)?.actor === 'knowledge')).toBe(true);
+    expect(result.events.find((event) => event.type === 'invocation.start' && (event.payload as any)?.actor === 'knowledge')?.path).toContain('knowledge:context-pack');
+  });
+
   it('records a denied event for a library tool excluded by the spec whitelist', async () => {
     const store = new InMemoryTraceStore();
     const spec = parseSpecYaml(SPEC_YAML);

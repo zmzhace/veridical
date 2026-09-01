@@ -683,6 +683,19 @@ export function SpecForm({
                     onChange={(e) => set('system', e.target.value)}
                   />
                 </Field>
+                <div className="spec-subheading"><h4>输出格式</h4><span>让结果更容易被应用消费</span></div>
+                <div className="spec-grid">
+                  <Field id="output.profile" label="结果类型" hint="对话适合 markdown；结构化结果会在运行时校验。">
+                    <select className="field" value={f.outputProfile ?? 'conversational'} onChange={(e) => set('outputProfile', e.target.value as SpecFormState['outputProfile'])}>
+                      <option value="conversational">对话回复</option><option value="report">报告</option><option value="structured">结构化 JSON</option><option value="artifact">产物</option>
+                    </select>
+                  </Field>
+                  <Field id="output.strict" label="严格校验">
+                    <select className="field" value={f.outputStrict === false ? 'false' : 'true'} onChange={(e) => set('outputStrict', e.target.value === 'true')}>
+                      <option value="true">开启（推荐）</option><option value="false">宽松</option>
+                    </select>
+                  </Field>
+                </div>
                 <div className="spec-subheading">
                   <h4>能力包</h4><span>{f.skills.length ? `${f.skills.length} 个已启用` : '可选'}</span>
                 </div>

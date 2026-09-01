@@ -1,5 +1,30 @@
 import type { ApprovalPolicy, ToolDef, ToolResult, ToolObservation } from './types';
 
+export interface ToolSelectionPolicy {
+  mode?: 'auto' | 'allowlist';
+  approvedOnly?: boolean;
+  deny?: string[];
+  maxCandidates?: number;
+}
+
+/** Selects relevant tools from the approved pool; selection never grants a new permission. */
+export function selectToolCandidates(tools: ToolDef[], task: string, skillRequiredTools: string[] = [], policy: ToolSelectionPolicy = {}) {
+  const deny = new Set(policy.deny ?? []);
+  const words = new Set(task.toLocaleLowerCase().split(/[^\p{L}\p{N}_-]+/u).filter((word) => word.length > 1));
+  const required = new Set(skillRequiredTools);
+  return tools
+    .filter((tool) => !deny.has(tool.name))
+    .filter((tool) => policy.approvedOnly !== false ? tool.status !== 'draft' && tool.status !== 'revoked' : true)
+    .filter((tool) => policy.mode !== 'allowlist' || required.has(tool.name))
+    .map((tool) => {
+      const descriptionWords = `${tool.name} ${tool.description}`.toLocaleLowerCase().split(/[^\p{L}\p{N}_-]+/u).filter((word) => word.length > 1);
+      const matched = [...new Set(descriptionWords.filter((word) => words.has(word)))];
+      return { tool, score: (required.has(tool.name) ? 1 : 0) + matched.length / Math.max(1, words.size), matched, permission: 'broker' as const };
+    })
+    .sort((a, b) => b.score - a.score || a.tool.name.localeCompare(b.tool.name))
+    .slice(0, policy.maxCandidates ?? 12);
+}
+
 export class ToolBroker {
   private byName = new Map<string, ToolDef>();
 

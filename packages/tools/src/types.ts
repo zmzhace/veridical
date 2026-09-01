@@ -4,6 +4,7 @@ export interface ToolDef {
   description: string;
   deterministic: boolean;
   version?: string;
+  status?: 'draft' | 'approved' | 'deprecated' | 'revoked';
   input_schema?: unknown;
   output_schema?: unknown;
   side_effect?: 'none' | 'read' | 'write';

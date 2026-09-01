@@ -35,6 +35,7 @@ describe('parseSpecYaml', () => {
     expect(spec.tools.map((t) => t.name)).toEqual(['get_map', 'send_notice']);
     expect(spec.tools[1].access).toBe('ask');
     expect(spec.tools[1].deterministic).toBe(false);
+    expect(spec.output).toMatchObject({ profile: 'conversational', message_format: 'markdown', strict: true });
   });
 
   it('defaults fallback to empty array when omitted', () => {
