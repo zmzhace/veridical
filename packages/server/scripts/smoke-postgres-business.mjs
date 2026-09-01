@@ -165,8 +165,11 @@ try {
   const artifact = await env.db.get('e2e', 'spec', `${agentName}@1.0.0`);
   assert.ok(artifact);
   assert.equal(
-    (await env.objectStore.head(`tenants/e2e/artifacts/${agentName}@1.0.0/${artifact.digest}.json`))
-      .$metadata.httpStatusCode,
+    (
+      await env.objectStore.head(
+        `tenants/e2e/artifacts/spec/${agentName}@1.0.0/${artifact.digest}.json`,
+      )
+    ).$metadata.httpStatusCode,
     200,
   );
   const artifactResponse = await request(
