@@ -38,6 +38,23 @@ const report = {
   failures: [],
 };
 
+function sourceState() {
+  const rows = sqlite.sql
+    .prepare(
+      `SELECT
+        (SELECT count(*) FROM sessions) AS sessions,
+        (SELECT count(*) FROM events) AS events,
+        (SELECT count(*) FROM artifacts) AS artifacts,
+        (SELECT count(*) FROM pointers) AS pointers,
+        (SELECT count(*) FROM jobs) AS jobs,
+        (SELECT count(*) FROM revoked_tokens) AS revoked_tokens,
+        (SELECT count(*) FROM rate_limits) AS rate_limits,
+        (SELECT coalesce(max(seq), 0) FROM sessions) AS max_seq`,
+    )
+    .get();
+  return createHash('sha256').update(JSON.stringify(rows)).digest('hex');
+}
+
 try {
   await migratePostgres(url);
   if (rollback) await rollbackMigration();
@@ -56,6 +73,8 @@ try {
 }
 
 async function importAll() {
+  const sourceStateBefore = sourceState();
+  report.source_state_before = sourceStateBefore;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -200,6 +219,9 @@ async function importAll() {
     }
     report.tenants = [...tenantSet].sort();
     report.source_hash = sourceHash.digest('hex');
+    const sourceStateAfter = sourceState();
+    report.source_state_after = sourceStateAfter;
+    if (sourceStateAfter !== sourceStateBefore) throw new Error('sqlite_changed_during_migration');
     report.migration_hash = createHash('sha256')
       .update(
         JSON.stringify({
