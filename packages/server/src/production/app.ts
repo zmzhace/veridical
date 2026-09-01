@@ -2044,9 +2044,17 @@ export async function buildProductionApp(options: {
       })
       .parse(req.query);
     const events = await db.read(req.principal.tenant, id);
+    const steps = projectTrajectory(events, { path: query.path, scope: query.scope });
+    await db.audit(req.principal.tenant, req.principal.actor, 'trajectory.read', {
+      session: id,
+      path: query.path,
+      scope: query.scope,
+      count: steps.length,
+      request_id: req.id,
+    });
     return {
       session: id,
-      steps: projectTrajectory(events, { path: query.path, scope: query.scope }),
+      steps,
     };
   });
   app.get('/v1/tasks/:id/artifacts', async (req) => {
