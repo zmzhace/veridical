@@ -862,7 +862,12 @@ export async function buildProductionApp(options: {
       name: spec.name ?? artifact.key,
       description: spec.description ?? spec.instructions ?? '',
       model: spec.llm?.model ?? 'configured',
-      status: artifact.status === 'revoked' ? 'archived' : 'published',
+      status:
+        artifact.status === 'revoked'
+          ? 'archived'
+          : artifact.status === 'draft'
+            ? 'draft'
+            : 'published',
       version: spec.version,
       updated_at: artifact.created,
       capabilities: {
@@ -879,7 +884,16 @@ export async function buildProductionApp(options: {
     requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
     const page = Page.parse(req.query);
     const artifacts = await db.list(req.principal.tenant, 'spec', page.limit, page.offset);
-    return artifacts.filter((artifact: any) => artifact.status === 'approved').map(productionAgent);
+    const canSeeDrafts =
+      req.principal.roles.includes('developer') ||
+      req.principal.roles.includes('reviewer') ||
+      req.principal.roles.includes('publisher');
+    return artifacts
+      .filter(
+        (artifact: any) =>
+          artifact.status === 'approved' || (canSeeDrafts && artifact.status === 'draft'),
+      )
+      .map(productionAgent);
   });
   app.post('/v1/agents', async (req, reply) => {
     requireRole(req.principal, 'developer');
@@ -966,7 +980,15 @@ export async function buildProductionApp(options: {
       const candidates = await db.list(req.principal.tenant, 'spec', 100, 0);
       artifact = candidates.find((candidate: any) => candidate.body?.name === name);
     }
-    if (!artifact || artifact.status !== 'approved') throw new Fault(404, 'agent_not_found');
+    const canSeeDraft =
+      req.principal.roles.includes('developer') ||
+      req.principal.roles.includes('reviewer') ||
+      req.principal.roles.includes('publisher');
+    if (
+      !artifact ||
+      (artifact.status !== 'approved' && !(canSeeDraft && artifact.status === 'draft'))
+    )
+      throw new Fault(404, 'agent_not_found');
     return productionAgent(artifact);
   });
   app.get('/v1/agents/:name/draft', async (req) => {

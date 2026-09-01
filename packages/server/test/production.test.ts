@@ -615,6 +615,11 @@ test('production Agent creation creates a safe draft candidate', async () => {
   const candidate = env.db.get('acme', 'spec', 'new-agent@0.1.0');
   expect(candidate?.status).toBe('draft');
   expect(candidate?.body.tools).toEqual([{ name: 'finish', access: 'allow' }]);
+  expect((await request('developer', 'GET', '/v1/agents/new-agent')).json()).toMatchObject({
+    id: 'new-agent',
+    status: 'draft',
+  });
+  expect((await request('viewer', 'GET', '/v1/agents/new-agent')).statusCode).toBe(404);
 });
 test('production Agent duplication creates an un-deployed draft', async () => {
   await publish();
