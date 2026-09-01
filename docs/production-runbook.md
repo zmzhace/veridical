@@ -95,6 +95,8 @@ pnpm test:production
 
 生产 API 只接受已审批并部署的 Release。草稿、Mock 工具、动态能力、未审批 Skill/MCP 和 SQLite fallback 都会被拒绝。
 
+任何 Spec、Skill、Tool、MCP、Model、Loop 或 Knowledge 版本变化都必须生成新 Release 并重新评测。gbrain Knowledge Backend 只能使用启动时注入的固定 MCP bindings，禁止运行时动态发现。
+
 ## 运行检查
 
 - `/health/live`：进程存活
@@ -114,3 +116,11 @@ Strict Replay 是生产默认回放模式。Fixture 或 Semantic Replay 必须�
 - 事件链或 digest 校验失败：停止流量，保留快照，禁止强行切换。
 
 生产控制台使用 `/v1/models`、`/v1/tools`、`/v1/capabilities`、`/v1/tasks/:id/invocations` 和 `/v1/tasks/:id/trajectory/export` 读取服务端真实能力，不要求浏览器填写凭据。轨迹导出只生成 GRPO/RL 数据，不在 Veridical 内训练。
+
+## 关闭与回滚
+
+1. 停止入口流量并等待 Worker drain。
+2. 保留 PostgreSQL、S3、SQLite 快照和迁移报告。
+3. 仅在事件链、Job fencing、Artifact digest 和 Strict Replay 检查通过后恢复旧 Release。
+
+生产日志和导出文件不得包含 API Key；Trace 中的敏感字段必须保留 redaction 标记与 hash。
