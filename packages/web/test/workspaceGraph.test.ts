@@ -18,8 +18,19 @@ describe('workspace graph', () => {
   it('reconstructs input, agent, tools and output from a spec', () => {
     const spec = parse(compileWorkspaceSpec(simpleAgentGraph));
     const graph = workspaceFromSpec(spec);
-    expect(graph.nodes.map((node) => node.type)).toEqual(['input', 'agent', 'tool', 'output']);
-    expect(graph.edges.map((edge) => edge.kind)).toEqual(['message', 'capability', 'message']);
+    expect(graph.nodes.map((node) => node.type)).toEqual([
+      'input',
+      'agent',
+      'tool',
+      'memory',
+      'output',
+    ]);
+    expect(graph.edges.map((edge) => edge.kind)).toEqual([
+      'message',
+      'capability',
+      'memory',
+      'message',
+    ]);
   });
 
   it('compiles capability bindings and output policy into the spec', () => {

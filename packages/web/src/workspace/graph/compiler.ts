@@ -147,7 +147,56 @@ export function workspaceFromSpec(spec: AgentSpec): WorkspaceGraph {
         title: tool.name,
         description: `权限：${tool.access}`,
         position: { x: 38 + index * 12, y: 68 },
-        config: { access: tool.access },
+        config: {
+          name: tool.name,
+          access: tool.access,
+          ...(tool.name.includes('/') ? { source: 'mcp', serverRef: tool.name.split('/')[0] } : {}),
+        },
+      })),
+      ...spec.skills.map((skill, index) => ({
+        id: `skill-${index}`,
+        type: 'skill' as const,
+        label: 'Skill',
+        title: skill.name,
+        description: skill.description ?? skill.procedure ?? '版本化行为指令',
+        position: { x: 30 + index * 14, y: 84 },
+        config: {
+          version: skill.version,
+          status: skill.status,
+          skillKey: `${skill.name}@${skill.version}`,
+          procedure: skill.procedure,
+        },
+      })),
+      ...(spec.capabilities?.memory_scopes?.length
+        ? [
+            {
+              id: 'memory',
+              type: 'memory' as const,
+              label: 'Memory',
+              title: 'Memory',
+              description: '按策略读取和保存上下文',
+              position: { x: 20, y: 68 },
+              config: { scopes: spec.capabilities.memory_scopes },
+            },
+          ]
+        : []),
+      ...(spec.capabilities?.knowledge_backends ?? []).map((backend, index) => ({
+        id: `knowledge-${index}`,
+        type: 'condition' as const,
+        label: 'Knowledge',
+        title: backend,
+        description: '授权知识检索后端',
+        position: { x: 22 + index * 14, y: 52 },
+        config: { kind: 'knowledge', backendId: backend },
+      })),
+      ...spec.agents.map((delegate, index) => ({
+        id: `child-agent-${index}`,
+        type: 'child-agent' as const,
+        label: 'Child Agent',
+        title: delegate.name,
+        description: '由主 Agent 委派任务',
+        position: { x: 58 + index * 14, y: 84 },
+        config: { specRef: delegate.spec_ref },
       })),
       {
         id: 'output',
@@ -168,6 +217,27 @@ export function workspaceFromSpec(spec: AgentSpec): WorkspaceGraph {
       source: `tool-${index}`,
       target: 'agent',
       kind: 'capability' as const,
+    })),
+    ...spec.skills.map((_, index) => ({
+      id: `skill-${index}-agent`,
+      source: `skill-${index}`,
+      target: 'agent',
+      kind: 'instruction' as const,
+    })),
+    ...(spec.capabilities?.memory_scopes?.length
+      ? [{ id: 'memory-agent', source: 'memory', target: 'agent', kind: 'memory' as const }]
+      : []),
+    ...(spec.capabilities?.knowledge_backends ?? []).map((_, index) => ({
+      id: `knowledge-${index}-agent`,
+      source: `knowledge-${index}`,
+      target: 'agent',
+      kind: 'control' as const,
+    })),
+    ...spec.agents.map((_, index) => ({
+      id: `child-agent-${index}-agent`,
+      source: 'agent',
+      target: `child-agent-${index}`,
+      kind: 'delegate' as const,
     })),
     { id: 'agent-output', source: 'agent', target: 'output', kind: 'message' },
   ];
