@@ -217,6 +217,38 @@ test('production skills are immutable versioned artifacts requiring approval', a
     ).statusCode,
   ).toBe(409);
 });
+test('production MCP servers are versioned artifacts with transport validation and approval', async () => {
+  const created = await request('developer', 'POST', '/v1/mcp/servers', {
+    name: 'research-tools',
+    version: '1.0.0',
+    transport: 'streamable-http',
+    endpoint: 'https://mcp.example.test/mcp',
+    tool_names: ['search'],
+  });
+  expect(created.statusCode).toBe(201);
+  expect(created.json()).toMatchObject({ id: 'research-tools@1.0.0', status: 'draft' });
+  expect(
+    (
+      await request('reviewer', 'POST', '/v1/mcp/servers/research-tools@1.0.0/decision', {
+        status: 'approved',
+      })
+    ).statusCode,
+  ).toBe(200);
+  expect((await request('viewer', 'GET', '/v1/mcp/servers')).json()).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: 'research-tools@1.0.0', status: 'approved' }),
+    ]),
+  );
+  expect(
+    (
+      await request('developer', 'POST', '/v1/mcp/servers', {
+        name: 'bad',
+        version: '1.0.0',
+        transport: 'streamable-http',
+      })
+    ).statusCode,
+  ).toBe(400);
+});
 test('revoked tokens remain revoked and admin cannot revoke another tenant token', async () => {
   expect(
     (

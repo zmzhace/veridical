@@ -471,6 +471,95 @@ export async function buildProductionApp(options: {
     });
     return { ...updated.body, id, status: updated.status, content_hash: updated.digest };
   });
+  const McpInput = z
+    .object({
+      name: Key,
+      version: z.string().min(1).max(80),
+      transport: z.enum(['streamable-http', 'stdio']),
+      endpoint: z.string().url().optional(),
+      command: z.string().min(1).max(500).optional(),
+      args: z.array(z.string().max(500)).max(32).default([]),
+      credential_ref: z.string().max(260).optional(),
+      schema_hash: z
+        .string()
+        .regex(/^[a-f0-9]{64}$/)
+        .optional(),
+      tool_names: z.array(Key).max(200).default([]),
+    })
+    .strict()
+    .superRefine((value, ctx) => {
+      if (value.transport === 'streamable-http' && !value.endpoint)
+        ctx.addIssue({ code: 'custom', path: ['endpoint'], message: 'HTTP MCP 需要 endpoint' });
+      if (value.transport === 'stdio' && !value.command)
+        ctx.addIssue({ code: 'custom', path: ['command'], message: 'stdio MCP 需要 command' });
+    });
+  app.get('/v1/mcp/servers', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
+    const rows = await db.list(req.principal.tenant, 'mcp_server', 100, 0);
+    const result = rows
+      .filter((row: any) => row?.status !== 'deleted')
+      .map((row: any) => ({
+        ...row.body,
+        id: row.key,
+        status: row.status,
+        artifact_hash: row.digest,
+      }));
+    await db.audit(req.principal.tenant, req.principal.actor, 'mcp.list', {
+      count: result.length,
+      request_id: req.id,
+    });
+    return result;
+  });
+  app.post('/v1/mcp/servers', async (req, reply) => {
+    requireRole(req.principal, 'developer', 'reviewer');
+    const input = McpInput.parse(req.body);
+    const id = `${input.name}@${input.version}`;
+    if (await db.get(req.principal.tenant, 'mcp_server', id))
+      throw new Fault(409, 'mcp_server_exists');
+    const record = await db.put(
+      req.principal.tenant,
+      'mcp_server',
+      id,
+      input,
+      req.principal.actor,
+      'draft',
+    );
+    await db.audit(req.principal.tenant, req.principal.actor, 'mcp.created', {
+      server_id: id,
+      artifact_hash: record.digest,
+      request_id: req.id,
+    });
+    return reply
+      .code(201)
+      .send({ ...input, id, status: record.status, artifact_hash: record.digest });
+  });
+  app.post('/v1/mcp/servers/:id/decision', async (req) => {
+    requireRole(req.principal, 'reviewer', 'publisher');
+    const { id } = z.object({ id: z.string().min(3).max(160) }).parse(req.params);
+    const decision = z
+      .object({ status: z.enum(['approved', 'deprecated', 'revoked']) })
+      .strict()
+      .parse(req.body);
+    const current = await db.get(req.principal.tenant, 'mcp_server', id);
+    if (!current || current.status === 'deleted') throw new Fault(404, 'mcp_server_not_found');
+    const updated = await db.transition(
+      req.principal.tenant,
+      'mcp_server',
+      id,
+      decision.status,
+      {
+        ...current.meta,
+        decided_at: new Date().toISOString(),
+      },
+      req.principal.actor,
+    );
+    await db.audit(req.principal.tenant, req.principal.actor, 'mcp.decision', {
+      server_id: id,
+      status: decision.status,
+      request_id: req.id,
+    });
+    return { ...updated.body, id, status: updated.status, artifact_hash: updated.digest };
+  });
   app.get('/v1/specs', async (req) => {
     requireRole(req.principal, 'viewer', 'developer', 'reviewer', 'publisher');
     const page = Page.parse(req.query);
