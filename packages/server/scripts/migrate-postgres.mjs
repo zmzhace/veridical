@@ -33,6 +33,7 @@ const report = {
     jobs: 0,
     revoked_tokens: 0,
     rate_limits: 0,
+    audit_events: 0,
   },
   tenants: [],
   failures: [],
@@ -109,6 +110,7 @@ async function importAll() {
           'SELECT tenant,session,seq,id,blob,prev,hash FROM events WHERE tenant=? AND session=? ORDER BY seq',
         )
         .all(row.tenant, row.id);
+      if (row.kind === 'audit') report.counts.audit_events += events.length;
       for (const event of events) {
         sourceHash.update(JSON.stringify(event));
         const decoded = sqlite.decrypt(
@@ -260,6 +262,11 @@ async function verifyTarget() {
     for (const [name, value] of Object.entries(result.rows[0]))
       if (Number(value) !== report.counts[name])
         throw new Error(`migration_${name}_count_mismatch`);
+    const audit = await target.pool.query(
+      "SELECT count(*) FROM events e JOIN sessions s ON s.tenant=e.tenant AND s.id=e.session WHERE s.kind='audit'",
+    );
+    if (Number(audit.rows[0].count) !== report.counts.audit_events)
+      throw new Error('migration_audit_event_count_mismatch');
     const targetHash = createHash('sha256');
     for (const table of ['events', 'artifacts', 'pointers', 'jobs']) {
       const rows = await target.pool.query(`SELECT * FROM ${table} ORDER BY tenant, 2`, []);
