@@ -1710,6 +1710,95 @@ export async function buildProductionApp(options: {
     const body = z.object({ ref: Ref, reason: Reason }).strict().parse(req.body);
     return await service.approve(req.principal, body.ref, body.reason);
   });
+  // Runtime approval requests are immutable records. Execution remains
+  // fail-closed until a reviewer explicitly transitions the request; the
+  // request body is content-addressed so a later resume can verify that the
+  // approved tool arguments have not changed.
+  app.post('/v1/approvals/requests', async (req, reply) => {
+    requireRole(req.principal, 'operator', 'developer');
+    const body = z
+      .object({
+        session: Key,
+        tool: Key,
+        args: z.unknown(),
+        reason: Reason,
+      })
+      .strict()
+      .parse(req.body);
+    const session = await db.session(req.principal.tenant, body.session);
+    if (!session || session.kind !== 'run') throw new Fault(404, 'session_not_found');
+    const key = `approval_${randomUUID()}`;
+    const request = {
+      id: key,
+      session: body.session,
+      tool: body.tool,
+      args: body.args,
+      args_hash: digest(body.args),
+      reason: body.reason,
+      requested_by: req.principal.actor,
+      status: 'pending' as const,
+    };
+    const artifact = await db.put(
+      req.principal.tenant,
+      'approval_request',
+      key,
+      request,
+      req.principal.actor,
+      'pending',
+    );
+    await db.audit(req.principal.tenant, req.principal.actor, 'approval.requested', {
+      id: key,
+      session: body.session,
+      tool: body.tool,
+      args_hash: request.args_hash,
+      request_id: req.id,
+    });
+    return reply.code(201).send({ id: key, status: artifact.status, digest: artifact.digest });
+  });
+  app.get('/v1/approvals/requests', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
+    const rows = await db.list(req.principal.tenant, 'approval_request', 200, 0);
+    await db.audit(req.principal.tenant, req.principal.actor, 'approval.list', {
+      count: rows.length,
+      request_id: req.id,
+    });
+    return rows.map((row: any) => ({
+      id: row.key,
+      ...row.body,
+      args: undefined,
+      digest: row.digest,
+      status: row.status,
+      created: row.created,
+    }));
+  });
+  app.post('/v1/approvals/requests/:id/decision', async (req) => {
+    requireRole(req.principal, 'reviewer', 'publisher');
+    const { id } = z.object({ id: Key }).parse(req.params);
+    const body = z
+      .object({ status: z.enum(['approved', 'denied']), reason: Reason })
+      .strict()
+      .parse(req.body);
+    const current = await db.get(req.principal.tenant, 'approval_request', id);
+    if (!current) throw new Fault(404, 'approval_request_not_found');
+    if (current.status !== 'pending') throw new Fault(409, 'approval_request_already_decided');
+    if (current.body.requested_by === req.principal.actor)
+      throw new Fault(403, 'independent_reviewer_required');
+    const updated = await db.transition(
+      req.principal.tenant,
+      'approval_request',
+      id,
+      body.status,
+      { ...current.meta, decision_by: req.principal.actor, decision_reason: body.reason },
+      req.principal.actor,
+    );
+    await db.audit(req.principal.tenant, req.principal.actor, 'approval.decided', {
+      id,
+      status: body.status,
+      reason: body.reason,
+      request_id: req.id,
+    });
+    return { id, status: updated.status, digest: updated.digest };
+  });
   app.post('/v1/deployments/:name', async (req) => {
     const { name } = z.object({ name: Key }).parse(req.params);
     const body = z

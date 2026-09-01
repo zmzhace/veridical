@@ -528,6 +528,50 @@ test('publication requires evidence, independent reviewer and publisher; version
     }),
   });
 });
+test('runtime approval requests are tenant-scoped, immutable and independently decided', async () => {
+  await publish();
+  const job = env.service.run(
+    principal('operator'),
+    { name: 'probe', channel: 'production', prompt: 'approval fixture' },
+    'approval-run',
+  );
+  expect((await drain(job.id)).state).toBe('completed');
+  const created = await request('operator', 'POST', '/v1/approvals/requests', {
+    session: job.session,
+    tool: 'external_send',
+    args: { destination: 'example', body: 'hello' },
+    reason: 'send an approved notification',
+  });
+  expect(created.statusCode).toBe(201);
+  const id = created.json().id;
+  expect(
+    (
+      await request('operator', 'POST', `/v1/approvals/requests/${id}/decision`, {
+        status: 'approved',
+        reason: 'operator cannot self approve',
+      })
+    ).statusCode,
+  ).toBe(403);
+  const decided = await request('reviewer', 'POST', `/v1/approvals/requests/${id}/decision`, {
+    status: 'approved',
+    reason: 'reviewed scope and destination',
+  });
+  expect(decided.statusCode).toBe(200);
+  expect(decided.json()).toMatchObject({ id, status: 'approved' });
+  const listed = await request('viewer', 'GET', '/v1/approvals/requests');
+  expect(listed.statusCode).toBe(200);
+  const listedRequest = listed.json().find((item: any) => item.id === id);
+  expect(listedRequest).toMatchObject({ id, status: 'approved', tool: 'external_send' });
+  expect(listedRequest.args).toBeUndefined();
+  expect(
+    (
+      await request('reviewer', 'POST', `/v1/approvals/requests/${id}/decision`, {
+        status: 'denied',
+        reason: 'cannot change a decided request',
+      })
+    ).statusCode,
+  ).toBe(409);
+});
 test('failed evaluation, changed suite and changed runtime invalidate release eligibility', async () => {
   env.service.createSpec(principal('developer'), yaml());
   env.service.setSuite(principal('reviewer'), 'probe', suite('MISSING'));
