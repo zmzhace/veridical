@@ -75,6 +75,22 @@ export const useAgentTasks = (id: string) =>
     },
     enabled: !!id,
   });
+export const useAgentManifest = (id: string) =>
+  useQuery({
+    queryKey: ['agent-manifest', id],
+    queryFn: async () => {
+      try {
+        return await apiFetch<Record<string, unknown>>(
+          `/v1/agents/${encodeURIComponent(id)}/manifest`,
+        );
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
+        throw error;
+      }
+    },
+    enabled: !!id,
+    retry: false,
+  });
 export const useAgentDraft = (id: string) =>
   useQuery({
     queryKey: ['agent-draft', id],

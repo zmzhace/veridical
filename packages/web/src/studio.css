@@ -686,6 +686,25 @@
   border-radius: 7px;
   font-size: 10px;
 }
+.publish-manifest {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted, #f7f7f5);
+  font-size: 12px;
+}
+.publish-manifest span {
+  color: var(--muted);
+}
+.publish-manifest strong {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+.publish-manifest small {
+  color: var(--muted);
+}
 .publish-checks .is-ok {
   color: #356247;
 }

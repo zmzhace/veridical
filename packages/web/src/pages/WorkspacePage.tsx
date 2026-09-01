@@ -11,6 +11,7 @@ import type { TraceEvent } from '@veridical/schema';
 import {
   useAgent,
   useAgentDraft,
+  useAgentManifest,
   useAgentTasks,
   useAgents,
   usePublishAgent,
@@ -73,6 +74,7 @@ export function WorkspacePage() {
   const { agentId = '' } = useParams();
   const agent = useAgent(agentId);
   const draft = useAgentDraft(agentId);
+  const manifest = useAgentManifest(agentId);
   const tasks = useAgentTasks(agentId);
   const agents = useAgents();
   const tools = useTools();
@@ -772,6 +774,15 @@ export function WorkspacePage() {
           {mode === 'publish' && (
             <>
               <p>发布会固定 Spec、模型、工具和 Loop 配置，生产只能执行已发布版本。</p>
+              {manifest.data && (
+                <div className="publish-manifest" aria-label="当前生产版本">
+                  <span>当前生产版本</span>
+                  <strong>{String(manifest.data.ref ?? '—')}</strong>
+                  <small>
+                    Release {String(manifest.data.release_artifact_hash ?? '—').slice(0, 12)}
+                  </small>
+                </div>
+              )}
               <div className="publish-checks">
                 <span className={errors.length ? 'is-error' : 'is-ok'}>
                   {errors.length ? '×' : '✓'} 画布结构
