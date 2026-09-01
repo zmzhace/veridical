@@ -581,6 +581,13 @@ test('production Agent catalog and Studio draft are backed by governed artifacts
   });
   expect(candidate.statusCode).toBe(202);
   expect(candidate.json()).toMatchObject({ status: 'pending_review', ref: 'probe@1.0.1' });
+  const deployment = await request('viewer', 'GET', '/v1/agents/probe/deployment');
+  expect(deployment.statusCode).toBe(200);
+  expect(deployment.json()).toMatchObject({
+    deployed: true,
+    ref: 'probe@1.0.0',
+    channel: 'production',
+  });
 });
 test('tool observations feed the next model request and history is recorded once', async () => {
   await publish();

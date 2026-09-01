@@ -877,6 +877,27 @@ export async function buildProductionApp(options: {
       digest: draft.digest,
     };
   });
+  app.get('/v1/agents/:name/deployment', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
+    const { name } = z.object({ name: Key }).parse(req.params);
+    const channel = z
+      .object({ channel: z.enum(['production', 'canary']).default('production') })
+      .parse(req.query).channel;
+    const ref = await db.pointer(req.principal.tenant, 'deployment', `${channel}.${name}`);
+    if (!ref) return { name, channel, deployed: false };
+    const spec = await db.get(req.principal.tenant, 'spec', ref);
+    if (!spec || spec.status !== 'approved') return { name, channel, deployed: false, ref };
+    return {
+      name,
+      channel,
+      deployed: true,
+      ref,
+      digest: spec.digest,
+      release_artifact_hash: spec.meta.release_artifact_hash,
+      version: spec.body.version,
+      manifest_url: `/v1/releases/${encodeURIComponent(ref)}/manifest`,
+    };
+  });
   app.put('/v1/agents/:name/draft', async (req) => {
     requireRole(req.principal, 'developer');
     const { name } = z.object({ name: Key }).parse(req.params);
