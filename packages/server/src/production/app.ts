@@ -235,10 +235,67 @@ export async function buildProductionApp(options: {
         .slice(0, input.limit);
     },
   };
+  const fileListTool: ProductionTool = {
+    name: 'file_list',
+    version: '1.0.0',
+    description: '列出当前项目可访问的文件',
+    readOnly: true,
+    schema: z.object({ project_id: Key }),
+    execute: async (args, context) => {
+      const input = z.object({ project_id: Key }).parse(args);
+      const files = await db.list(context.tenant, 'file', 100, 0);
+      return files
+        .filter(
+          (file: any) => file?.status === 'active' && file.body?.project_id === input.project_id,
+        )
+        .map((file: any) => ({
+          id: file.key,
+          name: file.body.name,
+          mime_type: file.body.mime_type,
+          size: file.body.size,
+          content_hash: file.body.content_hash,
+        }));
+    },
+  };
+  const fileReadTool: ProductionTool = {
+    name: 'file_read',
+    version: '1.0.0',
+    description: '读取当前项目已授权文件的文本内容',
+    readOnly: true,
+    schema: z.object({
+      project_id: Key,
+      file_id: Key,
+      max_bytes: z.number().int().min(1).max(2_000_000).default(500_000),
+    }),
+    execute: async (args, context) => {
+      const input = z
+        .object({
+          project_id: Key,
+          file_id: Key,
+          max_bytes: z.number().int().min(1).max(2_000_000).default(500_000),
+        })
+        .parse(args);
+      const file = await db.get(context.tenant, 'file', input.file_id);
+      if (!file || file.status !== 'active' || file.body?.project_id !== input.project_id)
+        throw new Fault(404, 'file_not_found');
+      if (!objectStore) throw new Fault(503, 's3_object_store_required');
+      const bytes = await objectStore.get(file.body.object_key);
+      return {
+        id: input.file_id,
+        name: file.body.name,
+        mime_type: file.body.mime_type,
+        content_hash: file.body.content_hash,
+        text: Buffer.from(bytes.subarray(0, input.max_bytes)).toString('utf8'),
+        truncated: bytes.byteLength > input.max_bytes,
+      };
+    },
+  };
   const durableJobs =
     config.storage.database === 'postgres' ? new PostgresJobStore(db) : options.jobs;
   const registeredTools = [
     ...(options.tools ?? safeTools),
+    fileListTool,
+    fileReadTool,
     knowledgeSearchTool,
     ...(options.mcpTools ?? config.mcpTools).map(createMcpProductionTool),
   ];
