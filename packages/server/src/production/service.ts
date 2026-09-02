@@ -496,12 +496,7 @@ export class ProductionService {
     channel: string,
     reason: string,
   ) {
-    const spec = await (this.db as any).get(p.tenant, 'spec', ref);
-    if (!spec) throw new Fault(404, 'spec_not_found');
-    await this.assertSkillsManaged(p.tenant, spec.body);
-    await this.assertMcpManaged(p.tenant, spec.body);
-    await this.assertKnowledgeManaged(p.tenant, spec.body);
-    if (spec.status !== 'approved') throw new Fault(409, 'release_not_approved');
+    const spec = await this.assertApprovedManaged(p.tenant, ref);
     if (spec.body.name !== name) throw new Fault(422, 'release_name_mismatch');
     await (this.db as any).point(
       p.tenant,
@@ -602,12 +597,7 @@ export class ProductionService {
       `${input.channel}.${input.name}`,
     );
     if (!ref) throw new Fault(404, 'deployment_not_found');
-    const spec = await (this.db as any).get(p.tenant, 'spec', ref);
-    if (!spec || spec.status !== 'approved')
-      throw new Fault(409, 'release_not_approved_for_environment');
-    await this.assertSkillsManaged(p.tenant, spec.body);
-    await this.assertMcpManaged(p.tenant, spec.body);
-    await this.assertKnowledgeManaged(p.tenant, spec.body);
+    await this.assertApprovedManaged(p.tenant, ref);
     return this.enqueueManaged(
       p.tenant,
       p.actor,
