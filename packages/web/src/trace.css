@@ -8,6 +8,27 @@
   border-radius: 8px;
   background: #fff;
 }
+
+.trace-node-replay {
+  margin-left: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  color: var(--accent, #5753d6);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 9px;
+  opacity: 0;
+  transition: opacity 140ms ease, background 140ms ease;
+}
+.invocation-tree article:hover .trace-node-replay,
+.invocation-tree article:focus-within .trace-node-replay { opacity: 1; }
+.trace-node-replay:hover { background: #f1f0ff; }
+.trace-node-replay:disabled { cursor: wait; opacity: .65; }
+@media (max-width: 720px) {
+  .trace-node-replay { opacity: 1; }
+}
 .trace-explainer strong {
   flex: 0 0 auto;
   color: var(--ink);

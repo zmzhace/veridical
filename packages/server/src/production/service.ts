@@ -651,9 +651,14 @@ export class ProductionService {
       credential: p.tokenHash,
     });
   }
-  replay(p: Principal, source: string, idem: string) {
+  replay(
+    p: Principal,
+    source: string,
+    idem: string,
+    target?: { invocation_id?: string; path?: string; scope?: 'invocation' | 'subtree' | 'agent' },
+  ) {
     requireRole(p, 'operator', 'reviewer');
-    if ((this.db as any).pool) return this.replayManaged(p, source, idem);
+    if ((this.db as any).pool) return this.replayManaged(p, source, idem, target);
     this.checkCapacity();
     const session = this.db.session(p.tenant, source);
     if (!session || session.kind !== 'run') throw new Fault(404, 'session_not_found');
@@ -665,11 +670,17 @@ export class ProductionService {
       source,
       checkpoint,
       credential: p.tokenHash,
+      ...(target ? { replay_target: target } : {}),
     });
     this.kick();
     return job;
   }
-  private async replayManaged(p: Principal, source: string, idem: string) {
+  private async replayManaged(
+    p: Principal,
+    source: string,
+    idem: string,
+    target?: { invocation_id?: string; path?: string; scope?: 'invocation' | 'subtree' | 'agent' },
+  ) {
     await this.checkCapacityManaged();
     const session = await (this.db as any).session(p.tenant, source);
     if (!session || session.kind !== 'run') throw new Fault(404, 'session_not_found');
@@ -680,6 +691,7 @@ export class ProductionService {
       source,
       checkpoint,
       credential: p.tokenHash,
+      ...(target ? { replay_target: target } : {}),
     });
   }
   private checkCredential(job: Job) {
@@ -846,6 +858,7 @@ export class ProductionService {
         tools: this.tools,
         signal,
         check: () => this.checkCredential(job),
+        target: job.args.replay_target,
       });
     } else if (job.kind === 'evaluate') result = await this.evaluateJob(job, signal);
     else result = await this.improveJob(job, signal);
@@ -874,6 +887,7 @@ export class ProductionService {
         check: () => {
           void this.checkCredentialManaged(job);
         },
+        target: job.args.replay_target,
       });
     } else if (job.kind === 'evaluate') result = await this.evaluateJobManaged(job, signal);
     else result = await this.improveJobManaged(job, signal);

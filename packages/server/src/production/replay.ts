@@ -34,8 +34,9 @@ export async function replayRecorded(options: {
   tools: ProductionTool[];
   signal: AbortSignal;
   check: () => void | Promise<void>;
+  target?: { invocation_id?: string; path?: string; scope?: 'invocation' | 'subtree' | 'agent' };
 }) {
-  const { db, job, spec, config, tools, signal } = options;
+  const { db, job, spec, config, tools, signal, target } = options;
   const checkpoint = await db.verify(job.tenant, job.args.source, job.args.checkpoint);
   if (checkpoint.head !== job.args.checkpoint.head || checkpoint.seq !== job.args.checkpoint.seq)
     throw new Fault(409, 'replay_source_changed');
@@ -62,6 +63,38 @@ export async function replayRecorded(options: {
     throw new Fault(409, 'replay_manifest_mismatch');
   const cursor = new ReplayCursor(source);
   if (!cursor.invocations.length) throw new Fault(422, 'replay_legacy_trace');
+  if (target?.path || target?.invocation_id) {
+    const hit = target.invocation_id
+      ? cursor.invocations.find((item) => item.invocation_id === target.invocation_id)
+      : cursor.invocations.find((item) => item.path === target.path);
+    if (!hit) throw new Fault(409, target.invocation_id ? 'replay_miss' : 'replay_path_mismatch');
+    if (target.path && hit.path !== target.path) throw new Fault(409, 'replay_path_mismatch');
+    const scope = target.scope ?? 'subtree';
+    const inScope = (event: TraceEvent) => scope === 'invocation'
+      ? event.path === hit.path
+      : event.path === hit.path || event.path?.startsWith(`${hit.path}/`);
+    if (source
+      .filter(inScope)
+      .some((event) => event.verb === 'error'))
+      throw new Fault(409, 'replay_source_changed');
+    // A scoped production replay is an offline, path-isolated playback. It
+    // returns the recorded branch and never invokes live providers or tools.
+    return {
+      matched: true,
+      mode: 'strict',
+      identical: true,
+      degraded: false,
+      replayed_scope: scope,
+      target_path: hit.path,
+      target_invocation_id: hit.invocation_id,
+      execution: 'recorded_slice',
+      outcome: hit.output,
+      source: job.args.source,
+      checkpoint,
+      semantic_digest: digest(comparableGraph(source.filter(inScope))),
+      external_calls: 0,
+    };
+  }
   const interceptor: InvocationInterceptor = async (scope, input, execute) => {
     const i = scope.invocation;
     const hit = cursor.nextInvocation(i.path, i.operation, input, i.attempt, i.ordinal);

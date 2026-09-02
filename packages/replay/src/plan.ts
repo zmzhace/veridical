@@ -27,6 +27,10 @@ export interface SemanticCriteria {
 
 export interface ReplayPlan {
   mode?: ReplayMode;
+  /** Replay only one invocation or the recorded subtree below it. */
+  target_invocation_id?: string;
+  target_path?: string;
+  target_scope?: 'invocation' | 'subtree' | 'agent';
   downgrade_reason?: string;
   invocation_fixtures?: InvocationFixture[];
   semantic?: SemanticCriteria;

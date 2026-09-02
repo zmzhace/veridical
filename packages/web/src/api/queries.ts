@@ -338,7 +338,7 @@ export const useReplayExecution = () =>
           {
             method: 'POST',
             headers: { 'idempotency-key': `replay-${crypto.randomUUID()}` },
-            body: JSON.stringify({ session: id, mode: body.mode ?? 'strict' }),
+            body: JSON.stringify({ session: id, ...body, mode: body.mode ?? 'strict' }),
           },
         );
         for (let attempt = 0; attempt < 600; attempt += 1) {

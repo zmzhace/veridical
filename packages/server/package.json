@@ -16,6 +16,7 @@
     "test:production:postgres": "tsx scripts/smoke-postgres-business.mjs",
     "test:production:live": "node --env-file=../../.env.local --import tsx scripts/smoke-postgres-live.mjs",
     "test:production:migration": "tsx scripts/smoke-postgres-migration.mjs",
+    "replay": "node scripts/replay-cli.mjs",
     "test:infrastructure": "tsx scripts/smoke-infrastructure.mjs",
     "db:migrate:postgres": "tsx scripts/migrate-postgres.mjs"
   },

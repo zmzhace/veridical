@@ -4,6 +4,7 @@ import type { TraceEvent } from '@veridical/schema';
 import {
   canonicalJson,
   contentHash,
+  hasRedaction,
   type AgentLoop,
   type InvocationInterceptor,
 } from '@veridical/runtime';
@@ -49,6 +50,9 @@ export interface ReplayResult {
   differences: unknown[];
   source_manifest: unknown;
   replay_manifest: unknown;
+  replayed_scope?: 'full' | 'invocation' | 'subtree' | 'agent';
+  target_path?: string;
+  target_invocation_id?: string;
 }
 export interface ReplayOptions {
   runStep?: SpecRunnerDeps['runStep'];
@@ -57,6 +61,25 @@ export interface ReplayOptions {
   runtime_version?: string;
   signal?: AbortSignal;
   verify?: SpecRunnerDeps['verify'];
+}
+
+/** Resolve a user-selected node without relying on physical seq ordering. */
+export function resolveReplayTarget(
+  invocations: ReturnType<typeof projectInvocations>,
+  plan: Pick<ReplayPlan, 'target_path' | 'target_invocation_id'>,
+) {
+  if (!plan.target_path && !plan.target_invocation_id) return undefined;
+  const target = plan.target_invocation_id
+    ? invocations.find((item) => item.invocation_id === plan.target_invocation_id)
+    : invocations.find((item) => item.path === plan.target_path);
+  if (!target)
+    throw new PathReplayError(
+      plan.target_invocation_id ? 'replay_miss' : 'replay_path_mismatch',
+      plan.target_path ?? plan.target_invocation_id!,
+    );
+  if (plan.target_path && target.path !== plan.target_path)
+    throw new PathReplayError('replay_path_mismatch', plan.target_path, target.path);
+  return target;
 }
 
 /** Excludes transport identity/timing only; compares event structure within each explicit call path. */
@@ -166,6 +189,76 @@ export class ReplayEngine {
     );
     if (!spec)
       throw new ReplayError(`spec not found: ${plan.spec.name}`, 'replay_child_agent_missing');
+
+    const target = resolveReplayTarget(cursor.invocations, plan);
+    if (target) {
+      // A node replay is an offline projection of the recorded invocation graph.
+      // It intentionally never executes a live model/tool: the selected call and
+      // every descendant are copied into a fresh replay session, preserving the
+      // exact path and in/out payloads for diagnosis and training data.
+      if (mode === 'strict' && cursor.invocations.some((item) =>
+        (item.path === target.path || item.path.startsWith(`${target.path}/`)) &&
+        (item.end_seq === undefined || hasRedaction(item.input) || hasRedaction(item.output))))
+        throw new PathReplayError('replay_redacted', target.path);
+      const replaySession = `replay_${randomUUID()}`;
+      const scope = plan.target_scope ?? 'subtree';
+      const selected = source.filter((event) =>
+        scope === 'invocation'
+          ? event.path === target.path
+          : event.path === target.path || event.path?.startsWith(`${target.path}/`),
+      );
+      for (const event of selected) {
+        const { id: _id, seq: _seq, session_id: _session, ...rest } = event;
+        await this.store.appendNext({
+          ...rest,
+          session_id: replaySession,
+          span_id: rest.span_id || 'replay',
+          parent_span_id: rest.parent_span_id ?? null,
+        });
+      }
+      await this.store.appendNext({
+        tenant_id: source[0].tenant_id,
+        session_id: replaySession,
+        spec_version: spec.version,
+        span_id: 'replay',
+        parent_span_id: null,
+        type: 'replay.result',
+        verb: 'response',
+        attempt: 1,
+        duration_ms: 0,
+        payload: {
+          source: session_id,
+          mode,
+          scope,
+          target_path: target.path,
+          target_invocation_id: target.invocation_id,
+          execution: 'recorded_slice',
+          identical: mode === 'strict',
+          degraded: mode !== 'strict',
+          reason: plan.downgrade_reason,
+        },
+      });
+      const events = await this.store.readBySession(replaySession);
+      return {
+        session_id: replaySession,
+        spec_name: spec.name,
+        spec_version: spec.version,
+        outcome: target.output,
+        events,
+        mode,
+        identical: mode === 'strict',
+        degraded: mode !== 'strict',
+        passed: mode === 'strict' ? true : undefined,
+        fixtures_used: 0,
+        external_calls: 0,
+        differences: [],
+        source_manifest: first.manifest,
+        replay_manifest: first.manifest,
+        replayed_scope: scope,
+        target_path: target.path,
+        target_invocation_id: target.invocation_id,
+      };
+    }
     const fixtures = new Map<string, InvocationFixture>();
     for (const f of plan.invocation_fixtures ?? []) {
       const { hash, ...body } = f;

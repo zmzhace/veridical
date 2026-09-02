@@ -28,6 +28,7 @@ export function TaskTracePage() {
   const replay = useReplayExecution();
   const [selected, setSelected] = useState<TraceEvent | null>(null);
   const [selectedInvocation, setSelectedInvocation] = useState<any>(null);
+  const [replayTarget, setReplayTarget] = useState<string | null>(null);
   const [view, setView] = useState<'tree' | 'timeline' | 'data'>('tree');
   const events = session.data ?? [];
   const rootAgent = invocations.data?.invocations.find(
@@ -72,6 +73,20 @@ export function TaskTracePage() {
     anchor.download = `${taskId}.${format}.jsonl`;
     anchor.click();
     URL.revokeObjectURL(href);
+  }
+  function replayNode(item: any) {
+    const target = String(item.invocation_id ?? item.path ?? '');
+    setReplayTarget(target);
+    replay.mutate({
+      id: taskId,
+      body: {
+        mode: 'strict',
+        ...(item.invocation_id
+          ? { target_invocation_id: item.invocation_id }
+          : { target_path: item.path }),
+        target_scope: item.actor === 'agent' ? 'agent' : 'subtree',
+      },
+    });
   }
   return (
     <section className="trace-page">
@@ -146,7 +161,11 @@ export function TaskTracePage() {
                 : '发现回放差异'}
           </strong>
           <span>
-            {replay.data.degraded ? '本次回放已降级，详情已进入审计记录。' : '未使用静默降级。'}
+            {replay.data.replayed_scope
+              ? `已从 ${String(replay.data.target_path ?? replayTarget ?? '所选节点')} 回放${replay.data.replayed_scope === 'agent' ? '子 Agent' : '调用分支'}。`
+              : replay.data.degraded
+                ? '本次回放已降级，详情已进入审计记录。'
+                : '未使用静默降级。'}
           </span>
         </div>
       )}
@@ -201,6 +220,20 @@ export function TaskTracePage() {
                     <dd>{String(item.attempt ?? 1)}</dd>
                   </div>
                 </dl>
+                <button
+                  className="trace-node-replay"
+                  type="button"
+                  disabled={replay.isPending}
+                  aria-label={`从${operationLabel(item)}回放`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    replayNode(item);
+                  }}
+                >
+                  {replay.isPending && replayTarget === String(item.invocation_id ?? item.path)
+                    ? '回放中…'
+                    : '从这里回放'}
+                </button>
               </article>
             ))
           ) : (
@@ -231,6 +264,14 @@ export function TaskTracePage() {
           </button>
           <h2>{String(selectedInvocation.operation ?? '调用')}</h2>
           <p className="mono">{String(selectedInvocation.path ?? '')}</p>
+          <button
+            className="button button-primary"
+            type="button"
+            disabled={replay.isPending}
+            onClick={() => replayNode(selectedInvocation)}
+          >
+            {replay.isPending ? '回放中…' : '回放这个调用分支'}
+          </button>
           <h3>Input</h3>
           <pre>{JSON.stringify(selectedInvocation.input, null, 2)}</pre>
           <h3>Output / Error</h3>

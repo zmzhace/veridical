@@ -2312,19 +2312,39 @@ export async function buildProductionApp(options: {
       );
   });
   app.post('/v1/replays', async (req, reply) => {
-    const body = z.object({ session: Key }).strict().parse(req.body);
+    const body = z.object({
+      session: Key,
+      target_invocation_id: z.string().min(1).max(256).optional(),
+      target_path: z.string().min(1).max(1024).optional(),
+      target_scope: z.enum(['invocation', 'subtree', 'agent']).default('subtree').optional(),
+    }).strict().refine((value) => !(value.target_path && value.target_invocation_id)).parse(req.body);
     return reply
       .code(202)
-      .send(jobView(await service.replay(req.principal, body.session, idem(req.headers))));
+      .send(jobView(await service.replay(req.principal, body.session, idem(req.headers), {
+        invocation_id: body.target_invocation_id,
+        path: body.target_path,
+        scope: body.target_scope,
+      })));
   });
   app.post('/v1/replay', async (req, reply) => {
     const body = z
-      .object({ session: Key, mode: z.literal('strict').default('strict') })
+      .object({
+        session: Key,
+        mode: z.enum(['strict', 'fixture', 'semantic']).default('strict'),
+        target_invocation_id: z.string().min(1).max(256).optional(),
+        target_path: z.string().min(1).max(1024).optional(),
+        target_scope: z.enum(['invocation', 'subtree', 'agent']).default('subtree').optional(),
+      })
       .strict()
+      .refine((value) => !(value.target_path && value.target_invocation_id))
       .parse(req.body);
     return reply
       .code(202)
-      .send(jobView(await service.replay(req.principal, body.session, idem(req.headers))));
+      .send(jobView(await service.replay(req.principal, body.session, idem(req.headers), {
+        invocation_id: body.target_invocation_id,
+        path: body.target_path,
+        scope: body.target_scope,
+      })));
   });
   app.get('/v1/jobs/:id', async (req) => {
     requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer');

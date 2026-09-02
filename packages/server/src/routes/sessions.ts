@@ -24,6 +24,9 @@ const ExportOptions = TrajectoryQuery.extend({
 const ReplayRequest = z
   .object({
     mode: z.enum(['strict', 'fixture', 'semantic']),
+    target_invocation_id: z.string().min(1).max(256).optional(),
+    target_path: z.string().min(1).max(1024).optional(),
+    target_scope: z.enum(['invocation', 'subtree', 'agent']).default('subtree').optional(),
     downgrade_reason: z.string().min(1).max(2000).optional(),
     spec: z.object({ name: z.string().min(1), version: z.string().optional() }).optional(),
     invocation_fixtures: z
@@ -59,7 +62,11 @@ const ReplayRequest = z
       .strict()
       .optional(),
   })
-  .strict();
+  .strict()
+  .refine((value) => !(value.target_path && value.target_invocation_id), {
+    message: 'choose target_path or target_invocation_id, not both',
+  })
+  ;
 
 interface SessionSummary {
   session_id: string;
