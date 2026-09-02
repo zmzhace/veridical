@@ -91,6 +91,9 @@ export function WorkspacePage() {
   const [drag, setDrag] = useState<string | null>(null);
   const [linking, setLinking] = useState<string | null>(null);
   const [advanced, setAdvanced] = useState(false);
+  const [toolQuery, setToolQuery] = useState('');
+  const [toolCategory, setToolCategory] = useState<'all' | 'read' | 'write' | 'none'>('all');
+  const [showAllTools, setShowAllTools] = useState(false);
   const [yamlOpen, setYamlOpen] = useState(false);
   const [notice, setNotice] = useState('');
   const [prompt, setPrompt] = useState('');
@@ -116,6 +119,16 @@ export function WorkspacePage() {
   const selectedSkill = skills.data?.find(
     (item) => item.key === node.config.skillKey || item.name === node.title,
   );
+  const filteredTools = (tools.data ?? []).filter((tool) => {
+    const matchesQuery = `${tool.name} ${tool.description}`
+      .toLowerCase()
+      .includes(toolQuery.toLowerCase());
+    const matchesCategory =
+      toolCategory === 'all' ||
+      (toolCategory === 'none' ? tool.side_effect === 'none' : tool.side_effect === toolCategory);
+    return matchesQuery && matchesCategory;
+  });
+  const visibleTools = showAllTools ? filteredTools : filteredTools.slice(0, 5);
   const errors = validateWorkspace(graph);
   const releaseVersion = agent.data?.version
     ? agent.data.version.replace(/(\d+)$/, (value) => String(Number(value) + 1))
@@ -543,28 +556,90 @@ export function WorkspacePage() {
           )}
           {node.type === 'tool' && (
             <>
-              <div className="inspector-section-title">能力来源</div>
+              <div className="inspector-section-title">选择能力</div>
+              <p className="inspector-help">
+                Agent 只会使用你在这里绑定的工具。点击一个工具查看它的用途和权限。
+              </p>
               <label>
-                已安装工具
-                <select
-                  value={String(node.config.toolId ?? selectedTool?.id ?? '')}
-                  onChange={(event) => {
-                    const tool = tools.data?.find((item) => item.id === event.target.value);
-                    updateNode({
-                      title: tool?.name ?? node.title,
-                      description: tool?.description ?? node.description,
-                      config: { ...node.config, toolId: event.target.value },
-                    });
-                  }}
-                >
-                  <option value="">选择一个已注册工具</option>
-                  {(tools.data ?? []).map((tool) => (
-                    <option key={tool.id} value={tool.id}>
-                      {tool.name} · v{tool.version}
-                    </option>
-                  ))}
-                </select>
+                已安装工具 <span className="field-hint">{tools.data?.length ?? 0} 个可用</span>
               </label>
+              <div className="tool-picker-controls">
+                <input
+                  className="tool-picker-search"
+                  aria-label="搜索工具"
+                  value={toolQuery}
+                  onChange={(event) => setToolQuery(event.target.value)}
+                  placeholder="搜索名称或用途"
+                />
+                <div className="tool-picker-filters" role="group" aria-label="工具分类">
+                  {(
+                    [
+                      ['all', '全部'],
+                      ['read', '读取'],
+                      ['write', '修改'],
+                      ['none', '安全'],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      type="button"
+                      key={value}
+                      className={toolCategory === value ? 'is-active' : ''}
+                      onClick={() => setToolCategory(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="tool-picker" role="listbox" aria-label="选择工具">
+                {visibleTools.map((tool) => {
+                  const active = selectedTool?.id === tool.id;
+                  return (
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={active}
+                      className={`tool-option${active ? ' is-selected' : ''}`}
+                      key={tool.id}
+                      onClick={() =>
+                        updateNode({
+                          title: tool.name,
+                          description: tool.description,
+                          config: { ...node.config, toolId: tool.id },
+                        })
+                      }
+                    >
+                      <span className="tool-option-icon" aria-hidden="true">
+                        {tool.name.slice(0, 1).toUpperCase()}
+                      </span>
+                      <span className="tool-option-copy">
+                        <strong>{tool.name}</strong>
+                        <small>{tool.description || '已注册的 Agent 能力'}</small>
+                        <em>
+                          {tool.source} · v{tool.version} · {tool.side_effect === 'none' ? '无副作用' : tool.side_effect}
+                        </em>
+                      </span>
+                      <span className="tool-option-check" aria-hidden="true">{active ? '✓' : ''}</span>
+                    </button>
+                  );
+                })}
+                {!visibleTools.length && (
+                  <div className="tool-picker-empty">
+                    {tools.data?.length
+                      ? '没有符合筛选条件的工具，试试其他关键词。'
+                      : '还没有已注册工具，请先在能力中心添加。'}
+                  </div>
+                )}
+              </div>
+              {filteredTools.length > 5 && (
+                <button
+                  type="button"
+                  className="tool-picker-more"
+                  onClick={() => setShowAllTools((value) => !value)}
+                >
+                  {showAllTools ? '收起工具' : `查看全部 ${filteredTools.length} 个工具`}
+                </button>
+              )}
               <div className={`resource-status ${selectedTool ? 'is-ready' : 'is-missing'}`}>
                 <span className="resource-status-dot" aria-hidden="true" />
                 <div>
