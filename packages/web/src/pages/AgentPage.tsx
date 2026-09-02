@@ -213,8 +213,12 @@ export function AgentPage() {
     <div className={`agent-app${rightOpen ? '' : ' context-closed'}`}>
       <aside className="task-rail">
         <header>
+          <div className="agent-product-mark">
+            <span>V</span>
+            <strong>Veridical</strong>
+          </div>
           <Link to="/agents" className="back-link">
-            ‹ Agents
+            ‹ 所有 Agents
           </Link>
           <h1>{agent.data.name}</h1>
           <span className={`status-label is-${agent.data.status}`}>

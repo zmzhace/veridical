@@ -10,6 +10,25 @@
   position: relative;
   min-width: 0;
 }
+.agent-product-mark {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+  color: #202123;
+  font-size: 15px;
+  letter-spacing: -0.03em;
+}
+.agent-product-mark span {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: #ececfb;
+  color: var(--accent);
+  font-weight: 700;
+}
 .context-rail {
   position: fixed;
   z-index: 35;

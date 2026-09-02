@@ -142,10 +142,14 @@ export function AgentsPage() {
                     agent.model === 'server-default'
                       ? (modelProfile.data?.model ?? '服务端默认模型')
                       : agent.model;
+                  const destination =
+                    agent.status === 'published'
+                      ? `/agents/${agent.id}`
+                      : `/agents/${agent.id}/studio`;
                   return (
                     <article className="agent-row-v2" key={agent.id}>
                       <AgentMark agent={agent} />
-                      <Link className="agent-row-main" to={`/agents/${agent.id}`}>
+                      <Link className="agent-row-main" to={destination}>
                         <span>
                           <strong>{agent.name}</strong>
                           {agent.mock && <em>开发示例</em>}
@@ -157,8 +161,8 @@ export function AgentsPage() {
                         <span>{agent.version ?? '未发布'}</span>
                         <span>{tasks.length} 个任务</span>
                       </div>
-                      <Link className="agent-row-open" to={`/agents/${agent.id}`}>
-                        打开
+                      <Link className="agent-row-open" to={destination}>
+                        {agent.status === 'published' ? '打开' : '继续配置'}
                       </Link>
                       <details className="agent-menu">
                         <summary aria-label={`${agent.name} 更多操作`}>•••</summary>
