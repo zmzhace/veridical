@@ -797,6 +797,17 @@
 .tool-picker-more:hover { text-decoration: underline; text-underline-offset: 3px; }
 @media (max-width: 900px) { .tool-picker { max-height: none; } }
 
+.agent-capability-switches { display: grid; gap: 8px; margin: 3px 0 14px; padding: 10px 0; border-block: 1px solid #ececef; }
+.switch-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; margin: 0 !important; }
+.switch-row > span { display: grid; gap: 3px; }
+.switch-row strong { color: #34353b !important; font-size: 12px !important; font-weight: 620; }
+.switch-row small { color: #85868c; font-size: 10px; line-height: 1.45; }
+.switch-row input { appearance: none; width: 34px; height: 20px; margin: 0; border: 1px solid #d5d5da; border-radius: 999px; background: #e5e5e8; cursor: pointer; transition: background-color 140ms ease, border-color 140ms ease; }
+.switch-row input::before { content: ''; display: block; width: 14px; height: 14px; margin: 2px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px #20212322; transition: transform 140ms ease; }
+.switch-row input:checked { border-color: #5753c9; background: #5753c9; }
+.switch-row input:checked::before { transform: translateX(14px); }
+.switch-row input:focus-visible { outline: 2px solid #5753c9; outline-offset: 2px; }
+
 /* Focused Studio fills the viewport instead of inheriting the page gutter. */
 .workspace-shell.is-focused .studio-shell {
   margin: 0;

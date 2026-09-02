@@ -507,6 +507,44 @@ export function WorkspacePage() {
                 </select>
                 <small>密钥由服务端环境读取。</small>
               </label>
+              <div className="agent-capability-switches">
+                <label className="switch-row">
+                  <span>
+                    <strong>自主选择工具</strong>
+                    <small>Agent 会根据任务，从已绑定能力中自行判断是否调用。</small>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={node.config.toolSelection !== 'bound'}
+                    onChange={(event) =>
+                      updateNode({
+                        config: {
+                          ...node.config,
+                          toolSelection: event.target.checked ? 'catalog' : 'bound',
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label className="switch-row">
+                  <span>
+                    <strong>允许创建工具草稿</strong>
+                    <small>Agent 可以提出新工具方案，但必须经过测试和审批才能使用。</small>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={node.config.toolCreation === 'draft'}
+                    onChange={(event) =>
+                      updateNode({
+                        config: {
+                          ...node.config,
+                          toolCreation: event.target.checked ? 'draft' : 'disabled',
+                        },
+                      })
+                    }
+                  />
+                </label>
+              </div>
               <button
                 className="advanced-toggle"
                 aria-expanded={advanced}

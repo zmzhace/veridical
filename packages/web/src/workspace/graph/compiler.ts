@@ -61,6 +61,8 @@ export function compileWorkspaceSpec(graph: WorkspaceGraph, version = '1.0.0'): 
         .map((node) => String(node!.config.backendId ?? node!.title))
         .filter(Boolean),
       memory_scopes: memories.length ? ['turn', 'task', 'project'] : ['turn', 'task'],
+      tool_selection: agent.config.toolSelection === 'catalog' ? 'catalog' : 'bound',
+      tool_creation: agent.config.toolCreation === 'draft' ? 'draft' : 'disabled',
     },
     tools: tools.map((tool) => {
       const configuredName = String(tool!.config.name ?? tool!.title).trim();

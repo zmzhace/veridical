@@ -31,6 +31,10 @@ export const AgentCapabilitiesSchema = z.object({
   mcp_servers: z.array(z.string().min(1).max(120)).max(32).default([]),
   knowledge_backends: z.array(z.string().min(1).max(120)).max(32).default([]),
   memory_scopes: z.array(z.enum(['turn', 'task', 'project', 'user', 'agent'])).max(8).default(['turn', 'task']),
+  /** Agent may choose among tools granted by this release at runtime. */
+  tool_selection: z.enum(['bound', 'catalog']).default('bound'),
+  /** Tool creation only produces a reviewable draft; it never grants execution. */
+  tool_creation: z.enum(['disabled', 'draft']).default('disabled'),
 }).optional();
 export type AgentCapabilities = z.infer<typeof AgentCapabilitiesSchema>;
 
