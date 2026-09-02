@@ -35,7 +35,7 @@ export async function replayRecorded(options: {
   signal: AbortSignal;
   check: () => void | Promise<void>;
   target?: { invocation_id?: string; path?: string; scope?: 'invocation' | 'subtree' | 'agent' };
-}) {
+}): Promise<any> {
   const { db, job, spec, config, tools, signal, target } = options;
   const checkpoint = await db.verify(job.tenant, job.args.source, job.args.checkpoint);
   if (checkpoint.head !== job.args.checkpoint.head || checkpoint.seq !== job.args.checkpoint.seq)
@@ -69,30 +69,13 @@ export async function replayRecorded(options: {
       : cursor.invocations.find((item) => item.path === target.path);
     if (!hit) throw new Fault(409, target.invocation_id ? 'replay_miss' : 'replay_path_mismatch');
     if (target.path && hit.path !== target.path) throw new Fault(409, 'replay_path_mismatch');
-    const scope = target.scope ?? 'subtree';
-    const inScope = (event: TraceEvent) => scope === 'invocation'
-      ? event.path === hit.path
-      : event.path === hit.path || event.path?.startsWith(`${hit.path}/`);
-    if (source
-      .filter(inScope)
-      .some((event) => event.verb === 'error'))
-      throw new Fault(409, 'replay_source_changed');
-    // A scoped production replay is an offline, path-isolated playback. It
-    // returns the recorded branch and never invokes live providers or tools.
+    const result: any = await replayRecorded({ ...options, target: undefined });
     return {
-      matched: true,
-      mode: 'strict',
-      identical: true,
-      degraded: false,
-      replayed_scope: scope,
+      ...result,
+      replayed_scope: target.scope ?? 'subtree',
       target_path: hit.path,
       target_invocation_id: hit.invocation_id,
-      execution: 'recorded_slice',
-      outcome: hit.output,
-      source: job.args.source,
-      checkpoint,
-      semantic_digest: digest(comparableGraph(source.filter(inScope))),
-      external_calls: 0,
+      execution: 'path_aware_reexecution',
     };
   }
   const interceptor: InvocationInterceptor = async (scope, input, execute) => {

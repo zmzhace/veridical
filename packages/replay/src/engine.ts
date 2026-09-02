@@ -191,74 +191,10 @@ export class ReplayEngine {
       throw new ReplayError(`spec not found: ${plan.spec.name}`, 'replay_child_agent_missing');
 
     const target = resolveReplayTarget(cursor.invocations, plan);
-    if (target) {
-      // A node replay is an offline projection of the recorded invocation graph.
-      // It intentionally never executes a live model/tool: the selected call and
-      // every descendant are copied into a fresh replay session, preserving the
-      // exact path and in/out payloads for diagnosis and training data.
-      if (mode === 'strict' && cursor.invocations.some((item) =>
-        (item.path === target.path || item.path.startsWith(`${target.path}/`)) &&
-        (item.end_seq === undefined || hasRedaction(item.input) || hasRedaction(item.output))))
-        throw new PathReplayError('replay_redacted', target.path);
-      const replaySession = `replay_${randomUUID()}`;
-      const scope = plan.target_scope ?? 'subtree';
-      const selected = source.filter((event) =>
-        scope === 'invocation'
-          ? event.path === target.path
-          : event.path === target.path || event.path?.startsWith(`${target.path}/`),
-      );
-      for (const event of selected) {
-        const { id: _id, seq: _seq, session_id: _session, ...rest } = event;
-        await this.store.appendNext({
-          ...rest,
-          session_id: replaySession,
-          span_id: rest.span_id || 'replay',
-          parent_span_id: rest.parent_span_id ?? null,
-        });
-      }
-      await this.store.appendNext({
-        tenant_id: source[0].tenant_id,
-        session_id: replaySession,
-        spec_version: spec.version,
-        span_id: 'replay',
-        parent_span_id: null,
-        type: 'replay.result',
-        verb: 'response',
-        attempt: 1,
-        duration_ms: 0,
-        payload: {
-          source: session_id,
-          mode,
-          scope,
-          target_path: target.path,
-          target_invocation_id: target.invocation_id,
-          execution: 'recorded_slice',
-          identical: mode === 'strict',
-          degraded: mode !== 'strict',
-          reason: plan.downgrade_reason,
-        },
-      });
-      const events = await this.store.readBySession(replaySession);
-      return {
-        session_id: replaySession,
-        spec_name: spec.name,
-        spec_version: spec.version,
-        outcome: target.output,
-        events,
-        mode,
-        identical: mode === 'strict',
-        degraded: mode !== 'strict',
-        passed: mode === 'strict' ? true : undefined,
-        fixtures_used: 0,
-        external_calls: 0,
-        differences: [],
-        source_manifest: first.manifest,
-        replay_manifest: first.manifest,
-        replayed_scope: scope,
-        target_path: target.path,
-        target_invocation_id: target.invocation_id,
-      };
-    }
+    if (target && mode === 'strict' && cursor.invocations.some((item) =>
+      (item.path === target.path || item.path.startsWith(`${target.path}/`)) &&
+      (item.end_seq === undefined || hasRedaction(item.input) || hasRedaction(item.output))))
+      throw new PathReplayError('replay_redacted', target.path);
     const fixtures = new Map<string, InvocationFixture>();
     for (const f of plan.invocation_fixtures ?? []) {
       const { hash, ...body } = f;
@@ -605,6 +541,9 @@ export class ReplayEngine {
       replay_manifest:
         (events.find((e) => e.type === 'run.provenance')?.payload as { manifest?: unknown })
           ?.manifest ?? null,
+      replayed_scope: target ? plan.target_scope ?? 'subtree' : 'full',
+      target_path: target?.path,
+      target_invocation_id: target?.invocation_id,
     };
   }
 }
