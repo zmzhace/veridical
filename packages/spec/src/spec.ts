@@ -17,25 +17,37 @@ const FallbackSchema = z.object({ provider: z.string().min(1), model: z.string()
 /** Controls the final user-visible output without exposing raw Spec complexity. */
 export const OutputProfileSchema = z
   .object({
-    profile: z.enum(['conversational', 'structured', 'report', 'artifact']).default('conversational'),
+    profile: z
+      .enum(['conversational', 'structured', 'report', 'artifact'])
+      .default('conversational'),
     message_format: z.enum(['markdown', 'text']).default('markdown'),
     schema: z.unknown().optional(),
     strict: z.boolean().default(true),
     repair_attempts: z.number().int().min(0).max(2).default(1),
     artifact_mime_type: z.string().min(1).max(160).optional(),
   })
-  .default({ profile: 'conversational', message_format: 'markdown', strict: true, repair_attempts: 1 });
+  .default({
+    profile: 'conversational',
+    message_format: 'markdown',
+    strict: true,
+    repair_attempts: 1,
+  });
 export type SpecOutputProfile = z.infer<typeof OutputProfileSchema>;
 
-export const AgentCapabilitiesSchema = z.object({
-  mcp_servers: z.array(z.string().min(1).max(120)).max(32).default([]),
-  knowledge_backends: z.array(z.string().min(1).max(120)).max(32).default([]),
-  memory_scopes: z.array(z.enum(['turn', 'task', 'project', 'user', 'agent'])).max(8).default(['turn', 'task']),
-  /** Agent may choose among tools granted by this release at runtime. */
-  tool_selection: z.enum(['bound', 'catalog']).default('bound'),
-  /** Tool creation only produces a reviewable draft; it never grants execution. */
-  tool_creation: z.enum(['disabled', 'draft']).default('disabled'),
-}).optional();
+export const AgentCapabilitiesSchema = z
+  .object({
+    mcp_servers: z.array(z.string().min(1).max(120)).max(32).default([]),
+    knowledge_backends: z.array(z.string().min(1).max(120)).max(32).default([]),
+    memory_scopes: z
+      .array(z.enum(['turn', 'task', 'project', 'user', 'agent']))
+      .max(8)
+      .default(['turn', 'task']),
+    /** Agent may choose among tools granted by this release at runtime. */
+    tool_selection: z.enum(['bound', 'catalog']).default('bound'),
+    /** Tool creation only produces a reviewable draft; it never grants execution. */
+    tool_creation: z.enum(['disabled', 'draft']).default('disabled'),
+  })
+  .optional();
 export type AgentCapabilities = z.infer<typeof AgentCapabilitiesSchema>;
 
 /** A reusable, auditable capability pack. Skills add instructions only; tools remain governed by spec.tools. */
@@ -44,7 +56,10 @@ export const SkillSchema = z.object({
   version: z.string().min(1).max(40).default('1.0.0'),
   status: z.enum(['draft', 'approved', 'deprecated']).default('approved'),
   source: z.string().min(1).max(120).default('spec'),
-  content_hash: z.string().regex(/^[a-f0-9]{16,128}$/).optional(),
+  content_hash: z
+    .string()
+    .regex(/^[a-f0-9]{16,128}$/)
+    .optional(),
   description: z.string().max(240).optional(),
   procedure: z.string().max(8_000).optional(),
   tags: z.array(z.string().min(1).max(32)).max(12).default([]),
@@ -96,10 +111,12 @@ export const AgentSpecSchema = z
     flow: z.object({
       // `mode` is retained for backwards compatibility; new specs should use loop.
       mode: FlowModeSchema.default('single-loop'),
-      loop: z.object({
-        engine: z.string().min(1).max(80),
-        strategy: z.string().min(1).max(80).default('direct'),
-      }).optional(),
+      loop: z
+        .object({
+          engine: z.string().min(1).max(80),
+          strategy: z.string().min(1).max(80).default('direct'),
+        })
+        .optional(),
       max_steps: z.number().int().positive(),
       stages: z.array(StageSchema).optional(),
     }),

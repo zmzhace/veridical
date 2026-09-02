@@ -654,10 +654,13 @@ export function WorkspacePage() {
                         <strong>{tool.name}</strong>
                         <small>{tool.description || '已注册的 Agent 能力'}</small>
                         <em>
-                          {tool.source} · v{tool.version} · {tool.side_effect === 'none' ? '无副作用' : tool.side_effect}
+                          {tool.source} · v{tool.version} ·{' '}
+                          {tool.side_effect === 'none' ? '无副作用' : tool.side_effect}
                         </em>
                       </span>
-                      <span className="tool-option-check" aria-hidden="true">{active ? '✓' : ''}</span>
+                      <span className="tool-option-check" aria-hidden="true">
+                        {active ? '✓' : ''}
+                      </span>
                     </button>
                   );
                 })}

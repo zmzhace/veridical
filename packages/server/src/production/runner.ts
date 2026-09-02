@@ -214,6 +214,15 @@ const Decision = z
     tool: z.object({ name: Key, args: z.unknown() }).strict().optional(),
     delegate: Key.optional(),
     task: z.string().max(16000).optional(),
+    create_tool: z
+      .object({
+        name: Key,
+        description: z.string().min(1).max(500),
+        input_schema: z.record(z.unknown()).default({ type: 'object' }),
+        output_schema: z.record(z.unknown()).default({}),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export function messagesFrom(
@@ -262,6 +271,15 @@ export interface ExecuteTurnOptions {
       limit?: number,
       offset?: number,
     ): unknown[] | Promise<unknown[]>;
+    put?(
+      tenant: string,
+      kind: string,
+      key: string,
+      body: unknown,
+      actor: string,
+      status?: string,
+      meta?: unknown,
+    ): unknown | Promise<unknown>;
   };
   job: Job;
   session: string;
@@ -577,7 +595,46 @@ async function executeTurnInternal(options: ExecuteTurnOptions, recorder: Invoca
         trimmed.startsWith('{') ? JSON.parse(trimmed) : { text: response.text, done: true },
       );
       await record('assistant.message', { text: decision.text ?? '', model_text: response.text });
-      if (decision.delegate) {
+      if (decision.create_tool) {
+        if (spec.capabilities?.tool_creation !== 'draft')
+          throw new Fault(403, 'tool_creation_disabled');
+        if (!ledger.put) throw new Fault(503, 'tool_registry_unavailable');
+        const proposed = decision.create_tool;
+        const key = `${proposed.name}@draft-${digest({ proposed, session }).slice(0, 12)}`;
+        const artifact = await ledger.put(
+          job.tenant,
+          'tool',
+          key,
+          {
+            name: proposed.name,
+            version: '0.1.0',
+            source: 'custom',
+            description: proposed.description,
+            input_schema: proposed.input_schema,
+            output_schema: proposed.output_schema,
+            side_effect: 'none',
+            status: 'draft',
+            created_by: spec.name,
+            generated_from: { session, run_id: recorder.invocation.run_id },
+          },
+          job.actor,
+          'draft',
+          { requires_review: true, generated_by_agent: spec.name },
+        );
+        await record('tool.creation_requested', {
+          name: proposed.name,
+          artifact_key: key,
+          artifact_digest: (artifact as any)?.digest,
+          status: 'draft',
+          requires_review: true,
+        });
+        outcome = {
+          status: 'draft',
+          tool: proposed.name,
+          artifact_key: key,
+          message: '工具草稿已创建，完成隔离测试和审批后才能调用。',
+        };
+      } else if (decision.delegate) {
         outcome = await dispatch(decision.delegate, decision.task ?? decision.text ?? '');
         await record('agent.result', {
           delegate: decision.delegate,
