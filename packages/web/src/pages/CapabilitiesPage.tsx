@@ -150,7 +150,7 @@ export function CapabilitiesPage() {
 
     {show('knowledge') && <section className="capability-collection" aria-labelledby="knowledge-heading">
       <header><div><h2 id="knowledge-heading">知识 Backend</h2><p>统一检索、证据、缺口和记忆；Agent 只访问已绑定的知识范围。</p></div><span>{knowledge.data?.length ?? 0} 个 Backend</span></header>
-      <div className="capability-resource-list">{(knowledge.data ?? []).map((backend) => <article className="capability-resource-row" key={backend.id}><CapabilityGlyph kind="context" /><div className="capability-resource-copy"><strong>{backend.name}</strong><p>{backend.type === 'gbrain' ? 'GBrain MCP · 外部知识脑' : backend.type === 'hybrid' ? 'Native + GBrain · 混合检索' : 'Native · 本地可回放索引'}</p><small>{backend.capabilities.join(' · ')}</small></div><div className="capability-resource-meta"><StatusBadge status={backend.status} /></div></article>)}</div>
+      <div className="capability-resource-list">{(knowledge.data ?? []).map((backend) => <article className="capability-resource-row" key={backend.id}><CapabilityGlyph kind="context" /><div className="capability-resource-copy"><strong>{backend.name}</strong><p>{backend.type === 'gbrain' ? 'GBrain MCP · 外部知识脑' : backend.type === 'hybrid' ? 'Native + GBrain · 混合检索' : 'Native · 本地可回放索引'}</p><small>{(backend.capabilities ?? []).join(' · ') || '默认项目知识能力'}</small></div><div className="capability-resource-meta"><StatusBadge status={backend.status} /></div></article>)}</div>
     </section>}
 
     {show('mcp') && <section className="capability-collection" aria-labelledby="mcp-heading">

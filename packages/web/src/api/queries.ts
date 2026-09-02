@@ -639,11 +639,20 @@ export interface KnowledgeBackendSummary {
 export const useKnowledgeBackends = () =>
   useQuery({
     queryKey: ['knowledge-backends'],
-    queryFn: () =>
-      apiFetch<KnowledgeBackendSummary[]>('/v1/knowledge/backends').catch((error) => {
-        if (!canUseResearchFallback(error)) throw error;
-        return apiFetch<KnowledgeBackendSummary[]>('/api/knowledge/backends');
-      }),
+    queryFn: async () => {
+      const response = await apiFetch<KnowledgeBackendSummary[]>('/v1/knowledge/backends').catch(
+        (error) => {
+          if (!canUseResearchFallback(error)) throw error;
+          return apiFetch<KnowledgeBackendSummary[]>('/api/knowledge/backends');
+        },
+      );
+      // Older native backends do not expose capabilities; keep the UI total
+      // and avoid turning a missing optional field into a route-level crash.
+      return response.map((backend) => ({
+        ...backend,
+        capabilities: Array.isArray(backend.capabilities) ? backend.capabilities : [],
+      }));
+    },
     staleTime: 30_000,
   });
 export const useRun = () =>
