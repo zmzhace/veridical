@@ -14,7 +14,11 @@ export interface JobStore {
   ): Job;
   claim(owner: string, leaseMs: number, limit?: number): Job | undefined;
   heartbeat(job: Job): void;
-  finish(job: Job, state: 'completed' | 'failed' | 'blocked' | 'interrupted', result: unknown): void;
+  finish(
+    job: Job,
+    state: 'completed' | 'failed' | 'blocked' | 'interrupted',
+    result: unknown,
+  ): void;
   cancel(tenant: string, id: string, actor: string): Job;
   job(tenant: string, id: string): Job | undefined;
   recover(): void;
