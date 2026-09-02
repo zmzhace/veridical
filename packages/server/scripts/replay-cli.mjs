@@ -27,7 +27,10 @@ const mode = value('--mode') ?? 'strict';
 if (!['strict', 'fixture', 'semantic'].includes(mode)) throw new Error('invalid --mode');
 const scope = value('--scope') ?? 'subtree';
 if (!['invocation', 'subtree', 'agent'].includes(scope)) throw new Error('invalid --scope');
-const origin = (value('--url') ?? process.env.VERIDICAL_API_URL ?? 'http://127.0.0.1:8787').replace(/\/$/, '');
+const origin = (value('--url') ?? process.env.VERIDICAL_API_URL ?? 'http://127.0.0.1:8787').replace(
+  /\/$/,
+  '',
+);
 const body = {
   session,
   mode,
@@ -35,24 +38,42 @@ const body = {
   ...(path ? { target_path: path } : {}),
   ...(invocationId || path ? { target_scope: scope } : {}),
 };
-const headers = { 'content-type': 'application/json', 'idempotency-key': `cli-replay-${Date.now()}-${Math.random()}` };
+const headers = {
+  'content-type': 'application/json',
+  'idempotency-key': `cli-replay-${Date.now()}-${Math.random()}`,
+};
 const token = value('--token') ?? process.env.VERIDICAL_API_TOKEN;
 if (token) headers.authorization = `Bearer ${token}`;
-const create = await fetch(`${origin}/v1/replay`, { method: 'POST', headers, body: JSON.stringify(body) });
+const create = await fetch(`${origin}/v1/replay`, {
+  method: 'POST',
+  headers,
+  body: JSON.stringify(body),
+});
 if (!create.ok) throw new Error(`replay request failed (${create.status}): ${await create.text()}`);
 const job = await create.json();
 let result;
 for (let i = 0; i < 600; i++) {
   const response = await fetch(`${origin}/v1/jobs/${encodeURIComponent(job.id)}`, { headers });
-  if (!response.ok) throw new Error(`job lookup failed (${response.status}): ${await response.text()}`);
+  if (!response.ok)
+    throw new Error(`job lookup failed (${response.status}): ${await response.text()}`);
   const current = await response.json();
-  if (current.state === 'completed') { result = current.result ?? current; break; }
-  if (!['queued', 'running'].includes(current.state)) throw new Error(JSON.stringify(current.result ?? current));
+  if (current.state === 'completed') {
+    result = current.result ?? current;
+    break;
+  }
+  if (!['queued', 'running'].includes(current.state))
+    throw new Error(JSON.stringify(current.result ?? current));
   await new Promise((resolve) => setTimeout(resolve, 100));
 }
 if (!result) throw new Error('replay timed out after 60 seconds');
-console.log(args.includes('--json') ? JSON.stringify(result, null, 2) : [
-  `Replay ${result.identical ? 'identical' : 'completed'} (${result.mode ?? mode})`,
-  result.replayed_scope ? `Scope: ${result.replayed_scope} @ ${result.target_path ?? invocationId ?? path}` : 'Scope: full session',
-  `External calls: ${result.external_calls ?? 0}`,
-].join('\n'));
+console.log(
+  args.includes('--json')
+    ? JSON.stringify(result, null, 2)
+    : [
+        `Replay ${result.identical ? 'identical' : 'completed'} (${result.mode ?? mode})`,
+        result.replayed_scope
+          ? `Scope: ${result.replayed_scope} @ ${result.target_path ?? invocationId ?? path}`
+          : 'Scope: full session',
+        `External calls: ${result.external_calls ?? 0}`,
+      ].join('\n'),
+);
