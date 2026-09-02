@@ -58,16 +58,8 @@ export const simpleAgentGraph: WorkspaceGraph = {
         model: 'server-default',
         instruction: '帮助用户完成研究任务，引用可靠证据并说明不确定性。',
         maxSteps: 8,
+        capabilityBindings: [],
       },
-    },
-    {
-      id: 'search',
-      type: 'tool',
-      label: 'Tool',
-      title: '搜索工具',
-      description: '由 Agent 按需调用',
-      position: { x: 44, y: 66 },
-      config: { access: 'allow' },
     },
     {
       id: 'output',
@@ -81,7 +73,6 @@ export const simpleAgentGraph: WorkspaceGraph = {
   ],
   edges: [
     { id: 'input-agent', source: 'input', target: 'agent', kind: 'message' },
-    { id: 'search-agent', source: 'search', target: 'agent', kind: 'capability' },
     { id: 'agent-output', source: 'agent', target: 'output', kind: 'message' },
   ],
 };

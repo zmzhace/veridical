@@ -25,6 +25,7 @@ import { exportGRPO, projectTrajectory, trajectoryJsonl } from '@veridical/repla
 import { createMcpProductionTool, executeMcpTool, type McpRuntimeConfig } from './mcp-runtime';
 import type { KnowledgePort } from '@veridical/knowledge';
 import { GBrainMcpAdapter } from '@veridical/knowledge';
+import { buildAgentCapabilityManifest } from '@veridical/spec';
 
 /** Deterministic, dependency-free embedding used by the native knowledge index.
  * It keeps indexing/replay stable while allowing a provider-backed embedder to
@@ -538,6 +539,11 @@ export async function buildProductionApp(options: {
         id: row.key,
         name: row.body.name,
         version: row.body.version,
+        description: row.body.description ?? '',
+        source: row.body.source ?? 'local',
+        tags: row.body.tags ?? [],
+        tool_dependencies: row.body.tool_dependencies ?? [],
+        status: row.status,
         content_hash: row.digest,
       }));
     const mcp_servers = mcpRows
@@ -547,6 +553,24 @@ export async function buildProductionApp(options: {
         name: row.body.name,
         version: row.body.version,
         transport: row.body.transport,
+        endpoint: row.body.endpoint,
+        command: row.body.command,
+        tool_names: row.body.tool_names ?? [],
+        discovered_tools: (row.body.tool_names ?? []).map((name: string) => ({
+          id: `${row.key}/${name}`,
+          name,
+          version: row.body.version,
+          source: 'mcp',
+          description: `MCP ${row.body.name} · ${name}`,
+          side_effect: 'read',
+          status: row.status,
+          implementation_hash: row.digest,
+        })),
+        discovered_resources: row.body.discovered_resources ?? [],
+        discovered_prompts: row.body.discovered_prompts ?? [],
+        last_error: row.body.last_error,
+        last_checked_at: row.body.last_checked_at,
+        status: row.status,
         schema_hash: row.body.schema_hash,
         artifact_hash: row.digest,
       }));
@@ -569,6 +593,230 @@ export async function buildProductionApp(options: {
       request_id: req.id,
     });
     return { models, tools, mcp_servers, skills, knowledge_backends };
+  });
+  const CapabilityCatalogQuery = z.object({
+    kind: z.enum(['tool', 'mcp', 'skill', 'memory', 'knowledge']).optional(),
+    query: z.string().trim().max(200).default(''),
+    status: z.enum(['draft', 'approved', 'deprecated', 'revoked', 'unavailable']).optional(),
+    risk: z.enum(['none', 'read', 'write', 'destructive']).optional(),
+    cursor: z.coerce.number().int().min(0).max(100_000).default(0),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+  });
+  app.get('/v1/capability-catalog', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
+    const query = CapabilityCatalogQuery.parse(req.query);
+    const [skillRows, mcpRows, knowledgeRows, toolRows] = await Promise.all([
+      db.list(req.principal.tenant, 'skill', 500, 0),
+      db.list(req.principal.tenant, 'mcp_server', 500, 0),
+      db.list(req.principal.tenant, 'knowledge_backend', 500, 0),
+      db.list(req.principal.tenant, 'tool', 500, 0),
+    ]);
+    const now = new Date().toISOString();
+    const builtinTools = service.tools.map((tool) => ({
+      id: tool.name,
+      kind: 'tool' as const,
+      display_name: tool.name,
+      summary: tool.description,
+      source: 'builtin',
+      version: tool.version,
+      status: tool.readOnly ? ('approved' as const) : ('draft' as const),
+      risk: tool.readOnly ? ('read' as const) : ('write' as const),
+      health: 'healthy' as const,
+      tags: [tool.readOnly ? '读取' : '修改'],
+      used_by_count: 0,
+      updated_at: now,
+      content_hash: digest({ name: tool.name, version: tool.version, schema: String(tool.schema) }),
+    }));
+    const customTools = toolRows
+      .filter((row: any) => row?.status !== 'deleted')
+      .map((row: any) => ({
+        id: row.key,
+        kind: 'tool' as const,
+        display_name: row.body?.display_name ?? row.body?.name ?? row.key,
+        summary: row.body?.description ?? '自定义工具草稿',
+        source: row.body?.source ?? 'custom',
+        version: row.body?.version ?? 'draft',
+        status: row.status,
+        risk: row.body?.side_effect ?? 'none',
+        health: row.status === 'revoked' ? ('offline' as const) : ('healthy' as const),
+        tags: row.body?.tags ?? [],
+        used_by_count: 0,
+        updated_at: row.meta?.updated_at ?? row.meta?.created_at ?? now,
+        content_hash: row.digest,
+      }));
+    const skills = skillRows
+      .filter((row: any) => row?.status !== 'deleted')
+      .map((row: any) => ({
+        id: row.key,
+        kind: 'skill' as const,
+        display_name: row.body?.name ?? row.key,
+        summary: row.body?.description ?? '版本化工作方法',
+        source: row.body?.source ?? 'local',
+        version: row.body?.version ?? 'unknown',
+        status: row.status,
+        risk: 'none' as const,
+        health: row.status === 'revoked' ? ('offline' as const) : ('healthy' as const),
+        tags: row.body?.tags ?? [],
+        used_by_count: 0,
+        updated_at: row.meta?.updated_at ?? row.meta?.created_at ?? now,
+        content_hash: row.digest,
+        tool_dependencies: row.body?.tool_dependencies ?? [],
+      }));
+    const mcpServers = mcpRows
+      .filter((row: any) => row?.status !== 'deleted')
+      .map((row: any) => ({
+        id: row.key,
+        kind: 'mcp' as const,
+        display_name: row.body?.name ?? row.key,
+        summary: `${row.body?.tool_names?.length ?? 0} 个已发现工具`,
+        source: row.body?.transport ?? 'mcp',
+        version: row.body?.version ?? 'unknown',
+        status: row.status,
+        risk: 'read' as const,
+        health: row.body?.last_error
+          ? ('degraded' as const)
+          : row.status === 'revoked'
+            ? ('offline' as const)
+            : ('healthy' as const),
+        tags: ['MCP', row.body?.transport ?? ''],
+        used_by_count: 0,
+        updated_at:
+          row.body?.last_checked_at ?? row.meta?.updated_at ?? row.meta?.created_at ?? now,
+        content_hash: row.digest,
+        discovered_count: row.body?.tool_names?.length ?? 0,
+        selected_children: row.body?.tool_names ?? [],
+      }));
+    const knowledge = knowledgeRows
+      .filter((row: any) => row?.status !== 'deleted')
+      .map((row: any) => ({
+        id: row.key,
+        kind: 'knowledge' as const,
+        display_name: row.body?.name ?? row.key,
+        summary: row.body?.description ?? '项目知识来源',
+        source: row.body?.type ?? 'native',
+        version: row.body?.version ?? 'unknown',
+        status: row.status,
+        risk: 'read' as const,
+        health: row.status === 'revoked' ? ('offline' as const) : ('healthy' as const),
+        tags: row.body?.capabilities ?? [],
+        used_by_count: 0,
+        updated_at: row.meta?.updated_at ?? row.meta?.created_at ?? now,
+        content_hash: row.digest,
+      }));
+    const normalized = query.query.toLocaleLowerCase();
+    const allItems = [...builtinTools, ...customTools, ...skills, ...mcpServers, ...knowledge]
+      .filter((item: any) => !query.kind || item.kind === query.kind)
+      .filter((item: any) => !query.status || item.status === query.status)
+      .filter((item: any) => !query.risk || item.risk === query.risk)
+      .filter(
+        (item: any) =>
+          !normalized ||
+          `${item.display_name} ${item.summary} ${(item.tags ?? []).join(' ')}`
+            .toLocaleLowerCase()
+            .includes(normalized),
+      )
+      .sort((a: any, b: any) =>
+        `${a.kind}:${a.display_name}:${a.id}`.localeCompare(`${b.kind}:${b.display_name}:${b.id}`),
+      );
+    const items = allItems.slice(query.cursor, query.cursor + query.limit);
+    const next = query.cursor + items.length;
+    await db.audit(req.principal.tenant, req.principal.actor, 'capability_catalog.read', {
+      count: items.length,
+      total: allItems.length,
+      request_id: req.id,
+    });
+    return {
+      items,
+      next_cursor: next < allItems.length ? String(next) : undefined,
+      total: allItems.length,
+    };
+  });
+  app.get('/v1/tools/:id', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
+    const { id } = z.object({ id: Key }).parse(req.params);
+    const builtin = service.tools.find((tool) => tool.name === id);
+    if (builtin)
+      return {
+        id: builtin.name,
+        name: builtin.name,
+        display_name: builtin.name,
+        version: builtin.version,
+        description: builtin.description,
+        source: 'builtin',
+        side_effect: builtin.readOnly ? 'read' : 'write',
+        status: builtin.readOnly ? 'approved' : 'draft',
+        input_schema: String(builtin.schema),
+        output_schema: {},
+        implementation_hash: digest({ name: builtin.name, version: builtin.version }),
+      };
+    const record = await db.get(req.principal.tenant, 'tool', id);
+    if (!record || record.status === 'deleted') throw new Fault(404, 'tool_not_found');
+    return { ...record.body, id, status: record.status, implementation_hash: record.digest };
+  });
+  const ToolDraftInput = z
+    .object({
+      name: Key,
+      version: z.string().min(1).max(80).default('0.1.0'),
+      display_name: z.string().min(1).max(120).optional(),
+      description: z.string().min(1).max(2_000),
+      input_schema: z.unknown().default({ type: 'object', properties: {} }),
+      output_schema: z.unknown().default({ type: 'object' }),
+      side_effect: z.enum(['none', 'read', 'write', 'destructive']).default('none'),
+      network_scope: z.array(z.string().max(260)).max(100).default([]),
+      data_classification: z.array(z.string().max(80)).max(50).default([]),
+      credential_refs: z.array(z.string().max(260)).max(20).default([]),
+      tags: z.array(z.string().max(80)).max(30).default([]),
+    })
+    .strict();
+  app.post('/v1/tools/drafts', async (req, reply) => {
+    requireRole(req.principal, 'developer', 'reviewer');
+    const input = ToolDraftInput.parse(req.body);
+    const id = `${input.name}@${input.version}`;
+    if (await db.get(req.principal.tenant, 'tool', id)) throw new Fault(409, 'tool_exists');
+    const record = await putArtifact(
+      req.principal.tenant,
+      'tool',
+      id,
+      { ...input, source: 'custom', created_at: new Date().toISOString() },
+      req.principal.actor,
+      'draft',
+    );
+    await db.audit(req.principal.tenant, req.principal.actor, 'tool.draft_created', {
+      tool_id: id,
+      side_effect: input.side_effect,
+      implementation_hash: record.digest,
+      request_id: req.id,
+    });
+    return reply
+      .code(201)
+      .send({ ...record.body, id, status: record.status, implementation_hash: record.digest });
+  });
+  app.post('/v1/tools/:id/decision', async (req) => {
+    requireRole(req.principal, 'reviewer', 'publisher');
+    const { id } = z.object({ id: z.string().min(3).max(160) }).parse(req.params);
+    const decision = z
+      .object({ status: z.enum(['approved', 'deprecated', 'revoked']) })
+      .strict()
+      .parse(req.body);
+    const current = await db.get(req.principal.tenant, 'tool', id);
+    if (!current || current.status === 'deleted') throw new Fault(404, 'tool_not_found');
+    const updated = await db.transition(
+      req.principal.tenant,
+      'tool',
+      id,
+      decision.status,
+      {
+        ...current.meta,
+        decided_at: new Date().toISOString(),
+      },
+      req.principal.actor,
+    );
+    await db.audit(req.principal.tenant, req.principal.actor, 'tool.decision', {
+      tool_id: id,
+      status: decision.status,
+      request_id: req.id,
+    });
+    return { ...updated.body, id, status: updated.status, implementation_hash: updated.digest };
   });
   const MemoryInput = z
     .object({
@@ -711,6 +959,13 @@ export async function buildProductionApp(options: {
     });
     return result;
   });
+  app.get('/v1/skills/:id', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
+    const { id } = z.object({ id: z.string().min(3).max(160) }).parse(req.params);
+    const record = await db.get(req.principal.tenant, 'skill', id);
+    if (!record || record.status === 'deleted') throw new Fault(404, 'skill_not_found');
+    return { ...record.body, id, status: record.status, content_hash: record.digest };
+  });
   app.post('/v1/skills', async (req, reply) => {
     requireRole(req.principal, 'developer', 'reviewer');
     const input = SkillInput.parse(req.body);
@@ -798,6 +1053,35 @@ export async function buildProductionApp(options: {
       request_id: req.id,
     });
     return result;
+  });
+  app.get('/v1/mcp/servers/:id', async (req) => {
+    requireRole(req.principal, 'viewer', 'operator', 'developer', 'reviewer', 'publisher');
+    const { id } = z.object({ id: z.string().min(3).max(160) }).parse(req.params);
+    const record = await db.get(req.principal.tenant, 'mcp_server', id);
+    if (!record || record.status === 'deleted') throw new Fault(404, 'mcp_server_not_found');
+    return {
+      ...record.body,
+      id,
+      status: record.status,
+      artifact_hash: record.digest,
+      discovered_tools: (record.body?.tool_names ?? []).map((name: string) => ({
+        id: `${id}/${name}`,
+        name,
+        version: record.body?.version ?? 'unknown',
+        source: 'mcp',
+        description: `MCP ${record.body?.name ?? id} · ${name}`,
+        side_effect: 'read',
+        status: record.status,
+        implementation_hash: record.digest,
+      })),
+      discovered_resources: record.body?.discovered_resources ?? [],
+      discovered_prompts: record.body?.discovered_prompts ?? [],
+      health: record.body?.last_error
+        ? 'degraded'
+        : record.status === 'revoked'
+          ? 'offline'
+          : 'healthy',
+    };
   });
   app.post('/v1/mcp/servers', async (req, reply) => {
     requireRole(req.principal, 'developer', 'reviewer');
@@ -1197,6 +1481,17 @@ export async function buildProductionApp(options: {
         db.get(req.principal.tenant, 'knowledge_backend', id),
       ),
     );
+    const capabilityManifest = buildAgentCapabilityManifest(
+      spec.body,
+      spec.body.tools.map((entry: any) => {
+        const tool = service.tools.find((candidate) => candidate.name === entry.name);
+        return {
+          name: entry.name,
+          version: tool?.version ?? 'unknown',
+          schema_hash: tool ? digest(tool.schema) : digest(entry.name),
+        };
+      }),
+    );
     return {
       release_artifact_hash: spec.meta.release_artifact_hash,
       spec_hash: spec.digest,
@@ -1212,6 +1507,7 @@ export async function buildProductionApp(options: {
       memory_scopes: spec.body.capabilities?.memory_scopes ?? ['turn', 'task'],
       model: { provider: spec.body.llm.provider, model: spec.body.llm.model },
       budget: { max_steps: spec.body.flow.max_steps, max_tokens: config.maxOutputTokens },
+      capability_manifest: capabilityManifest,
     };
   });
   app.put('/v1/agents/:name/draft', async (req) => {
@@ -1293,6 +1589,17 @@ export async function buildProductionApp(options: {
       mcp_hashes: mcpRows.filter(Boolean).map((row: any) => row.digest),
       knowledge_hashes: knowledgeRows.filter(Boolean).map((row: any) => row.digest),
       memory_scopes: spec.body.capabilities?.memory_scopes ?? ['turn', 'task'],
+      capability_manifest: buildAgentCapabilityManifest(
+        spec.body,
+        spec.body.tools.map((entry: any) => {
+          const tool = service.tools.find((candidate) => candidate.name === entry.name);
+          return {
+            name: entry.name,
+            version: tool?.version ?? 'unknown',
+            schema_hash: tool ? digest(tool.schema) : digest(entry.name),
+          };
+        }),
+      ),
       budget: {
         max_steps: spec.body.flow.max_steps,
         max_tokens: config.maxOutputTokens,
@@ -2344,6 +2651,7 @@ export async function buildProductionApp(options: {
           skill_hashes: latest.skill_hashes ?? [],
           model_versions: latest.model_versions ?? {},
           replay_mode: latest.replay_mode ?? 'strict',
+          capability_manifest: latest.capability_manifest,
         }
       : undefined;
     return {
@@ -2369,6 +2677,7 @@ export async function buildProductionApp(options: {
           skill_hashes: latest.skill_hashes ?? [],
           model_versions: latest.model_versions ?? {},
           replay_mode: latest.replay_mode ?? 'strict',
+          capability_manifest: latest.capability_manifest,
         }
       : undefined;
     await db.audit(req.principal.tenant, req.principal.actor, 'provenance.read', {

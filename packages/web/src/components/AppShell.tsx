@@ -4,11 +4,8 @@ import '../workspace.css';
 
 const links = [
   { to: '/agents', label: 'Agents', icon: 'M5 6.5h14v11H5z M8 10h8 M8 14h5' },
-  { to: '/capabilities', label: '能力', icon: 'M8 4h8v4h4v8h-4v4H8v-4H4V8h4z' },
-  { to: '/context', label: '记忆与知识', icon: 'M5 5h14v14H5z M8 9h8 M8 13h6' },
-  { to: '/sessions', label: '运行记录', icon: 'M4 12a8 8 0 1 0 3-6.2 M4 4v5h5 M12 8v5l3 2' },
-  { to: '/compare', label: '对比', icon: 'M4 4h6v16H4z M14 4h6v16h-6z' },
-  { to: '/audit', label: '审计', icon: 'm12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z m-4 9 3 3 5-6' },
+  { to: '/tasks', label: '任务', icon: 'M4 12a8 8 0 1 0 3-6.2 M4 4v5h5 M12 8v5l3 2' },
+  { to: '/settings', label: '设置', icon: 'M8 4h8v4h4v8h-4v4H8v-4H4V8h4z' },
 ];
 
 export function AppShell() {

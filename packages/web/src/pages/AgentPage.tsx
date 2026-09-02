@@ -17,6 +17,7 @@ import { ChatInput } from '../components/ChatInput';
 import { visibleStreamText } from '../components/MessageContent';
 import { eventMeta } from '../lib/events';
 import '../product.css';
+import '../agent-app.css';
 
 const textOf = (event: TraceEvent) =>
   typeof (event.payload as { text?: unknown })?.text === 'string'
@@ -78,7 +79,8 @@ export function AgentPage() {
   const liveRef = useRef<TraceEvent[]>([]);
   const [liveText, setLiveText] = useState('');
   const [error, setError] = useState('');
-  const [rightOpen, setRightOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(false);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [taskQuery, setTaskQuery] = useState('');
   const streamRef = useRef<HTMLElement>(null);
   const followOutput = useRef(true);
@@ -121,6 +123,7 @@ export function AgentPage() {
     const element = streamRef.current;
     if (!element) return;
     element.scrollTo({ top: element.scrollHeight, behavior });
+    setShowJumpToLatest(false);
   }
 
   useEffect(() => {
@@ -144,6 +147,7 @@ export function AgentPage() {
     setLiveText('');
     setLiveEvents([]);
     followOutput.current = true;
+    setShowJumpToLatest(false);
     liveRef.current = [];
     let currentTask = taskId;
     try {
@@ -328,9 +332,11 @@ export function AgentPage() {
           ref={streamRef}
           onScroll={() => {
             const element = streamRef.current;
-            if (element)
-              followOutput.current =
-                element.scrollHeight - element.scrollTop - element.clientHeight < 72;
+            if (element) {
+              const follows = element.scrollHeight - element.scrollTop - element.clientHeight < 72;
+              followOutput.current = follows;
+              setShowJumpToLatest(!follows);
+            }
           }}
         >
           {session.isLoading ? (
@@ -342,6 +348,21 @@ export function AgentPage() {
               ))}
               {sending && visibleLiveText && !hasFinalLiveMessage && (
                 <ChatBubble role="assistant" content={visibleLiveText} streaming />
+              )}
+              {(sending || taskId) && (
+                <button
+                  className={`activity-summary${sending ? ' is-running' : ''}`}
+                  onClick={() => (taskId ? setRightOpen(true) : undefined)}
+                >
+                  <span />
+                  {sending
+                    ? activities[0]?.type === 'tool.called'
+                      ? `正在使用 ${String((activities[0].payload as any)?.name ?? '工具')}`
+                      : activities[0]?.type === 'agent.dispatch'
+                        ? '正在委派子任务'
+                        : 'Agent 正在处理任务'
+                    : `运行完成 · ${merged.filter((event) => event.type === 'llm.request').length} 次模型调用 · ${merged.filter((event) => event.type === 'tool.called').length} 个工具`}
+                </button>
               )}
               <div className="conversation-anchor" aria-hidden="true" />
             </div>
@@ -361,6 +382,11 @@ export function AgentPage() {
             </div>
           )}
         </section>
+        {showJumpToLatest && (
+          <button className="jump-latest" onClick={() => scrollConversationToBottom('smooth')}>
+            回到最新内容 ↓
+          </button>
+        )}
         {error && (
           <div className="run-error" role="alert">
             <div>

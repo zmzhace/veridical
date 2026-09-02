@@ -5,6 +5,21 @@ import { useInvocations, useReplayExecution, useSession } from '../api/queries';
 import { EventDetail } from '../components/EventDetail';
 import { TraceTimeline } from '../components/TraceTimeline';
 import '../product.css';
+import '../trace.css';
+
+const operationLabel = (item: any) => {
+  if (item.actor === 'llm') return '模型调用';
+  if (item.actor === 'tool') return `工具：${item.operation}`;
+  if (item.actor === 'agent' && String(item.operation).includes('dispatch'))
+    return `委派：${item.agent ?? '子 Agent'}`;
+  if (item.actor === 'agent')
+    return item.parent_invocation_id
+      ? `子 Agent：${item.agent ?? item.operation}`
+      : `主 Agent：${item.agent ?? item.operation}`;
+  if (item.actor === 'memory') return '读取记忆';
+  if (item.actor === 'join') return '汇总子任务';
+  return String(item.operation ?? item.actor ?? '调用');
+};
 
 export function TaskTracePage() {
   const { taskId = '' } = useParams();
@@ -15,7 +30,9 @@ export function TaskTracePage() {
   const [selectedInvocation, setSelectedInvocation] = useState<any>(null);
   const [view, setView] = useState<'tree' | 'timeline' | 'data'>('tree');
   const events = session.data ?? [];
-  const spec = (events.find((event) => event.type === 'run.provenance')?.payload as any)?.spec;
+  const rootAgent = invocations.data?.invocations.find(
+    (item: any) => !item.parent_invocation_id,
+  )?.agent;
   const totals = useMemo(
     () =>
       events.reduce(
@@ -62,7 +79,11 @@ export function TaskTracePage() {
         <div>
           <Link
             className="back-link"
-            to={spec?.name ? `/agents/${spec.name}?task=${taskId}` : '/agents'}
+            to={
+              rootAgent
+                ? `/agents/${encodeURIComponent(String(rootAgent))}?task=${taskId}`
+                : '/agents'
+            }
           >
             ‹ 返回任务
           </Link>
@@ -108,6 +129,13 @@ export function TaskTracePage() {
           <dd>${totals.cost.toFixed(4)}</dd>
         </div>
       </dl>
+      <div className="trace-explainer">
+        <strong>这次任务实际经过了哪些步骤</strong>
+        <span>
+          从主 Agent 开始，按父子关系展开模型、工具、Skill 与子
+          Agent。点击任一步查看脱敏后的完整输入输出。
+        </span>
+      </div>
       {replay.data && (
         <div className={`replay-banner ${replay.data.identical ? 'is-success' : 'is-difference'}`}>
           <strong>
@@ -160,7 +188,7 @@ export function TaskTracePage() {
               >
                 <span className={`invocation-status is-${String(item.status ?? 'success')}`} />
                 <div>
-                  <strong>{String(item.operation ?? item.actor ?? '调用')}</strong>
+                  <strong>{operationLabel(item)}</strong>
                   <small className="mono">{String(item.path ?? 'legacy')}</small>
                 </div>
                 <dl>

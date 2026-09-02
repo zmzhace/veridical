@@ -402,26 +402,38 @@ export const useProjects = (organizationId: string) =>
     enabled: !!organizationId,
   });
 export interface SkillCatalogItem {
+  id?: string;
   name: string;
   description: string;
   procedure: string;
   tags: string[];
   source: string;
   key: string;
+  version?: string;
+  status?: 'draft' | 'approved' | 'deprecated';
+  content_hash?: string;
+  tool_dependencies?: string[];
 }
 export const useSkills = () =>
   useQuery({
     queryKey: ['skills'],
     queryFn: async () => {
       try {
-        const value = await productionCapabilities();
-        return value.skills.map((skill) => ({
+        const value = await apiFetch<Array<Record<string, any>>>('/v1/skills');
+        return value.map((skill) => ({
+          id: String(skill.id ?? `${skill.name}@${skill.version}`),
           name: String(skill.name),
           description: String(skill.description ?? ''),
-          procedure: '',
-          tags: [],
-          source: 'production-registry',
+          procedure: String(skill.content ?? skill.procedure ?? ''),
+          tags: Array.isArray(skill.tags) ? skill.tags.map(String) : [],
+          source: String(skill.source ?? 'production-registry'),
           key: String(skill.id ?? `${skill.name}@${skill.version}`),
+          version: String(skill.version ?? 'unknown'),
+          status: (skill.status ?? 'draft') as SkillCatalogItem['status'],
+          content_hash: String(skill.content_hash ?? ''),
+          tool_dependencies: Array.isArray(skill.tool_dependencies)
+            ? skill.tool_dependencies.map(String)
+            : [],
         }));
       } catch (error) {
         if (!canUseResearchFallback(error)) throw error;
@@ -441,6 +453,12 @@ export interface ToolArtifactSummary {
   side_effect: 'none' | 'read' | 'write' | 'destructive';
   status: 'draft' | 'approved' | 'deprecated' | 'revoked';
   implementation_hash: string;
+  display_name?: string;
+  tags?: string[];
+  input_schema?: unknown;
+  output_schema?: unknown;
+  network_scope?: string[];
+  used_by_count?: number;
 }
 export interface McpServerSummary {
   id: string;
@@ -456,22 +474,32 @@ export interface McpServerSummary {
   schema_hash?: string;
   last_error?: string;
   last_checked_at?: string;
+  version?: string;
+  artifact_hash?: string;
+  health?: 'healthy' | 'degraded' | 'offline';
 }
 export const useTools = () =>
   useQuery({
     queryKey: ['tools'],
     queryFn: async () => {
       try {
-        const value = await productionCapabilities();
-        return value.tools.map((tool) => ({
+        const value = await apiFetch<Array<Record<string, any>>>('/v1/tools');
+        return value.map((tool) => ({
           id: String(tool.id ?? tool.name),
           name: String(tool.name),
           version: String(tool.version ?? 'unknown'),
           source: (tool.source ?? 'builtin') as ToolArtifactSummary['source'],
           description: String(tool.description ?? ''),
           side_effect: (tool.side_effect ?? 'none') as ToolArtifactSummary['side_effect'],
-          status: tool.approved === false ? 'draft' : 'approved',
+          status: (tool.status ??
+            (tool.approved === false ? 'draft' : 'approved')) as ToolArtifactSummary['status'],
           implementation_hash: String(tool.implementation_hash ?? ''),
+          display_name: String(tool.display_name ?? tool.name),
+          tags: Array.isArray(tool.tags) ? tool.tags.map(String) : [],
+          input_schema: tool.input_schema,
+          output_schema: tool.output_schema,
+          network_scope: Array.isArray(tool.network_scope) ? tool.network_scope.map(String) : [],
+          used_by_count: Number(tool.used_by_count ?? 0),
         }));
       } catch (error) {
         if (!canUseResearchFallback(error)) throw error;
@@ -484,26 +512,162 @@ export const useMcpServers = () =>
     queryKey: ['mcp-servers'],
     queryFn: async () => {
       try {
-        const value = await productionCapabilities();
-        return value.mcp_servers.map((server) => ({
+        const value = await apiFetch<Array<Record<string, any>>>('/v1/mcp/servers');
+        return value.map((server) => ({
           id: String(server.id),
           name: String(server.name),
           transport: server.transport as McpServerSummary['transport'],
-          url: server.endpoint as string | undefined,
+          url: (server.endpoint ?? server.url) as string | undefined,
           command: server.command as string | undefined,
-          status: 'approved' as const,
-          enabled: true,
-          discovered_tools: [],
-          discovered_resources: [],
-          discovered_prompts: [],
+          status: (server.status ?? 'draft') as McpServerSummary['status'],
+          enabled: server.enabled !== false,
+          discovered_tools: Array.isArray(server.discovered_tools) ? server.discovered_tools : [],
+          discovered_resources: Array.isArray(server.discovered_resources)
+            ? server.discovered_resources
+            : [],
+          discovered_prompts: Array.isArray(server.discovered_prompts)
+            ? server.discovered_prompts
+            : [],
           schema_hash: server.schema_hash as string | undefined,
-          last_error: undefined,
+          last_error: server.last_error as string | undefined,
+          last_checked_at: server.last_checked_at as string | undefined,
+          version: server.version as string | undefined,
+          artifact_hash: server.artifact_hash as string | undefined,
+          health: (server.health ??
+            (server.last_error ? 'degraded' : 'healthy')) as McpServerSummary['health'],
         }));
       } catch (error) {
         if (!canUseResearchFallback(error)) throw error;
         return apiFetch<McpServerSummary[]>('/api/mcp/servers');
       }
     },
+  });
+export interface CapabilitySummary {
+  id: string;
+  kind: 'tool' | 'mcp' | 'skill' | 'memory' | 'knowledge';
+  display_name: string;
+  summary: string;
+  source: string;
+  version: string;
+  status: 'draft' | 'approved' | 'deprecated' | 'revoked' | 'unavailable';
+  risk: 'none' | 'read' | 'write' | 'destructive';
+  health?: 'healthy' | 'degraded' | 'offline';
+  tags: string[];
+  used_by_count: number;
+  updated_at: string;
+  content_hash?: string;
+  tool_dependencies?: string[];
+  discovered_count?: number;
+  selected_children?: string[];
+}
+export interface CapabilityCatalogResponse {
+  items: CapabilitySummary[];
+  next_cursor?: string;
+  total: number;
+}
+export const useCapabilityCatalog = (
+  filters: {
+    kind?: CapabilitySummary['kind'];
+    query?: string;
+    status?: CapabilitySummary['status'];
+    risk?: CapabilitySummary['risk'];
+    limit?: number;
+  } = {},
+) =>
+  useQuery({
+    queryKey: ['capability-catalog', filters],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (filters.kind) params.set('kind', filters.kind);
+      if (filters.query) params.set('query', filters.query);
+      if (filters.status) params.set('status', filters.status);
+      if (filters.risk) params.set('risk', filters.risk);
+      params.set('limit', String(filters.limit ?? 100));
+      try {
+        return await apiFetch<CapabilityCatalogResponse>(`/v1/capability-catalog?${params}`);
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
+        const [tools, skills, mcp] = await Promise.all([
+          apiFetch<ToolArtifactSummary[]>('/api/tools'),
+          apiFetch<SkillCatalogItem[]>('/api/skills'),
+          apiFetch<McpServerSummary[]>('/api/mcp/servers'),
+        ]);
+        const items: CapabilitySummary[] = [
+          ...tools.map((tool) => ({
+            id: tool.id,
+            kind: 'tool' as const,
+            display_name: tool.display_name ?? tool.name,
+            summary: tool.description,
+            source: tool.source,
+            version: tool.version,
+            status: tool.status,
+            risk: tool.side_effect,
+            health: tool.status === 'revoked' ? ('offline' as const) : ('healthy' as const),
+            tags: tool.tags ?? [],
+            used_by_count: tool.used_by_count ?? 0,
+            updated_at: '',
+            content_hash: tool.implementation_hash,
+          })),
+          ...skills.map((skill) => ({
+            id: skill.key,
+            kind: 'skill' as const,
+            display_name: skill.name,
+            summary: skill.description,
+            source: skill.source,
+            version: skill.version ?? 'unknown',
+            status: (skill.status ?? 'draft') as CapabilitySummary['status'],
+            risk: 'none' as const,
+            health: 'healthy' as const,
+            tags: skill.tags,
+            used_by_count: 0,
+            updated_at: '',
+            content_hash: skill.content_hash,
+            tool_dependencies: skill.tool_dependencies ?? [],
+          })),
+          ...mcp.map((server) => ({
+            id: server.id,
+            kind: 'mcp' as const,
+            display_name: server.name,
+            summary: `${server.discovered_tools.length} 个已发现工具`,
+            source: server.transport,
+            version: server.version ?? 'unknown',
+            status: server.status,
+            risk: 'read' as const,
+            health: server.health ?? 'healthy',
+            tags: ['MCP'],
+            used_by_count: 0,
+            updated_at: server.last_checked_at ?? '',
+            content_hash: server.artifact_hash,
+            discovered_count: server.discovered_tools.length,
+            selected_children: server.discovered_tools.map((tool) => tool.name),
+          })),
+        ]
+          .filter((item) => !filters.kind || item.kind === filters.kind)
+          .filter((item) => !filters.status || item.status === filters.status)
+          .filter((item) => !filters.risk || item.risk === filters.risk)
+          .filter(
+            (item) =>
+              !filters.query ||
+              `${item.display_name} ${item.summary} ${item.tags.join(' ')}`
+                .toLocaleLowerCase()
+                .includes(filters.query.toLocaleLowerCase()),
+          );
+        return { items, total: items.length };
+      }
+    },
+  });
+export const useCapabilityDetail = (capability?: CapabilitySummary | null) =>
+  useQuery({
+    queryKey: ['capability-detail', capability?.kind, capability?.id],
+    queryFn: async () => {
+      if (!capability) return undefined;
+      const id = encodeURIComponent(capability.id);
+      if (capability.kind === 'tool') return apiFetch<Record<string, any>>(`/v1/tools/${id}`);
+      if (capability.kind === 'skill') return apiFetch<Record<string, any>>(`/v1/skills/${id}`);
+      if (capability.kind === 'mcp') return apiFetch<Record<string, any>>(`/v1/mcp/servers/${id}`);
+      return undefined;
+    },
+    enabled: Boolean(capability && ['tool', 'skill', 'mcp'].includes(capability.kind)),
   });
 export const useCreateMcpServer = () =>
   useMutation({
@@ -525,6 +689,56 @@ export const useCreateMcpServer = () =>
         return apiFetch<McpServerSummary>('/api/mcp/servers', {
           method: 'POST',
           body: JSON.stringify(body),
+        });
+      }
+    },
+  });
+export const useCreateToolDraft = () =>
+  useMutation({
+    mutationFn: async (body: {
+      name: string;
+      display_name?: string;
+      description: string;
+      side_effect: ToolArtifactSummary['side_effect'];
+    }) => {
+      try {
+        return await apiFetch<ToolArtifactSummary>('/v1/tools/drafts', {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
+        return apiFetch<ToolArtifactSummary>('/api/tools', {
+          method: 'POST',
+          body: JSON.stringify({ ...body, status: 'draft', source: 'custom' }),
+        });
+      }
+    },
+  });
+export const useCreateSkillDraft = () =>
+  useMutation({
+    mutationFn: async (body: {
+      name: string;
+      version: string;
+      description: string;
+      content: string;
+      tool_dependencies: string[];
+    }) => {
+      try {
+        return await apiFetch<SkillCatalogItem>('/v1/skills', {
+          method: 'POST',
+          body: JSON.stringify({ ...body, source: 'studio' }),
+        });
+      } catch (error) {
+        if (!canUseResearchFallback(error)) throw error;
+        return apiFetch<SkillCatalogItem>('/api/skills', {
+          method: 'POST',
+          body: JSON.stringify({
+            ...body,
+            procedure: body.content,
+            source: 'studio',
+            status: 'draft',
+          }),
         });
       }
     },

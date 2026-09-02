@@ -1,212 +1,520 @@
-import { useMemo, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
+  useCapabilityCatalog,
   useCreateMcpServer,
+  useCreateSkillDraft,
+  useCreateToolDraft,
   useCredentialStatus,
   useDiscoverMcpServer,
-  useMcpServers,
   useModels,
-  useKnowledgeBackends,
-  useSkills,
-  useTools,
+  type CapabilitySummary,
 } from '../api/queries';
+import { CapabilityDetail, CapabilityRow } from '../components/CapabilityCatalog';
+import '../capabilities.css';
 import '../product.css';
 
-type CapabilityView = 'overview' | 'models' | 'tools' | 'mcp' | 'skills' | 'knowledge';
+type View = 'all' | 'tool' | 'mcp' | 'skill' | 'knowledge' | 'model';
+type AddMode = 'choose' | 'mcp' | 'tool' | 'skill' | null;
 
-const views: Array<{ id: CapabilityView; label: string }> = [
-  { id: 'overview', label: '概览' },
-  { id: 'models', label: '模型' },
-  { id: 'tools', label: '工具' },
-  { id: 'mcp', label: 'MCP' },
-  { id: 'skills', label: 'Skills' },
+const viewLabels: Array<{ id: View; label: string }> = [
+  { id: 'all', label: '全部能力' },
+  { id: 'tool', label: '工具' },
+  { id: 'mcp', label: 'MCP 连接' },
+  { id: 'skill', label: 'Skills' },
   { id: 'knowledge', label: '知识' },
+  { id: 'model', label: '模型' },
 ];
 
-const sideEffectLabel = {
-  none: '无副作用',
-  read: '只读',
-  write: '可写入',
-  destructive: '高风险',
-} as const;
-
-const statusLabel: Record<string, string> = {
-  approved: '已批准',
-  configured: '已连接',
-  draft: '草稿',
-  deprecated: '已弃用',
-  revoked: '已撤销',
-};
-
-function CapabilityGlyph({ kind }: { kind: 'model' | 'tool' | 'mcp' | 'skill' | 'context' }) {
-  const paths = {
-    model: <><rect x="4" y="5" width="16" height="14" rx="3" /><path d="M8 9h8M8 13h5" /></>,
-    tool: <><path d="m14.5 5.5 4 4-8.7 8.7a2.8 2.8 0 0 1-4-4Z" /><path d="m12.5 7.5 4 4" /></>,
-    mcp: <><circle cx="7" cy="12" r="3" /><circle cx="17" cy="7" r="3" /><circle cx="17" cy="17" r="3" /><path d="m9.7 10.7 4.6-2.4M9.7 13.3l4.6 2.4" /></>,
-    skill: <><path d="M12 3v18M5 8h14M5 16h14" /><circle cx="12" cy="8" r="2.5" /><circle cx="12" cy="16" r="2.5" /></>,
-    context: <><path d="M5 5h14v14H5z" /><path d="M8 9h8M8 13h6" /></>,
-  };
-  return <span className={`capability-glyph is-${kind}`} aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{paths[kind]}</svg></span>;
-}
-
-function StatusBadge({ status }: { status: string }) {
-  return <span className={`capability-status is-${status}`}>{statusLabel[status] ?? status}</span>;
-}
-
 export function CapabilitiesPage() {
-  const tools = useTools();
-  const skills = useSkills();
-  const servers = useMcpServers();
-  const models = useModels();
-  const knowledge = useKnowledgeBackends();
-  const credentials = useCredentialStatus();
-  const create = useCreateMcpServer();
-  const discover = useDiscoverMcpServer();
-  const client = useQueryClient();
-  const [adding, setAdding] = useState(false);
-  const [view, setView] = useState<CapabilityView>('overview');
+  const [view, setView] = useState<View>('all');
   const [query, setQuery] = useState('');
-  const [form, setForm] = useState({ name: '', transport: 'streamable-http', endpoint: '' });
+  const [status, setStatus] = useState<CapabilitySummary['status'] | ''>('');
+  const [risk, setRisk] = useState<CapabilitySummary['risk'] | ''>('');
+  const [selected, setSelected] = useState<CapabilitySummary | null>(null);
+  const [addMode, setAddMode] = useState<AddMode>(null);
+  const kind = view === 'all' || view === 'model' ? undefined : view;
+  const catalog = useCapabilityCatalog({
+    kind,
+    query,
+    status: status || undefined,
+    risk: risk || undefined,
+  });
+  const models = useModels();
+  const credentials = useCredentialStatus();
+  const items = catalog.data?.items ?? [];
+  const counts = useMemo(() => {
+    const value = { tool: 0, mcp: 0, skill: 0, knowledge: 0 };
+    for (const item of items) if (item.kind in value) value[item.kind as keyof typeof value] += 1;
+    return value;
+  }, [items]);
 
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const visibleTools = useMemo(
-    () => (tools.data ?? []).filter((tool) => `${tool.name} ${tool.description}`.toLocaleLowerCase().includes(normalizedQuery)),
-    [normalizedQuery, tools.data],
+  return (
+    <section className="settings-page">
+      <header className="settings-heading">
+        <div>
+          <h1>设置</h1>
+          <p>管理 Agent 可以使用的模型、工具、工作方法和知识。安装、启用与生产批准彼此独立。</p>
+        </div>
+        <button className="button button-primary" onClick={() => setAddMode('choose')}>
+          添加能力
+        </button>
+      </header>
+      <div className="settings-layout">
+        <nav className="settings-nav" aria-label="设置分类">
+          {viewLabels.map((item) => (
+            <button
+              key={item.id}
+              aria-current={view === item.id ? 'page' : undefined}
+              onClick={() => setView(item.id)}
+            >
+              <span>{item.label}</span>
+              {item.id === 'tool' && <small>{counts.tool}</small>}
+              {item.id === 'mcp' && <small>{counts.mcp}</small>}
+              {item.id === 'skill' && <small>{counts.skill}</small>}
+              {item.id === 'knowledge' && <small>{counts.knowledge}</small>}
+              {item.id === 'model' && <small>{models.data?.length ?? 0}</small>}
+            </button>
+          ))}
+          <Link to="/context">记忆与知识</Link>
+          <Link to="/audit">治理与审计</Link>
+        </nav>
+        <main className="capability-workspace">
+          <div className="capability-health">
+            <span className="capability-health-dot" />
+            <strong>
+              {credentials.data?.provider.configured ? '工作区能力可用' : '模型连接需要配置'}
+            </strong>
+            <span>{catalog.data?.total ?? 0} 项能力 · 凭据由服务端托管</span>
+          </div>
+          {view === 'model' ? (
+            <section className="capability-list-shell" style={{ marginTop: 18 }}>
+              <header className="capability-list-heading">
+                <strong>模型连接</strong>
+                <span>{models.data?.length ?? 0} 个</span>
+              </header>
+              {(models.data ?? []).map((model) => (
+                <article className="capability-row" key={model.id}>
+                  <div className="capability-row-main">
+                    <span className="capability-kind">模型</span>
+                    <span className="capability-row-copy">
+                      <strong>{model.model}</strong>
+                      <small>{model.provider} · 凭据不会发送到浏览器</small>
+                    </span>
+                    <span className="capability-row-facts">
+                      <small>服务端配置</small>
+                      <small>当前工作区</small>
+                    </span>
+                    <span
+                      className={`capability-state is-${model.status === 'configured' ? 'approved' : 'unavailable'}`}
+                    >
+                      {model.status === 'configured' ? '可使用' : '不可用'}
+                    </span>
+                  </div>
+                </article>
+              ))}
+              {!models.isLoading && !models.data?.length && (
+                <EmptyState
+                  title="还没有可用模型"
+                  detail="在服务端配置 Provider 后会自动出现在这里，不需要再次填写 API Key。"
+                />
+              )}
+            </section>
+          ) : (
+            <>
+              <div className="capability-toolbar-v2">
+                <label className="capability-search-v2">
+                  <span className="sr-only">搜索能力</span>
+                  <input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="搜索名称、用途或标签"
+                  />
+                </label>
+                <select
+                  className="capability-filter"
+                  aria-label="状态"
+                  value={status}
+                  onChange={(event) => setStatus(event.target.value as typeof status)}
+                >
+                  <option value="">所有状态</option>
+                  <option value="approved">可使用</option>
+                  <option value="draft">待审批</option>
+                  <option value="deprecated">将停用</option>
+                  <option value="revoked">已撤销</option>
+                  <option value="unavailable">不可用</option>
+                </select>
+                <select
+                  className="capability-filter"
+                  aria-label="权限"
+                  value={risk}
+                  onChange={(event) => setRisk(event.target.value as typeof risk)}
+                >
+                  <option value="">所有权限</option>
+                  <option value="none">无副作用</option>
+                  <option value="read">读取</option>
+                  <option value="write">可修改</option>
+                  <option value="destructive">高风险</option>
+                </select>
+              </div>
+              <section className="capability-list-shell">
+                <header className="capability-list-heading">
+                  <strong>{viewLabels.find((item) => item.id === view)?.label}</strong>
+                  <span>{catalog.data?.total ?? 0} 项</span>
+                </header>
+                {catalog.isLoading ? (
+                  <CapabilitySkeleton />
+                ) : items.length ? (
+                  items.map((item) => (
+                    <CapabilityRow
+                      key={`${item.kind}:${item.id}`}
+                      capability={item}
+                      selected={selected?.id === item.id && selected.kind === item.kind}
+                      onSelect={() => setSelected(item)}
+                    />
+                  ))
+                ) : (
+                  <EmptyState
+                    title={query ? '没有匹配的能力' : '这里还没有能力'}
+                    detail={
+                      query
+                        ? '换一个关键词或清除筛选条件。'
+                        : '添加工具、MCP 或 Skill 后，可以在 Studio 中启用。'
+                    }
+                  />
+                )}
+              </section>
+            </>
+          )}
+        </main>
+      </div>
+      {selected && <CapabilityDetail capability={selected} onClose={() => setSelected(null)} />}
+      {addMode && (
+        <AddCapabilitySheet mode={addMode} onMode={setAddMode} onClose={() => setAddMode(null)} />
+      )}
+    </section>
   );
-  const visibleSkills = useMemo(
-    () => (skills.data ?? []).filter((skill) => `${skill.name} ${skill.description} ${skill.tags.join(' ')}`.toLocaleLowerCase().includes(normalizedQuery)),
-    [normalizedQuery, skills.data],
-  );
-  const visibleServers = useMemo(
-    () => (servers.data ?? []).filter((server) => server.name.toLocaleLowerCase().includes(normalizedQuery)),
-    [normalizedQuery, servers.data],
-  );
-  const configuredModel = models.data?.[0];
+}
 
-  async function addServer(event: React.FormEvent) {
+function EmptyState({ title, detail }: { title: string; detail: string }) {
+  return (
+    <div className="capability-empty-v2">
+      <div>
+        <strong>{title}</strong>
+        <p>{detail}</p>
+      </div>
+    </div>
+  );
+}
+function CapabilitySkeleton() {
+  return (
+    <div aria-label="正在加载能力">
+      {[0, 1, 2, 3].map((item) => (
+        <div className="capability-row skeleton" key={item} />
+      ))}
+    </div>
+  );
+}
+
+function AddCapabilitySheet({
+  mode,
+  onMode,
+  onClose,
+}: {
+  mode: Exclude<AddMode, null>;
+  onMode: (mode: AddMode) => void;
+  onClose: () => void;
+}) {
+  const client = useQueryClient();
+  const createMcp = useCreateMcpServer();
+  const discoverMcp = useDiscoverMcpServer();
+  const createTool = useCreateToolDraft();
+  const createSkill = useCreateSkillDraft();
+  const [mcp, setMcp] = useState({
+    name: '',
+    transport: 'streamable-http',
+    endpoint: '',
+    credential_ref: '',
+  });
+  const [tool, setTool] = useState({
+    name: '',
+    display_name: '',
+    description: '',
+    side_effect: 'none' as 'none' | 'read' | 'write' | 'destructive',
+  });
+  const [skill, setSkill] = useState({
+    name: '',
+    version: '1.0.0',
+    description: '',
+    content: '',
+    dependencies: '',
+  });
+  const [notice, setNotice] = useState('');
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [onClose]);
+  async function submitMcp(event: React.FormEvent) {
     event.preventDefault();
-    await create.mutateAsync(form.transport === 'streamable-http'
-      ? { name: form.name, transport: form.transport, url: form.endpoint }
-      : { name: form.name, transport: form.transport, command: form.endpoint });
-    setAdding(false);
-    setForm({ name: '', transport: 'streamable-http', endpoint: '' });
+    const created = await createMcp.mutateAsync({
+      name: mcp.name,
+      transport: mcp.transport,
+      endpoint: mcp.endpoint,
+      url: mcp.endpoint,
+      command: mcp.endpoint,
+      credential_ref: mcp.credential_ref || undefined,
+    });
+    try {
+      await discoverMcp.mutateAsync(created.id);
+      setNotice('连接成功，发现结果已保存为草稿。');
+    } catch {
+      setNotice('连接已保存；能力发现暂未完成，可稍后重试。');
+    }
+    await client.invalidateQueries({ queryKey: ['capability-catalog'] });
     await client.invalidateQueries({ queryKey: ['mcp-servers'] });
   }
-
-  async function discoverServer(id: string) {
-    await discover.mutateAsync(id);
-    await client.invalidateQueries({ queryKey: ['mcp-servers'] });
+  async function submitTool(event: React.FormEvent) {
+    event.preventDefault();
+    await createTool.mutateAsync(tool);
+    await client.invalidateQueries({ queryKey: ['capability-catalog'] });
+    setNotice('工具草稿已创建。完成隔离测试和审批后才能被 Agent 使用。');
   }
-
-  const show = (target: CapabilityView) => view === 'overview' || view === target;
-
-  return <section className="capabilities-page">
-    <header className="capability-heading">
-      <div>
-        <p className="product-kicker">Workspace capabilities</p>
-        <h1>能力库</h1>
-        <p>统一管理模型、工具、MCP 和 Skills，再按需装配给 Agent。</p>
+  async function submitSkill(event: React.FormEvent) {
+    event.preventDefault();
+    await createSkill.mutateAsync({
+      name: skill.name,
+      version: skill.version,
+      description: skill.description,
+      content: skill.content,
+      tool_dependencies: skill.dependencies
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean),
+    });
+    await client.invalidateQueries({ queryKey: ['capability-catalog'] });
+    await client.invalidateQueries({ queryKey: ['skills'] });
+    setNotice('Skill 草稿已导入。依赖检查和审批通过后才能添加到生产 Agent。');
+  }
+  return (
+    <div className="sheet-backdrop" onMouseDown={onClose}>
+      <div
+        className="capability-sheet"
+        onMouseDown={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="添加能力"
+      >
+        <header>
+          <div>
+            <p className="product-kicker">Workspace capability</p>
+            <h2>
+              {mode === 'choose'
+                ? '添加能力'
+                : mode === 'mcp'
+                  ? '连接 MCP'
+                  : mode === 'tool'
+                    ? '创建工具草稿'
+                    : '导入 Skill 草稿'}
+            </h2>
+          </div>
+          <button type="button" className="icon-button" aria-label="关闭" onClick={onClose}>
+            ×
+          </button>
+        </header>
+        {notice ? (
+          <div className="state-panel">
+            <strong>{notice}</strong>
+            <button className="button button-primary" onClick={onClose}>
+              完成
+            </button>
+          </div>
+        ) : mode === 'choose' ? (
+          <div className="add-capability-options">
+            <button onClick={() => onMode('mcp')}>
+              <strong>连接 MCP</strong>
+              <span>连接外部工具、资源和 Prompt</span>
+            </button>
+            <button onClick={() => onMode('tool')}>
+              <strong>创建工具草稿</strong>
+              <span>描述一个动作并进入测试与审批</span>
+            </button>
+            <button onClick={() => onMode('skill')}>
+              <strong>导入 Skill</strong>
+              <span>添加方法、参考资料和依赖声明</span>
+            </button>
+          </div>
+        ) : mode === 'mcp' ? (
+          <form onSubmit={submitMcp} className="capability-form">
+            <label>
+              连接名称
+              <input
+                required
+                value={mcp.name}
+                onChange={(event) => setMcp({ ...mcp, name: event.target.value })}
+                placeholder="例如：企业搜索"
+              />
+            </label>
+            <label>
+              连接方式
+              <select
+                value={mcp.transport}
+                onChange={(event) => setMcp({ ...mcp, transport: event.target.value })}
+              >
+                <option value="streamable-http">Streamable HTTP</option>
+                <option value="stdio">stdio（高级）</option>
+              </select>
+            </label>
+            <label>
+              {mcp.transport === 'stdio' ? '启动命令' : 'Server URL'}
+              <input
+                required
+                value={mcp.endpoint}
+                onChange={(event) => setMcp({ ...mcp, endpoint: event.target.value })}
+                placeholder={
+                  mcp.transport === 'stdio' ? 'npx @example/mcp-server' : 'https://example.com/mcp'
+                }
+              />
+            </label>
+            <label>
+              凭据引用（可选）
+              <input
+                value={mcp.credential_ref}
+                onChange={(event) => setMcp({ ...mcp, credential_ref: event.target.value })}
+                placeholder="由服务端 Vault/KMS 提供"
+              />
+              <small>不会把密钥发送到浏览器。</small>
+            </label>
+            <SheetActions
+              pending={createMcp.isPending || discoverMcp.isPending}
+              onBack={() => onMode('choose')}
+              label="保存并发现能力"
+            />
+          </form>
+        ) : mode === 'tool' ? (
+          <form onSubmit={submitTool} className="capability-form">
+            <label>
+              工具标识
+              <input
+                required
+                value={tool.name}
+                onChange={(event) => setTool({ ...tool, name: event.target.value })}
+                placeholder="例如：project_search"
+              />
+            </label>
+            <label>
+              展示名称
+              <input
+                required
+                value={tool.display_name}
+                onChange={(event) => setTool({ ...tool, display_name: event.target.value })}
+                placeholder="例如：项目搜索"
+              />
+            </label>
+            <label>
+              它解决什么问题？
+              <textarea
+                required
+                value={tool.description}
+                onChange={(event) => setTool({ ...tool, description: event.target.value })}
+                placeholder="说明输入、结果和使用场景"
+              />
+            </label>
+            <label>
+              副作用
+              <select
+                value={tool.side_effect}
+                onChange={(event) =>
+                  setTool({ ...tool, side_effect: event.target.value as typeof tool.side_effect })
+                }
+              >
+                <option value="none">无副作用</option>
+                <option value="read">读取数据</option>
+                <option value="write">修改数据</option>
+                <option value="destructive">高风险操作</option>
+              </select>
+            </label>
+            <SheetActions
+              pending={createTool.isPending}
+              onBack={() => onMode('choose')}
+              label="创建草稿"
+            />
+          </form>
+        ) : (
+          <form onSubmit={submitSkill} className="capability-form">
+            <label>
+              Skill 名称
+              <input
+                required
+                value={skill.name}
+                onChange={(event) => setSkill({ ...skill, name: event.target.value })}
+                placeholder="例如：research-review"
+              />
+            </label>
+            <label>
+              版本
+              <input
+                required
+                value={skill.version}
+                onChange={(event) => setSkill({ ...skill, version: event.target.value })}
+              />
+            </label>
+            <label>
+              什么时候使用？
+              <textarea
+                required
+                value={skill.description}
+                onChange={(event) => setSkill({ ...skill, description: event.target.value })}
+                placeholder="描述触发场景和预期结果"
+              />
+            </label>
+            <label>
+              Skill 指令
+              <textarea
+                required
+                value={skill.content}
+                onChange={(event) => setSkill({ ...skill, content: event.target.value })}
+                placeholder="粘贴 SKILL.md 的核心内容"
+              />
+            </label>
+            <label>
+              工具依赖
+              <input
+                value={skill.dependencies}
+                onChange={(event) => setSkill({ ...skill, dependencies: event.target.value })}
+                placeholder="用逗号分隔，例如 search, read"
+              />
+            </label>
+            <SheetActions
+              pending={createSkill.isPending}
+              onBack={() => onMode('choose')}
+              label="导入草稿"
+            />
+          </form>
+        )}
       </div>
-      <button className="button button-primary" onClick={() => setAdding(true)}>连接 MCP</button>
-    </header>
-
-    <div className="capability-guide">
-      <div>
-        <span className="capability-guide-index">01</span>
-        <strong>在这里接入能力</strong>
-        <p>连接、发现并确认它能访问的数据范围。</p>
-      </div>
-      <div>
-        <span className="capability-guide-index">02</span>
-        <strong>在 Studio 中装配</strong>
-        <p>每个 Agent 只获得明确绑定的能力。</p>
-      </div>
-      <Link to="/agents">选择 Agent <span aria-hidden="true">→</span></Link>
     </div>
+  );
+}
 
-    <div className="capability-toolbar">
-      <div className="capability-tabs" role="tablist" aria-label="能力类型">
-        {views.map((item) => <button key={item.id} role="tab" aria-selected={view === item.id} onClick={() => setView(item.id)}>{item.label}<span>{item.id === 'models' ? models.data?.length ?? 0 : item.id === 'tools' ? tools.data?.length ?? 0 : item.id === 'mcp' ? servers.data?.length ?? 0 : item.id === 'skills' ? skills.data?.length ?? 0 : item.id === 'knowledge' ? knowledge.data?.length ?? 0 : ''}</span></button>)}
-      </div>
-      {view !== 'models' && <label className="capability-search">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><circle cx="11" cy="11" r="6" /><path d="m16 16 4 4" /></svg>
-        <span className="sr-only">搜索能力</span>
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索名称或用途" />
-      </label>}
-    </div>
-
-    {show('models') && <section className="capability-collection" aria-labelledby="models-heading">
-      <header>
-        <div><h2 id="models-heading">模型连接</h2><p>凭据由服务端托管，不会写入 Agent 配置或发送到浏览器。</p></div>
-        <span>{credentials.data?.provider.configured ? '服务可用' : '等待配置'}</span>
-      </header>
-      {configuredModel ? <article className="capability-feature-row">
-        <CapabilityGlyph kind="model" />
-        <div className="capability-resource-copy"><strong>{configuredModel.model}</strong><p>{configuredModel.provider} · 当前工作区默认模型</p></div>
-        <div className="capability-resource-meta"><StatusBadge status={configuredModel.status} /><small>凭据已托管</small></div>
-      </article> : <div className="capability-empty"><CapabilityGlyph kind="model" /><div><strong>还没有可用模型</strong><p>在服务端环境中配置 Provider 后，这里会自动出现，不需要再次填写密钥。</p></div></div>}
-    </section>}
-
-    {show('knowledge') && <section className="capability-collection" aria-labelledby="knowledge-heading">
-      <header><div><h2 id="knowledge-heading">知识 Backend</h2><p>统一检索、证据、缺口和记忆；Agent 只访问已绑定的知识范围。</p></div><span>{knowledge.data?.length ?? 0} 个 Backend</span></header>
-      <div className="capability-resource-list">{(knowledge.data ?? []).map((backend) => <article className="capability-resource-row" key={backend.id}><CapabilityGlyph kind="context" /><div className="capability-resource-copy"><strong>{backend.name}</strong><p>{backend.type === 'gbrain' ? 'GBrain MCP · 外部知识脑' : backend.type === 'hybrid' ? 'Native + GBrain · 混合检索' : 'Native · 本地可回放索引'}</p><small>{(backend.capabilities ?? []).join(' · ') || '默认项目知识能力'}</small></div><div className="capability-resource-meta"><StatusBadge status={backend.status} /></div></article>)}</div>
-    </section>}
-
-    {show('mcp') && <section className="capability-collection" aria-labelledby="mcp-heading">
-      <header>
-        <div><h2 id="mcp-heading">MCP 连接</h2><p>从外部服务发现工具、资源和 Prompt；发布前仍需审批。</p></div>
-        <span>{servers.data?.length ?? 0} 个连接</span>
-      </header>
-      <div className="capability-resource-list">
-        {visibleServers.map((server) => <article className="capability-resource-row" key={server.id}>
-          <CapabilityGlyph kind="mcp" />
-          <div className="capability-resource-copy"><strong>{server.name}</strong><p>{server.transport === 'stdio' ? server.command : server.url}</p><small>{server.discovered_tools.length} 个工具 · {server.discovered_resources.length} 个资源 · {server.discovered_prompts.length} 个 Prompt</small>{server.last_error && <em>{server.last_error}</em>}</div>
-          <div className="capability-resource-meta"><StatusBadge status={server.status} /><button className="button button-quiet" disabled={discover.isPending} onClick={() => discoverServer(server.id)}>重新发现</button></div>
-        </article>)}
-        {!visibleServers.length && <div className="capability-empty"><CapabilityGlyph kind="mcp" /><div><strong>{normalizedQuery ? '没有匹配的 MCP 连接' : '连接第一个 MCP Server'}</strong><p>{normalizedQuery ? '换一个关键词，或清空搜索。' : '连接后可以发现它提供的工具、资源与 Prompt。'}</p>{!normalizedQuery && <button className="button button-quiet" onClick={() => setAdding(true)}>添加连接 <span aria-hidden="true">→</span></button>}</div></div>}
-      </div>
-    </section>}
-
-    {show('tools') && <section className="capability-collection" aria-labelledby="tools-heading">
-      <header>
-        <div><h2 id="tools-heading">工具</h2><p>每项工具都声明副作用和版本；Agent 不会自动获得权限。</p></div>
-        <span>{visibleTools.length} 项可用</span>
-      </header>
-      <div className="capability-resource-list is-grid">
-        {visibleTools.map((tool) => <article className="capability-resource-row" key={tool.id}>
-          <CapabilityGlyph kind="tool" />
-          <div className="capability-resource-copy"><strong>{tool.name}</strong><p>{tool.description}</p><small>{tool.source === 'builtin' ? '内置' : tool.source.toUpperCase()} · v{tool.version} · {sideEffectLabel[tool.side_effect]}</small></div>
-          <div className="capability-resource-meta"><StatusBadge status={tool.status} /></div>
-        </article>)}
-      </div>
-      {!visibleTools.length && <div className="capability-empty"><CapabilityGlyph kind="tool" /><div><strong>没有匹配的工具</strong><p>换一个关键词，或清空搜索。</p></div></div>}
-    </section>}
-
-    {show('skills') && <section className="capability-collection" aria-labelledby="skills-heading">
-      <header>
-        <div><h2 id="skills-heading">Skills</h2><p>版本化的方法、指令和资源；Skill 本身不会授予工具权限。</p></div>
-        <span>{visibleSkills.length} 项已导入</span>
-      </header>
-      <div className="capability-resource-list">
-        {visibleSkills.map((skill) => <article className="capability-resource-row" key={skill.key}>
-          <CapabilityGlyph kind="skill" />
-          <div className="capability-resource-copy"><strong>{skill.name}</strong><p>{skill.description || '版本化行为指引'}</p><small>{skill.source}{skill.tags.length ? ` · ${skill.tags.join(' · ')}` : ''}</small></div>
-          <div className="capability-resource-meta"><StatusBadge status="approved" /></div>
-        </article>)}
-        {!visibleSkills.length && <div className="capability-empty"><CapabilityGlyph kind="skill" /><div><strong>{normalizedQuery ? '没有匹配的 Skill' : '还没有导入 Skill'}</strong><p>{normalizedQuery ? '换一个关键词，或清空搜索。' : 'Skill 将指令、参考资料和脚本固定为可追溯版本，之后可以在 Studio 中绑定。'}</p></div></div>}
-      </div>
-    </section>}
-
-    {view === 'overview' && <Link className="capability-context-link" to="/context"><CapabilityGlyph kind="context" /><span><strong>记忆与项目知识</strong><small>管理 Agent 可以读取的记忆、文件和来源</small></span><span aria-hidden="true">→</span></Link>}
-
-    {adding && <div className="sheet-backdrop" onMouseDown={() => setAdding(false)}><form className="product-sheet" onSubmit={addServer} onMouseDown={(event) => event.stopPropagation()}>
-      <header><div><p className="product-kicker">MCP connection</p><h2>连接 MCP Server</h2><p>保存后先执行能力发现，不会自动授予生产权限。</p></div><button type="button" className="icon-button" aria-label="关闭" onClick={() => setAdding(false)}>×</button></header>
-      <label>连接名称<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如：企业搜索" /></label>
-      <label>连接方式<select value={form.transport} onChange={(event) => setForm({ ...form, transport: event.target.value })}><option value="streamable-http">Streamable HTTP</option><option value="stdio">stdio（本地进程）</option></select></label>
-      <label>{form.transport === 'stdio' ? '启动命令' : 'Server URL'}<input required value={form.endpoint} onChange={(event) => setForm({ ...form, endpoint: event.target.value })} placeholder={form.transport === 'stdio' ? 'npx @example/mcp-server' : 'https://example.com/mcp'} /></label>
-      {(create.error || discover.error) && <p className="form-error">{String(create.error ?? discover.error)}</p>}
-      <footer><button type="button" className="button button-quiet" onClick={() => setAdding(false)}>取消</button><button className="button button-primary" disabled={create.isPending}>{create.isPending ? '正在连接…' : '保存并连接'}</button></footer>
-    </form></div>}
-  </section>;
+function SheetActions({
+  pending,
+  onBack,
+  label,
+}: {
+  pending: boolean;
+  onBack: () => void;
+  label: string;
+}) {
+  return (
+    <footer>
+      <button type="button" className="button button-quiet" onClick={onBack}>
+        返回
+      </button>
+      <button className="button button-primary" disabled={pending}>
+        {pending ? '处理中…' : label}
+      </button>
+    </footer>
+  );
 }

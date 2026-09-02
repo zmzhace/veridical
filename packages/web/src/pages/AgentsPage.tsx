@@ -11,6 +11,7 @@ import {
 } from '../api/queries';
 import type { AgentSummary } from '../api/types';
 import '../product.css';
+import '../agents.css';
 
 function AgentMark({ agent }: { agent: AgentSummary }) {
   return (
@@ -42,6 +43,18 @@ export function AgentsPage() {
         return matches && (status === 'all' || agent.status === status);
       }),
     [agents.data, query, status],
+  );
+  const groups = useMemo(
+    () =>
+      [
+        {
+          key: 'published',
+          label: '已发布',
+          items: rows.filter((agent) => agent.status === 'published'),
+        },
+        { key: 'draft', label: '草稿', items: rows.filter((agent) => agent.status === 'draft') },
+      ].filter((group) => group.items.length),
+    [rows],
   );
 
   async function submit(event: React.FormEvent) {
@@ -99,9 +112,9 @@ export function AgentsPage() {
         </div>
       </div>
       {agents.isLoading ? (
-        <div className="agent-grid" aria-label="正在加载">
+        <div className="agent-list-v2" aria-label="正在加载">
           {[1, 2, 3].map((n) => (
-            <div className="agent-card skeleton" key={n} />
+            <div className="agent-row-v2 skeleton" key={n} />
           ))}
         </div>
       ) : agents.error ? (
@@ -113,57 +126,54 @@ export function AgentsPage() {
           </button>
         </div>
       ) : rows.length ? (
-        <div className="agent-grid">
-          {rows.map((agent) => {
-            const tasks = (sessions.data ?? []).filter((session) => session.spec_name === agent.id);
-            return (
-              <article className="agent-card" key={agent.id}>
-                <div className="agent-card-head">
-                  <AgentMark agent={agent} />
-                  <span className={`status-label is-${agent.status}`}>
-                    {agent.status === 'published' ? '已发布' : '草稿'}
-                  </span>
-                </div>
-                <div className="agent-card-copy">
-                  <h2>{agent.name}</h2>
-                  <p>{agent.description}</p>
-                </div>
-                <dl className="agent-card-meta">
-                  <div>
-                    <dt>模型</dt>
-                    <dd>
-                      {agent.model === 'server-default'
-                        ? (modelProfile.data?.model ?? '服务端默认模型')
-                        : agent.model}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>版本</dt>
-                    <dd>{agent.version ?? '尚未发布'}</dd>
-                  </div>
-                  <div>
-                    <dt>最近任务</dt>
-                    <dd>{tasks.length} 个</dd>
-                  </div>
-                </dl>
-                <footer>
-                  <Link className="button button-primary" to={`/agents/${agent.id}`}>
-                    打开 Agent
-                  </Link>
-                  <Link className="button button-quiet" to={`/agents/${agent.id}/studio`}>
-                    编辑
-                  </Link>
-                  <details className="agent-menu">
-                    <summary aria-label={`${agent.name} 更多操作`}>•••</summary>
-                    <div>
-                      <button onClick={() => duplicateAgent(agent.id)}>复制</button>
-                      <button onClick={() => archiveAgent(agent.id)}>归档</button>
-                    </div>
-                  </details>
-                </footer>
-              </article>
-            );
-          })}
+        <div className="agent-groups-v2">
+          {groups.map((group) => (
+            <section key={group.key} className="agent-group-v2">
+              <header>
+                <strong>{group.label}</strong>
+                <span>{group.items.length}</span>
+              </header>
+              <div className="agent-list-v2">
+                {group.items.map((agent) => {
+                  const tasks = (sessions.data ?? []).filter(
+                    (session) => session.spec_name === agent.id,
+                  );
+                  const model =
+                    agent.model === 'server-default'
+                      ? (modelProfile.data?.model ?? '服务端默认模型')
+                      : agent.model;
+                  return (
+                    <article className="agent-row-v2" key={agent.id}>
+                      <AgentMark agent={agent} />
+                      <Link className="agent-row-main" to={`/agents/${agent.id}`}>
+                        <span>
+                          <strong>{agent.name}</strong>
+                          {agent.mock && <em>开发示例</em>}
+                        </span>
+                        <small>{agent.description || '尚未填写职责'}</small>
+                      </Link>
+                      <div className="agent-row-meta">
+                        <span>{model}</span>
+                        <span>{agent.version ?? '未发布'}</span>
+                        <span>{tasks.length} 个任务</span>
+                      </div>
+                      <Link className="agent-row-open" to={`/agents/${agent.id}`}>
+                        打开
+                      </Link>
+                      <details className="agent-menu">
+                        <summary aria-label={`${agent.name} 更多操作`}>•••</summary>
+                        <div>
+                          <Link to={`/agents/${agent.id}/studio`}>编辑</Link>
+                          <button onClick={() => duplicateAgent(agent.id)}>复制</button>
+                          <button onClick={() => archiveAgent(agent.id)}>归档</button>
+                        </div>
+                      </details>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
         </div>
       ) : (
         <div className="state-panel">

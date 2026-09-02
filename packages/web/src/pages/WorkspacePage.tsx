@@ -30,6 +30,10 @@ import {
   type WorkspaceNodeType,
 } from '../workspace/graph/model';
 import { overlayFromEvents, overlayFromReplayResult } from '../workspace/graph/traceOverlay';
+import {
+  StudioCapabilityPicker,
+  type StudioCapabilityBinding,
+} from '../components/StudioCapabilityPicker';
 import '../studio.css';
 
 const nodeCopy: Record<WorkspaceNodeType, { label: string; title: string; description: string }> = {
@@ -91,6 +95,7 @@ export function WorkspacePage() {
   const [drag, setDrag] = useState<string | null>(null);
   const [linking, setLinking] = useState<string | null>(null);
   const [advanced, setAdvanced] = useState(false);
+  const [capabilityOpen, setCapabilityOpen] = useState(false);
   const [toolQuery, setToolQuery] = useState('');
   const [toolCategory, setToolCategory] = useState<'all' | 'read' | 'write' | 'none'>('all');
   const [showAllTools, setShowAllTools] = useState(false);
@@ -113,6 +118,9 @@ export function WorkspacePage() {
     loaded.current = true;
   }, [agent.data, agentId, draft.data]);
   const node = graph.nodes.find((item) => item.id === selected) ?? graph.nodes[0];
+  const capabilityBindings = Array.isArray(node.config.capabilityBindings)
+    ? (node.config.capabilityBindings as StudioCapabilityBinding[])
+    : [];
   const selectedTool = tools.data?.find(
     (item) => item.id === node.config.toolId || item.name === node.title,
   );
@@ -358,30 +366,43 @@ export function WorkspacePage() {
       )}
       <div className="studio-body">
         <aside className="studio-palette">
-          <p>能力</p>
-          {(['tool', 'skill', 'memory', 'child-agent', 'condition'] as WorkspaceNodeType[]).map(
-            (type) => (
-              <button key={type} onClick={() => addNode(type)}>
-                <span className={`palette-icon palette-icon-${type}`} aria-hidden="true">
-                  {type === 'child-agent' ? 'A' : nodeCopy[type].label.slice(0, 3)}
-                </span>
-                <span className="palette-copy">
-                  <strong>{nodeCopy[type].title}</strong>
-                  <small>
-                    {type === 'tool'
-                      ? '连接一个可调用能力'
-                      : type === 'skill'
-                        ? '添加行为与方法'
-                        : type === 'memory'
-                          ? '读取任务上下文'
-                          : type === 'child-agent'
-                            ? '委派给另一个 Agent'
-                            : '增加分支判断'}
-                  </small>
-                </span>
-              </button>
-            ),
-          )}
+          <p>Agent</p>
+          <button
+            onClick={() => {
+              setSelected('agent');
+              setCapabilityOpen(true);
+            }}
+          >
+            <span className="palette-icon" aria-hidden="true">
+              ＋
+            </span>
+            <span className="palette-copy">
+              <strong>管理能力</strong>
+              <small>工具、Skill、MCP 与知识</small>
+            </span>
+          </button>
+          <p>高级流程</p>
+          {(['child-agent', 'condition'] as WorkspaceNodeType[]).map((type) => (
+            <button key={type} onClick={() => addNode(type)}>
+              <span className={`palette-icon palette-icon-${type}`} aria-hidden="true">
+                {type === 'child-agent' ? 'A' : nodeCopy[type].label.slice(0, 3)}
+              </span>
+              <span className="palette-copy">
+                <strong>{nodeCopy[type].title}</strong>
+                <small>
+                  {type === 'tool'
+                    ? '连接一个可调用能力'
+                    : type === 'skill'
+                      ? '添加行为与方法'
+                      : type === 'memory'
+                        ? '读取任务上下文'
+                        : type === 'child-agent'
+                          ? '委派给另一个 Agent'
+                          : '增加分支判断'}
+                </small>
+              </span>
+            </button>
+          ))}
           <p>编辑</p>
           <button onClick={undo} disabled={!past.length}>
             <span>↶</span>撤销
@@ -507,6 +528,69 @@ export function WorkspacePage() {
                 </select>
                 <small>密钥由服务端环境读取。</small>
               </label>
+              <div className="inspector-section-title">能力</div>
+              <button
+                type="button"
+                className="agent-capability-button"
+                onClick={() => setCapabilityOpen(true)}
+              >
+                <span>
+                  <strong>管理 Agent 能力</strong>
+                  <small>工具、MCP、Skill、记忆与知识统一配置</small>
+                </span>
+                <em>{capabilityBindings.length} 项 →</em>
+              </button>
+              {capabilityBindings.length > 0 && (
+                <div className="agent-binding-summary">
+                  {capabilityBindings.slice(0, 6).map((binding) => (
+                    <span key={`${binding.kind}:${binding.capability_id}`}>
+                      {binding.display_name ?? binding.capability_id}
+                    </span>
+                  ))}
+                  {capabilityBindings.length > 6 && <span>+{capabilityBindings.length - 6}</span>}
+                </div>
+              )}
+              <div className="inspector-section-title">输出</div>
+              <label>
+                结果形式
+                <select
+                  value={String(node.config.outputProfile ?? 'conversational')}
+                  onChange={(event) =>
+                    updateNode({ config: { ...node.config, outputProfile: event.target.value } })
+                  }
+                >
+                  <option value="conversational">对话回答</option>
+                  <option value="structured">结构化结果</option>
+                  <option value="report">报告</option>
+                  <option value="artifact">文件产物</option>
+                </select>
+                <small>
+                  {node.config.outputProfile === 'structured'
+                    ? '系统会校验字段，并在失败时自动修复一次。'
+                    : node.config.outputProfile === 'report' ||
+                        node.config.outputProfile === 'artifact'
+                      ? '结果会进入任务的产物区域。'
+                      : '适合自然语言、Markdown 和代码回答。'}
+                </small>
+              </label>
+              {node.config.outputProfile === 'structured' && (
+                <label>
+                  字段 Schema
+                  <textarea
+                    value={String(
+                      node.config.outputSchemaText ??
+                        '{\n  "type": "object",\n  "properties": {}\n}',
+                    )}
+                    onChange={(event) =>
+                      updateNode({
+                        config: { ...node.config, outputSchemaText: event.target.value },
+                      })
+                    }
+                    spellCheck={false}
+                  />
+                  <small>使用 JSON Schema 描述最终字段。</small>
+                </label>
+              )}
               <div className="agent-capability-switches">
                 <label className="switch-row">
                   <span>
@@ -939,6 +1023,23 @@ export function WorkspacePage() {
             <pre>{yaml}</pre>
           </section>
         </div>
+      )}
+      {capabilityOpen && (
+        <StudioCapabilityPicker
+          bindings={
+            (graph.nodes.find((item) => item.type === 'agent')?.config.capabilityBindings as
+              | StudioCapabilityBinding[]
+              | undefined) ?? []
+          }
+          onChange={(bindings) => {
+            setSelected('agent');
+            commit((next) => {
+              const main = next.nodes.find((item) => item.type === 'agent');
+              if (main) main.config = { ...main.config, capabilityBindings: bindings };
+            });
+          }}
+          onClose={() => setCapabilityOpen(false)}
+        />
       )}
     </div>
   );

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { LLMGateway, type LLMProvider } from '@veridical/llm';
 import { Recorder, Session } from '@veridical/runtime';
-import { artifactHash, type AgentSpec } from '@veridical/spec';
+import { type AgentSpec } from '@veridical/spec';
 import { parse as parseYaml } from 'yaml';
 import { ruleNoErrors } from '@veridical/eval';
 import { z } from 'zod';
@@ -22,6 +22,7 @@ import {
   safeTools,
   validateSpec,
   runtimeEnvironment,
+  runtimeReleaseArtifactHash,
   type ProductionTool,
 } from './runner';
 import type { ProductionConfig } from './config';
@@ -106,7 +107,11 @@ export class ProductionService {
         | undefined;
       if (!registered || registered.status !== 'approved')
         throw new Fault(409, 'skill_not_approved_for_release', id);
-      if (skill.content_hash && digest(registered.body.content ?? '') !== skill.content_hash)
+      if (
+        skill.content_hash &&
+        registered.digest !== skill.content_hash &&
+        digest(registered.body.content ?? '') !== skill.content_hash
+      )
         throw new Fault(409, 'skill_content_hash_mismatch', id);
     }
   }
@@ -115,7 +120,13 @@ export class ProductionService {
       const registered = await (this.db as any).get(tenant, 'mcp_server', serverId);
       if (!registered || registered.status !== 'approved')
         throw new Fault(409, 'mcp_server_not_approved_for_release', serverId);
-      for (const tool of registered.body.tool_names ?? []) {
+      const binding = spec.capabilities?.bindings?.find(
+        (item) => item.kind === 'mcp' && item.capability_id === serverId,
+      );
+      const selectedTools = binding?.selected_children ?? registered.body.tool_names ?? [];
+      for (const tool of selectedTools) {
+        if (!(registered.body.tool_names ?? []).includes(tool))
+          throw new Fault(409, 'mcp_tool_not_discovered', `${serverId}/${tool}`);
         const name = `${serverId}/${tool}`;
         if (!spec.tools.some((entry) => entry.name === name))
           throw new Fault(409, 'mcp_tool_not_bound_to_release', name);
@@ -290,29 +301,7 @@ export class ProductionService {
     return artifact;
   }
   private releaseArtifactHash(spec: AgentSpec) {
-    return artifactHash({
-      kind: 'release',
-      name: spec.name,
-      version: spec.version,
-      status: 'approved',
-      spec,
-      skills: spec.skills,
-      tools: spec.tools.map((entry) => ({
-        name: entry.name,
-        version: this.tools.find((tool) => tool.name === entry.name)?.version ?? 'unknown',
-        side_effect: 'read' as const,
-        schema_hash: digest(this.tools.find((tool) => tool.name === entry.name)?.schema),
-        implementation_hash: digest(
-          String(this.tools.find((tool) => tool.name === entry.name)?.execute),
-        ),
-      })),
-      model: {
-        provider: spec.llm.provider,
-        model: spec.llm.model,
-        version: this.config.providers.find((provider) => provider.name === spec.llm.provider)
-          ?.version,
-      },
-    });
+    return runtimeReleaseArtifactHash(spec, this.config, this.tools);
   }
   createSpec(p: Principal, yaml: string) {
     requireRole(p, 'developer');

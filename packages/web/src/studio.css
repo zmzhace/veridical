@@ -265,6 +265,187 @@
   background: #fff;
   border-left-color: #e3e3e7;
 }
+.agent-capability-button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 54px;
+  padding: 10px 11px;
+  border: 1px solid #dcdce1;
+  border-radius: 7px;
+  background: #fff;
+  text-align: left;
+}
+.agent-capability-button:hover {
+  border-color: #c8c8ce;
+  background: #f7f7f8;
+}
+.agent-capability-button span {
+  display: grid;
+  gap: 3px;
+}
+.agent-capability-button strong {
+  color: #333338;
+  font-size: 11px;
+  font-weight: 600;
+}
+.agent-capability-button small {
+  color: #8c8c92;
+  font-size: 9px;
+}
+.agent-capability-button > em {
+  color: var(--accent);
+  font-size: 10px;
+  font-style: normal;
+}
+.agent-binding-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 9px 0 16px;
+}
+.agent-binding-summary span {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: #eeeef2;
+  color: #626269;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-capability-backdrop {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+  background: #20212426;
+}
+.studio-capability-picker {
+  position: relative;
+  width: min(720px, 100vw);
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  background: #f8f8f9;
+  border-left: 1px solid #dcdce0;
+  box-shadow: -16px 0 48px #20212318;
+}
+.studio-capability-picker > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px 24px 18px;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+}
+.studio-capability-picker > header p {
+  color: var(--accent);
+  font:
+    600 9px/1.2 'SF Mono',
+    ui-monospace,
+    monospace;
+  letter-spacing: 0.16em;
+}
+.studio-capability-picker > header h2 {
+  margin-top: 7px;
+  color: var(--ink);
+  font-size: 20px;
+  font-weight: 620;
+  letter-spacing: -0.03em;
+}
+.studio-capability-picker > header span {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.studio-capability-tabs {
+  display: flex;
+  gap: 18px;
+  padding: 0 24px;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+}
+.studio-capability-tabs button {
+  position: relative;
+  min-height: 42px;
+  color: #77777d;
+  font-size: 10px;
+}
+.studio-capability-tabs button[aria-pressed='true'] {
+  color: var(--ink);
+}
+.studio-capability-tabs button[aria-pressed='true']::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  background: var(--accent);
+}
+.studio-capability-tabs button span {
+  margin-left: 5px;
+  color: #9a9aa0;
+}
+.studio-capability-toolbar {
+  display: grid;
+  grid-template-columns: 1fr 150px;
+  gap: 8px;
+  padding: 12px 16px;
+}
+.studio-capability-toolbar input,
+.studio-capability-toolbar select {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid #dcdce0;
+  border-radius: 6px;
+  outline: 0;
+  background: #fff;
+  color: #55555a;
+  font-size: 10px;
+}
+.studio-capability-toolbar input:focus,
+.studio-capability-toolbar select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.studio-capability-list {
+  min-height: 0;
+  overflow: auto;
+  margin: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.studio-capability-picker > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--line);
+  background: #fff;
+}
+.studio-capability-picker > footer span {
+  color: #85858b;
+  font-size: 9px;
+}
+@media (max-width: 620px) {
+  .studio-capability-toolbar {
+    grid-template-columns: 1fr;
+  }
+  .studio-capability-picker > footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
 .studio-header .back-link {
   margin: 0;
   font-size: 9px;

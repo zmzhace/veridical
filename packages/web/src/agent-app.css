@@ -1,0 +1,108 @@
+/* Agent App is task-first: two stable columns, optional context drawer. */
+.agent-app {
+  grid-template-columns: 248px minmax(0, 1fr) !important;
+  background: #fff;
+}
+.agent-app.context-closed {
+  grid-template-columns: 248px minmax(0, 1fr) !important;
+}
+.agent-conversation {
+  position: relative;
+  min-width: 0;
+}
+.context-rail {
+  position: fixed;
+  z-index: 35;
+  top: 0;
+  right: 0;
+  width: min(360px, 100vw);
+  height: 100dvh;
+  border-left: 1px solid #e1e1e4;
+  background: #fbfbfb;
+  box-shadow: -14px 0 42px #20212312;
+  transform: translateX(0);
+}
+.agent-app.context-closed .context-rail {
+  display: block;
+  pointer-events: none;
+  visibility: hidden;
+  transform: translateX(100%);
+}
+.activity-summary {
+  width: fit-content;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid #e2e2e5;
+  border-radius: 6px;
+  background: #fafafa;
+  color: #77777c;
+  font-size: 10px;
+}
+.activity-summary:hover {
+  background: #f1f1f3;
+  color: #4b4b50;
+}
+.activity-summary > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4f8a65;
+}
+.activity-summary.is-running > span {
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+  animation: activityPulse 1.4s ease-in-out infinite;
+}
+.jump-latest {
+  position: absolute;
+  z-index: 8;
+  left: 50%;
+  bottom: 90px;
+  transform: translateX(-50%);
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid #dedee2;
+  border-radius: 999px;
+  background: #fff;
+  color: #55555b;
+  font-size: 10px;
+  box-shadow: 0 6px 18px #20212314;
+}
+.jump-latest:hover {
+  background: #f4f4f5;
+}
+@keyframes activityPulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (max-width: 900px) {
+  .agent-app,
+  .agent-app.context-closed {
+    grid-template-columns: 218px minmax(0, 1fr) !important;
+  }
+}
+@media (max-width: 720px) {
+  .agent-app,
+  .agent-app.context-closed {
+    grid-template-columns: 1fr !important;
+  }
+  .task-rail {
+    display: none;
+  }
+  .conversation-stream {
+    padding-inline: 16px !important;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .activity-summary.is-running > span {
+    animation: none;
+  }
+}

@@ -46,6 +46,20 @@ export const AgentCapabilitiesSchema = z
     tool_selection: z.enum(['bound', 'catalog']).default('bound'),
     /** Tool creation only produces a reviewable draft; it never grants execution. */
     tool_creation: z.enum(['disabled', 'draft']).default('disabled'),
+    /** Draft-time references to governed capabilities. Releases resolve these into immutable hashes. */
+    bindings: z
+      .array(
+        z.object({
+          capability_id: z.string().min(1).max(240),
+          kind: z.enum(['tool', 'mcp', 'skill', 'memory', 'knowledge']),
+          version: z.string().min(1).max(80).optional(),
+          access: AccessSchema.optional(),
+          activation: z.enum(['auto', 'always', 'manual']).optional(),
+          selected_children: z.array(z.string().min(1).max(240)).max(200).optional(),
+        }),
+      )
+      .max(400)
+      .default([]),
   })
   .optional();
 export type AgentCapabilities = z.infer<typeof AgentCapabilitiesSchema>;

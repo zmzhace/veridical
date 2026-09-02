@@ -5,7 +5,12 @@ import type { AgentSpec } from '@veridical/spec';
 import { digest, Fault, type Job } from './contracts';
 import type { Ledger } from './database';
 import type { ProductionConfig } from './config';
-import { executeTurn, runtimeEnvironment, type ProductionTool } from './runner';
+import {
+  executeTurn,
+  runtimeEnvironment,
+  runtimeReleaseArtifactHash,
+  type ProductionTool,
+} from './runner';
 
 const semantic = (events: TraceEvent[]) =>
   events
@@ -48,6 +53,13 @@ export async function replayRecorded(options: {
       .some((e) => (e.payload as any).environment !== runtimeEnvironment(spec, config, tools))
   )
     throw new Fault(409, 'replay_requires_original_runtime');
+  const expectedReleaseHash = runtimeReleaseArtifactHash(spec, config, tools);
+  if (
+    source
+      .filter((event) => event.type === 'run.provenance' && !event.parent_invocation_id)
+      .some((event) => (event.payload as any).release_artifact_hash !== expectedReleaseHash)
+  )
+    throw new Fault(409, 'replay_manifest_mismatch');
   const cursor = new ReplayCursor(source);
   if (!cursor.invocations.length) throw new Fault(422, 'replay_legacy_trace');
   const interceptor: InvocationInterceptor = async (scope, input, execute) => {

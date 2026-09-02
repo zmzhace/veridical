@@ -1,0 +1,28 @@
+.trace-explainer {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 18px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.trace-explainer strong {
+  flex: 0 0 auto;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+.trace-explainer span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+@media (max-width: 720px) {
+  .trace-explainer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+}
